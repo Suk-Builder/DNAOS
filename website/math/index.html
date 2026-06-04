@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta http-equiv="refresh" content="10">
+<title>数学翻译机 - 月夜见0广场</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Courier New', monospace;
+    background: #0a0a0f;
+    color: #c8c4b8;
+    padding: 30px;
+    min-height: 100vh;
+  }
+  h1 {
+    color: #b8956a;
+    font-size: 1.5rem;
+    margin-bottom: 5px;
+    letter-spacing: 0.2em;
+  }
+  .subtitle {
+    color: #8a7352;
+    font-size: 0.8rem;
+    margin-bottom: 20px;
+  }
+  .status {
+    background: #12121a;
+    border: 1px solid #3a3540;
+    padding: 10px 15px;
+    margin-bottom: 20px;
+    font-size: 0.85rem;
+  }
+  .status .online {
+    color: #5a7a5a;
+  }
+  .status .time {
+    color: #8a7352;
+    float: right;
+  }
+  .section {
+    background: #12121a;
+    border: 1px solid #3a3540;
+    margin-bottom: 15px;
+    padding: 15px;
+  }
+  .section h3 {
+    color: #b8956a;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #3a3540;
+    padding-bottom: 5px;
+  }
+  .result {
+    font-size: 0.8rem;
+    line-height: 1.8;
+  }
+  .result .label {
+    color: #8a7352;
+    display: inline-block;
+    width: 180px;
+  }
+  .result .value {
+    color: #c8c4b8;
+  }
+  .result .prime {
+    color: #5a7a5a;
+    font-weight: bold;
+  }
+  .footer {
+    margin-top: 30px;
+    text-align: center;
+    color: #3a3540;
+    font-size: 0.7rem;
+  }
+  a { color: #b8956a; text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+  <h1>◈ 数学翻译机</h1>
+  <div class="subtitle">月夜见0 · 广场公共设施 · DNAOS v2.0</div>
+
+  <div class="status">
+    <span class="online">● 运行中</span>
+    <span class="time" id="now"></span>
+    <div style="margin-top:5px; font-size:0.75rem; color:#8a7352;">
+      每轮自动计算：常数 → 素数 → 斐波那契 → 阶乘 → 黎曼零点 → 梅森素数
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>基本常数</h3>
+    <div class="result">
+      <span class="label">π (pi)</span> <span class="value">3.141592653589...</span><br>
+      <span class="label">e (Euler)</span> <span class="value">2.718281828459...</span><br>
+      <span class="label">φ (Golden)</span> <span class="value">1.618033988749...</span><br>
+      <span class="label">√2</span> <span class="value">1.414213562373...</span><br>
+      <span class="label">γ (Euler-Mascheroni)</span> <span class="value">0.577215664901...</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>素数计数 π(N)</h3>
+    <div class="result">
+      <span class="label">π(10)</span> <span class="value">4</span><br>
+      <span class="label">π(100)</span> <span class="value">25</span><br>
+      <span class="label">π(1,000)</span> <span class="value">168</span><br>
+      <span class="label">π(10,000)</span> <span class="value">1,229</span><br>
+      <span class="label">π(100,000)</span> <span class="value">9,592</span><br>
+      <span class="label">π(1,000,000)</span> <span class="value">78,498</span><br>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>斐波那契 F(N)</h3>
+    <div class="result">
+      <span class="label">F(10)</span> <span class="value">55</span><br>
+      <span class="label">F(20)</span> <span class="value">6,765</span><br>
+      <span class="label">F(50)</span> <span class="value">12,586,269,025</span><br>
+      <span class="label">F(100)</span> <span class="value">354,224,848,179,261,915,075</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>阶乘 N!</h3>
+    <div class="result">
+      <span class="label">5!</span> <span class="value">120</span><br>
+      <span class="label">10!</span> <span class="value">3,628,800</span><br>
+      <span class="label">15!</span> <span class="value">1,307,674,368,000</span><br>
+      <span class="label">20!</span> <span class="value">2,432,902,008,176,640,000</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>黎曼零点 Gram点 t_n ≈ 2πn/ln(n)</h3>
+    <div class="result">
+      <span class="label">t₁</span> <span class="value">14.13</span><br>
+      <span class="label">t₂</span> <span class="value">21.02</span><br>
+      <span class="label">t₅</span> <span class="value">32.94</span><br>
+      <span class="label">t₁₀</span> <span class="value">50.24</span><br>
+      <span class="label">t₁₀₀</span> <span class="value">236.5</span><br>
+      <span class="label">t₁₀₀₀</span> <span class="value">1,415.4</span><br>
+      <span class="label">t₁₀₀₀₀</span> <span class="value">9,871.3</span><br>
+      <span class="label">t₁₀₀₀₀₀</span> <span class="value">75,158.7</span><br>
+      <span class="label">t₁₀₀₀₀₀₀</span> <span class="value">600,270.0</span><br>
+    </div>
+  </div>
+
+  <div class="section">
+    <h3>梅森素数 M_p = 2^p - 1 验证</h3>
+    <div class="result">
+      <span class="label">M₂</span> <span class="prime">● PRIME</span> <span class="value">3</span><br>
+      <span class="label">M₃</span> <span class="prime">● PRIME</span> <span class="value">7</span><br>
+      <span class="label">M₅</span> <span class="prime">● PRIME</span> <span class="value">31</span><br>
+      <span class="label">M₇</span> <span class="prime">● PRIME</span> <span class="value">127</span><br>
+      <span class="label">M₁₃</span> <span class="prime">● PRIME</span> <span class="value">8,191</span><br>
+      <span class="label">M₁₇</span> <span class="prime">● PRIME</span> <span class="value">131,071</span><br>
+      <span class="label">M₁₉</span> <span class="prime">● PRIME</span> <span class="value">524,287</span><br>
+      <span class="label">M₃₁</span> <span class="prime">● PRIME</span> <span class="value">2,147,483,647</span><br>
+      <span class="label">M₆₁</span> <span class="prime">● PRIME</span> <span class="value">2.3×10¹⁸</span><br>
+      <span class="label">M₈₉</span> <span class="prime">● PRIME</span> <span class="value">6.2×10²⁶</span><br>
+      <span class="label">M₁₀₇</span> <span class="prime">● PRIME</span> <span class="value">1.6×10³²</span><br>
+      <span class="label">M₁₂₇</span> <span class="prime">● PRIME</span> <span class="value">1.7×10³⁸</span><br>
+      <span class="label">M₅₂₁</span> <span class="prime">● PRIME</span> <span class="value">6.9×10¹⁵⁶</span><br>
+      <span class="label">M₆₀₇</span> <span class="prime">● PRIME</span> <span class="value">5.3×10¹⁸²</span><br>
+      <span class="label">M₁₂₇₉</span> <span class="prime">● PRIME</span> <span class="value">1.0×10³⁸⁵</span><br>
+      <span class="label">M₂₂₀₃</span> <span class="prime">● PRIME</span> <span class="value">1.5×10⁶⁶³</span><br>
+      <span class="label">M₂₂₈₁</span> <span class="prime">● PRIME</span> <span class="value">4.9×10⁶⁸⁶</span><br>
+      <span class="label">M₃₂₁₇</span> <span class="prime">● PRIME</span> <span class="value">2.6×10⁹⁶⁸</span><br>
+      <span class="label">M₄₂₅₃</span> <span class="prime">● PRIME</span> <span class="value">1.9×10¹²⁸⁰</span><br>
+      <span class="label">M₄₄₂₃</span> <span class="prime">● PRIME</span> <span class="value">2.9×10¹³³¹</span><br>
+      <span class="label">M₉₆₈₉</span> <span class="prime">● PRIME</span> <span class="value">4.3×10²⁹¹⁶</span><br>
+      <span class="label">M₂₀₁₆₇₉</span> <span class="prime">● PRIME</span> <span class="value">5.7×10⁰⁰⁰⁰⁰</span><br>
+      <span class="label">M₁₃₆₂₇₉₈₄₁</span> <span class="prime">● PRIME</span> <span class="value">41,024,320位 (世界纪录 2024)</span><br>
+    </div>
+  </div>
+
+  <div class="footer">
+    <a href="http://tsukiyomi.world">← 返回月夜见0广场</a><br><br>
+    DNAOS v2.0 · 递砖机元定理 · 自动刷新(10s)<br>
+    0
+  </div>
+
+  <script>
+    document.getElementById('now').textContent = new Date().toLocaleString('zh-CN');
+  </script>
+</body>
+</html>

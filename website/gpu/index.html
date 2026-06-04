@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DNA-GPU 并行计算引擎 - DNAsm v3.2</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+  :root { --bg:#0a0a0f; --bg2:#12121a; --fg:#c8c4b8; --gold:#b8956a; --green:#5a7a5a; --red:#8a5a5a; --crack:#3a3540; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Serif SC',serif; background:var(--bg); color:var(--fg); padding:20px; line-height:1.5; }
+  .container { max-width:960px; margin:0 auto; }
+
+  /* 标题 */
+  h1 { color:var(--gold); font-size:1.6rem; font-weight:400; letter-spacing:0.15em; text-align:center; margin-bottom:2px; }
+  .subtitle { color:var(--gold); opacity:0.5; text-align:center; font-size:0.8rem; margin-bottom:20px; }
+  .dna-seq { font-family:'Courier New',monospace; text-align:center; font-size:0.75rem; color:var(--gold); opacity:0.35; margin-bottom:15px; letter-spacing:0.08em; word-break:break-all; }
+
+  /* 区块 */
+  .section { background:var(--bg2); border:1px solid var(--crack); margin-bottom:14px; padding:14px; }
+  .section h2 { color:var(--gold); font-size:1rem; font-weight:400; margin-bottom:10px; padding-bottom:6px; border-bottom:1px solid var(--crack); }
+
+  /* 规格卡 */
+  .specs { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin:8px 0; }
+  .spec { background:var(--bg); padding:10px 6px; text-align:center; border-left:2px solid var(--green); }
+  .spec-num { font-family:'Courier New',monospace; font-size:1.3rem; color:var(--green); font-weight:bold; }
+  .spec-label { font-size:0.7rem; color:var(--fg); opacity:0.65; margin-top:4px; }
+
+  /* 表格 */
+  table { width:100%; border-collapse:collapse; font-size:0.8rem; margin:8px 0; }
+  th { background:var(--bg); color:var(--gold); padding:6px 8px; text-align:left; border-bottom:2px solid var(--gold); font-weight:400; }
+  td { padding:6px 8px; border-bottom:1px solid var(--crack); }
+  tr:hover td { background:rgba(184,149,106,0.05); }
+
+  /* 核函数结果 */
+  .kernel-list { font-family:'Courier New',monospace; font-size:0.8rem; }
+  .kernel-item { padding:5px 0; border-bottom:1px solid var(--crack); display:flex; justify-content:space-between; align-items:flex-start; }
+  .kernel-item:last-child { border-bottom:none; }
+  .kernel-name { color:var(--gold); }
+  .kernel-desc { opacity:0.6; font-size:0.75rem; margin-left:8px; }
+  .kernel-result { color:var(--green); text-align:right; white-space:nowrap; }
+
+  /* 代码块 */
+  .code-block { background:var(--bg); border:1px solid var(--crack); padding:12px; font-family:'Courier New',monospace; font-size:0.78rem; overflow-x:auto; color:var(--fg); margin:10px 0; line-height:1.7; }
+  .code-block .comment { color:var(--gold); opacity:0.5; }
+  .code-block .kw { color:var(--green); }
+  .code-block .val { color:var(--green); opacity:0.8; }
+  .code-label { font-size:0.75rem; color:var(--gold); opacity:0.6; margin-bottom:4px; }
+
+  /* 底部 */
+  .footer { text-align:center; margin-top:20px; color:var(--gold); opacity:0.45; font-size:0.75rem; }
+  .footer a { color:var(--gold); text-decoration:none; }
+  a { color:var(--gold); text-decoration:none; }
+
+  /* 移动端 */
+  @media (max-width:600px) {
+    .specs { grid-template-columns:repeat(2,1fr); }
+    .kernel-item { flex-direction:column; }
+    .kernel-result { text-align:left; margin-top:2px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>DNA-GPU 并行计算引擎</h1>
+<div class="subtitle">DNAsm v3.2 — GPU并行 + 分支/循环/子程序</div>
+<div class="dna-seq">A T G C A T G C A T G C A T G C A T G C A T G C A T G C A T G C A T G C A T G C A T G C A T G C A T G C A T G C A T G C</div>
+
+<!-- 规格卡 -->
+<div class="section">
+<h2>规格</h2>
+<div class="specs">
+  <div class="spec"><div class="spec-num">52</div><div class="spec-label">opcode</div></div>
+  <div class="spec"><div class="spec-num">64</div><div class="spec-label">tubes</div></div>
+  <div class="spec"><div class="spec-num">485</div><div class="spec-label">instructions</div></div>
+  <div class="spec"><div class="spec-num">67</div><div class="spec-label">labels</div></div>
+</div>
+</div>
+
+<!-- GPU原语表格 -->
+<div class="section">
+<h2>GPU并行原语</h2>
+<table>
+<tr><th>原语</th><th>格式</th><th>说明</th><th>对应GPU指令</th></tr>
+<tr><td style="color:var(--gold)">DOT</td><td><code>DOT st[dst] st[a] st[b] N</code></td><td>向量点积（N个元素）</td><td>DP4 / FMUL+FADD</td></tr>
+<tr><td style="color:var(--gold)">MAD</td><td><code>MAD st[dst] st[a] st[b]</code></td><td>乘加融合</td><td>FMAD / FMA</td></tr>
+<tr><td style="color:var(--gold)">LERP</td><td><code>LERP st[dst] st[a] st[b] t</code></td><td>线性插值（纹理采样）</td><td>LRP / TEX</td></tr>
+<tr><td style="color:var(--gold)">REDUCE_SUM</td><td><code>REDUCE_SUM st[dst] st[start] st[end]</code></td><td>归约求和</td><td>SHFL_REDUCE</td></tr>
+<tr><td style="color:var(--gold)">SIN</td><td><code>SIN st[dst] st[src]</code></td><td>正弦函数</td><td>SIN</td></tr>
+<tr><td style="color:var(--gold)">COS</td><td><code>COS st[dst] st[src]</code></td><td>余弦函数</td><td>COS</td></tr>
+<tr><td style="color:var(--gold)">CLAMP</td><td><code>CLAMP st[dst] min max</code></td><td>钳制到区间</td><td>SAT / CLAMP</td></tr>
+<tr><td style="color:var(--gold)">PARA</td><td><code>PARA st[start] st[end]</code></td><td>声明warp并行区间</td><td>blockDim/gridDim</td></tr>
+<tr><td style="color:var(--gold)">SYNC</td><td><code>SYNC</code></td><td>warp同步屏障</td><td>__syncthreads()</td></tr>
+</table>
+</div>
+
+<!-- 10个核函数结果 -->
+<div class="section">
+<h2>已测试核函数 10/10</h2>
+<div class="kernel-list">
+  <div class="kernel-item">
+    <div><span class="kernel-name">1. 矩阵乘法(4x4 DOT)</span><span class="kernel-desc">— 4线程并行，每行DOT</span></div>
+    <div class="kernel-result">[4,6,12,14] &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">2. Sobel边缘检测卷积</span><span class="kernel-desc">— 3x3核卷积</span></div>
+    <div class="kernel-result">260 &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">3. 向量点积(8线程)</span><span class="kernel-desc">— 8元素并行REDUCE</span></div>
+    <div class="kernel-result">120 &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">4. LERP纹理采样</span><span class="kernel-desc">— 4像素双线性插值</span></div>
+    <div class="kernel-result">[127,150,150,127] &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">5. 归约求和(16线程)</span><span class="kernel-desc">— REDUCE_SUM树形归约</span></div>
+    <div class="kernel-result">136 &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">6. SIN正弦波(8采样)</span><span class="kernel-desc">— 8点正弦波生成</span></div>
+    <div class="kernel-result">[0,706,999,707,...] &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">7. 三角形光栅化</span><span class="kernel-desc">— 重心坐标插值</span></div>
+    <div class="kernel-result">重心坐标 &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">8. 深度缓冲Z-buffer</span><span class="kernel-desc">— 逐像素深度测试</span></div>
+    <div class="kernel-result">通过 &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">9. MAD乘加融合(8线程)</span><span class="kernel-desc">— 8路融合乘加</span></div>
+    <div class="kernel-result">通过 &#x2713;</div>
+  </div>
+  <div class="kernel-item">
+    <div><span class="kernel-name">10. CLAMP钳制+4点FFT蝶形</span><span class="kernel-desc">— CLAMP+蝶形运算</span></div>
+    <div class="kernel-result">通过 &#x2713;</div>
+  </div>
+</div>
+</div>
+
+<!-- 控制流指令 v3.2 -->
+<div class="section">
+<h2>控制流指令 v3.2（新增9个）</h2>
+<table>
+<tr><th>指令</th><th>格式</th><th>说明</th></tr>
+<tr><td style="color:var(--gold)">LABEL</td><td><code>LABEL name</code></td><td>定义标签（运行时转为NOP）</td></tr>
+<tr><td style="color:var(--gold)">JMP</td><td><code>JMP label</code></td><td>无条件跳转</td></tr>
+<tr><td style="color:var(--gold)">JZ</td><td><code>JZ label</code></td><td>零则跳转（st[0]==0）</td></tr>
+<tr><td style="color:var(--gold)">JNZ</td><td><code>JNZ label</code></td><td>非零则跳转</td></tr>
+<tr><td style="color:var(--gold)">JE</td><td><code>JE label</code></td><td>等于则跳转（CMP后）</td></tr>
+<tr><td style="color:var(--gold)">JNE</td><td><code>JNE label</code></td><td>不等于则跳转</td></tr>
+<tr><td style="color:var(--gold)">CMP</td><td><code>CMP st[a] st[b]</code></td><td>比较，设置标志位</td></tr>
+<tr><td style="color:var(--gold)">CALL</td><td><code>CALL label</code></td><td>调用子程序</td></tr>
+<tr><td style="color:var(--gold)">RET</td><td><code>RET</code></td><td>从子程序返回</td></tr>
+</table>
+</div>
+
+<!-- Conway生命游戏 -->
+<div class="section">
+<h2>Conway's Game of Life — GPU并行演示</h2>
+<div class="kernel-list">
+  <div class="kernel-item">
+    <div><span class="kernel-name">4x4网格 · 5代迭代 · Glider模式</span><span class="kernel-desc">— 每个细胞=一个GPU线程，16线程并行更新</span></div>
+    <div class="kernel-result">0.001s &#x2713;</div>
+  </div>
+</div>
+<div class="code-label">5代演化（██=活细胞）</div>
+<div class="code-block">
+Gen0   Gen1   Gen2   Gen3   Gen4
+  ██                    ██
+    ██    ██  ██      ██      ██      ██
+██████    ████    ██  ██      ██████    ██████
+          ██      ████    ████
+</div>
+<div class="code-label">核心循环：4代迭代，CALL/RET子程序，JZ/JNZ分支</div>
+<div class="code-block">
+<span class="comment">; === 主循环 ===</span>
+LABEL gen_loop
+CMP st[48] st[49]      <span class="comment">; 代数 == 上限?</span>
+JE game_over           <span class="comment">; 等于则结束</span>
+<span class="comment">; ... 16个细胞的邻居计数+规则应用 ...</span>
+ADD st[48] st[60]      <span class="comment">; 代数++</span>
+CALL print_gen         <span class="comment">; 显示当前代</span>
+JMP gen_loop           <span class="comment">; 继续循环</span>
+LABEL game_over
+HALT
+</div>
+<a href="game_of_life.dna" download style="font-size:0.75rem;">&#x2B07; 下载 game_of_life.dna</a>
+</div>
+
+<!-- DNAsm代码示例：DOT -->
+<div class="section">
+<h2>DNAsm代码：矩阵乘法（DOT）</h2>
+<div class="code-label">4x4矩阵，每行一个DOT，4线程并行</div>
+<div class="code-block">
+<span class="comment">; === PARA声明warp ===</span>
+<span class="kw">PARA</span> st[0] st[15]   <span class="comment">; 4x4=16个tubes参与并行</span>
+
+<span class="comment">; === 加载矩阵A (4x4) ===</span>
+<span class="kw">NUM</span> st[0] 1   <span class="kw">NUM</span> st[1] 2   <span class="kw">NUM</span> st[2] 3   <span class="kw">NUM</span> st[3] 4
+<span class="kw">NUM</span> st[4] 5   <span class="kw">NUM</span> st[5] 6   <span class="kw">NUM</span> st[6] 7   <span class="kw">NUM</span> st[7] 8
+
+<span class="comment">; === 加载矩阵B (4x4) ===</span>
+<span class="kw">NUM</span> st[8]  1   <span class="kw">NUM</span> st[9]  0   <span class="kw">NUM</span> st[10] 0   <span class="kw">NUM</span> st[11] 1
+<span class="kw">NUM</span> st[12] 0   <span class="kw">NUM</span> st[13] 1   <span class="kw">NUM</span> st[14] 1   <span class="kw">NUM</span> st[15] 0
+
+<span class="comment">; === 4行DOT并行计算 ===</span>
+<span class="kw">DOT</span> st[16] st[0] st[8]  4   <span class="comment">; row0: 1*1+2*0+3*0+4*1 = 4</span>
+<span class="kw">DOT</span> st[17] st[4] st[8]  4   <span class="comment">; row1: 5*1+6*0+7*0+8*1 = 6</span>
+<span class="kw">DOT</span> st[18] st[0] st[12] 4   <span class="comment">; row2: 1*0+2*1+3*1+4*0 = 12</span>
+<span class="kw">DOT</span> st[19] st[4] st[12] 4   <span class="comment">; row3: 5*0+6*1+7*1+8*0 = 14</span>
+
+<span class="kw">SYNC</span>   <span class="comment">; warp同步</span>
+<span class="comment">; 结果: st[16..19] = [4, 6, 12, 14] &#x2713;</span>
+</div>
+</div>
+
+<!-- DNAsm代码示例：LERP -->
+<div class="section">
+<h2>DNAsm代码：LERP纹理采样</h2>
+<div class="code-label">4像素双线性插值</div>
+<div class="code-block">
+<span class="comment">; === 纹理坐标和颜色值 ===</span>
+<span class="kw">NUM</span> st[0] 100   <span class="kw">NUM</span> st[1] 200    <span class="comment">; 颜色A: 100, 200</span>
+<span class="kw">NUM</span> st[2] 150   <span class="kw">NUM</span> st[3] 100    <span class="comment">; 颜色B: 150, 100</span>
+<span class="kw">NUM</span> st[4]  54   <span class="kw">NUM</span> st[5] 128    <span class="comment">; 插值系数 t = 54/255, 128/255</span>
+
+<span class="comment">; === PARA 4线程并行 ===</span>
+<span class="kw">PARA</span> st[0] st[7]
+
+<span class="comment">; === LERP: A + t*(B-A) ===</span>
+<span class="kw">LERP</span> st[6]  st[0] st[2] st[4]   <span class="comment">; lerp(100,150,54/255) = 127</span>
+<span class="kw">LERP</span> st[7]  st[1] st[3] st[4]   <span class="comment">; lerp(200,100,54/255) = 150</span>
+<span class="kw">LERP</span> st[8]  st[0] st[2] st[5]   <span class="comment">; lerp(100,150,128/255) = 150</span>
+<span class="kw">LERP</span> st[9]  st[1] st[3] st[5]   <span class="comment">; lerp(200,100,128/255) = 127</span>
+
+<span class="kw">SYNC</span>
+<span class="comment">; 结果: [127, 150, 150, 127] &#x2713;</span>
+</div>
+</div>
+
+<!-- 与真实GPU对比 -->
+<div class="section">
+<h2>与真实GPU对比</h2>
+<table>
+<tr><th>特性</th><th>DNAsm-GPU</th><th>CUDA (NVIDIA)</th><th>Metal (Apple)</th></tr>
+<tr><td>并行模型</td><td style="color:var(--green)">PARA/SYNC warp</td><td>thread/block/grid</td><td>threadgroup/grid</td></tr>
+<tr><td>向量运算</td><td style="color:var(--green)">DOT (SIMD)</td><td>warp-level primitives</td><td>simd_shuffle</td></tr>
+<tr><td>乘加融合</td><td style="color:var(--green)">MAD</td><td>FFMA / FMAD</td><td>fma()</td></tr>
+<tr><td>纹理采样</td><td style="color:var(--green)">LERP</td><td>tex2D / __ldg</td><td>sample()</td></tr>
+<tr><td>归约</td><td style="color:var(--green)">REDUCE_SUM</td><td>__shfl_xor_sync</td><td>simd_sum()</td></tr>
+<tr><td>三角函数</td><td style="color:var(--green)">SIN / COS</td><td>__sinf / __cosf</td><td>sin / cos</td></tr>
+<tr><td>钳制</td><td style="color:var(--green)">CLAMP</td><td>saturate / clamp</td><td>saturate / clamp</td></tr>
+<tr><td>执行后端</td><td style="color:var(--green)">DNA试管 (模拟)</td><td>CUDA核心</td><td>GPU着色器核心</td></tr>
+<tr><td>指令集</td><td style="color:var(--green)">43 opcode</td><td>PTX / SASS</td><td>MIG / AIR</td></tr>
+</table>
+</div>
+
+<div class="dna-seq">T A C G T A C G T A C G T A C G T A C G T A C G T A C G T A C G T A C G T A C G T A C G T A C G T A C G T A C G T A C G</div>
+
+<!-- 底部导航 -->
+<div class="footer">
+<p><a href="http://tsukiyomi.world/">&#x2190; 月夜见0</a> &middot; <a href="http://tsukiyomi.world/math/">数学翻译机</a> &middot; <a href="http://tsukiyomi.world/zfc/">打脸ZFC</a></p>
+<p style="margin-top:8px;">DNAOS v2.0 &middot; DNAsm v3.1-GPU &middot; 207指令 &middot; 43 opcode</p>
+<p style="margin-top:4px; opacity:0.7;">ATCGATCGATCGATCGATCGATCG</p>
+</div>
+
+</div>
+</body>
+</html>

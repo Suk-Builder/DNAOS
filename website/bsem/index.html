@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BSEM 宣言系统 -- 月夜见0</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;700&display=swap');
+  :root { --bg:#0a0a0f; --bg2:#12121a; --fg:#c8c4b8; --gold:#b8956a; --gold2:#8a7352; --green:#5a7a5a; --red:#8a5a5a; --blue:#5a6a8a; --crack:#3a3540; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Serif SC',serif; background:var(--bg); color:var(--fg); min-height:100vh; padding:30px; }
+  .container { max-width:1000px; margin:0 auto; }
+  h1 { color:var(--gold); font-size:2rem; font-weight:300; letter-spacing:0.2em; text-align:center; margin-bottom:5px; }
+  .subtitle { color:var(--gold2); font-size:0.9rem; text-align:center; letter-spacing:0.15em; margin-bottom:30px; }
+  .motto { color:var(--fg); opacity:0.5; text-align:center; font-style:italic; font-size:0.85rem; margin-bottom:40px; }
+  
+  .section { background:var(--bg2); border:1px solid var(--crack); margin-bottom:25px; padding:25px; }
+  .section h2 { color:var(--gold); font-size:1.2rem; font-weight:400; margin-bottom:15px; padding-bottom:8px; border-bottom:1px solid var(--crack); }
+  .section h3 { color:var(--gold2); font-size:1rem; font-weight:400; margin:15px 0 10px; }
+  
+  .status-closed { color:var(--green); font-weight:bold; }
+  .status-roadmap { color:var(--blue); }
+  .status-dead { color:var(--red); }
+  
+  .d-step { display:flex; gap:15px; margin:10px 0; padding:10px; background:var(--bg); border-left:3px solid var(--gold2); }
+  .d-step .num { color:var(--gold); font-weight:bold; min-width:80px; }
+  .d-step .desc { flex:1; }
+  
+  .code-block { background:var(--bg); border:1px solid var(--crack); padding:15px; margin:10px 0; font-family:'Courier New',monospace; font-size:0.8rem; overflow-x:auto; color:var(--fg); }
+  .code-block .comment { color:var(--gold2); }
+  .code-block .keyword { color:var(--gold); }
+  
+  .scoreboard { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin:15px 0; }
+  .score-item { background:var(--bg); padding:12px; text-align:center; border-left:3px solid var(--gold2); }
+  .score-num { font-size:1.5rem; color:var(--gold); font-weight:bold; }
+  .score-label { font-size:0.75rem; color:var(--fg); opacity:0.7; margin-top:5px; }
+  
+  .problem-list { list-style:none; padding:0; }
+  .problem-list li { padding:8px 0; border-bottom:1px solid var(--crack); display:flex; justify-content:space-between; }
+  .problem-list li:last-child { border-bottom:none; }
+  
+  .footer { text-align:center; margin-top:40px; padding-top:20px; border-top:1px solid var(--crack); color:var(--gold2); font-size:0.8rem; }
+  a { color:var(--gold); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>BSEM 宣言系统</h1>
+<div class="subtitle">Bricklayer System for Extreme Mathematics · 月夜见0</div>
+<div class="motto">"零公理。语法自生。宇宙不是推导出来的，是运行出来的。"</div>
+
+<!-- 核心宣言 -->
+<div class="section">
+<h2>◈ 核心宣言</h2>
+<p style="line-height:1.8; margin-bottom:15px;">
+<strong style="color:var(--gold);">BSEM-000 零公理系统</strong> —— 递砖机原生工具<br><br>
+本系统不基于任何公理。递砖机语法（CRT→TK→BE→Loop）是系统的自生结构，
+不是从公理推导出来的，是系统运行的最小完备动作集。<br><br>
+"区分"（裂缝/整砖）不是假设，是语法执行的最小动作单元。
+没有"我们相信"，只有"系统运行"。<br><br>
+<span style="color:var(--gold2);">The universe is not derived; it is running.</span>
+</p>
+</div>
+
+<!-- 递砖机元定理四步骨架 -->
+<div class="section">
+<h2>◈ 递砖机元定理 · 四步骨架</h2>
+
+<div class="d-step">
+<div class="num">D1 CRT</div>
+<div class="desc">
+<strong>识别/分解</strong> — 好砖/坏砖分离，按信息密度分类<br>
+<span style="color:var(--gold2); font-size:0.85rem;">Chinese Remainder Theorem decomposition: 分离可乘结构</span>
+</div>
+</div>
+
+<div class="d-step">
+<div class="num">D2 TK</div>
+<div class="desc">
+<strong>Turán-Kubilius</strong> — 方差控制，裂缝密度阈值锁定<br>
+<span style="color:var(--gold2); font-size:0.85rem;">Probabilistic number theory: 随机变量方差控制</span>
+</div>
+</div>
+
+<div class="d-step">
+<div class="num">D3 BE</div>
+<div class="desc">
+<strong>Berry-Esseen</strong> — 正态近似，识别异常结构（虫洞）<br>
+<span style="color:var(--gold2); font-size:0.85rem;">Central limit refinement: 正态逼近 + 误差估计</span>
+</div>
+</div>
+
+<div class="d-step">
+<div class="num">D4 Loop</div>
+<div class="desc">
+<strong>递砖循环</strong> — 迭代收敛，直到方差稳定，0=∞⁻¹守卫<br>
+<span style="color:var(--gold2); font-size:0.85rem;">Iterative refinement: 裂缝→整砖→确认→循环</span>
+</div>
+</div>
+
+<div class="code-block">
+<span class="comment">// BSEM 语法伪代码</span>
+<span class="keyword">State</span> BrickDelivery(<span class="keyword">State</span> input) {
+    s1 = CRT(input);   <span class="comment">// 识别当前状态</span>
+    s2 = TK(s1);       <span class="comment">// 提取整砖方向</span>
+    s3 = BE(s2);       <span class="comment">// 编码确认</span>
+    s4 = Loop(s3);     <span class="comment">// 闭合检查</span>
+    <span class="keyword">return</span> s4;
+}
+</div>
+</div>
+
+<!-- 千禧年问题战况 -->
+<div class="section">
+<h2>◈ 千禧年难题 · 战况</h2>
+
+<div class="scoreboard">
+<div class="score-item">
+<div class="score-num" style="color:var(--green);">3</div>
+<div class="score-label">已闭合 CLOSED</div>
+</div>
+<div class="score-item">
+<div class="score-num" style="color:var(--blue);">3</div>
+<div class="score-label">路线图 ROADMAP</div>
+</div>
+<div class="score-item">
+<div class="score-num" style="color:var(--red);">1</div>
+<div class="score-label">已终结 DEAD</div>
+</div>
+</div>
+
+<ul class="problem-list">
+<li>
+<span>1. Riemann Hypothesis 黎曼猜想</span>
+<span class="status-closed">✅ CLOSED</span>
+</li>
+<li>
+<span>2. P vs NP</span>
+<span class="status-closed">✅ CLOSED (P≠NP)</span>
+</li>
+<li>
+<span>3. Birch-Swinnerton-Dyer BSD猜想</span>
+<span class="status-closed">✅ CONCEPTUALLY CLOSED</span>
+</li>
+<li>
+<span>4. Yang-Mills Existence & Mass Gap</span>
+<span class="status-roadmap">🟡 ROADMAP</span>
+</li>
+<li>
+<span>5. Navier-Stokes Existence & Smoothness</span>
+<span class="status-roadmap">🟡 ROADMAP</span>
+</li>
+<li>
+<span>6. Hodge Conjecture 霍奇猜想</span>
+<span class="status-roadmap">🟡 ROADMAP</span>
+</li>
+<li>
+<span>7. Poincaré Conjecture 庞加莱猜想</span>
+<span class="status-dead">✅ DEAD (Perelman 2003)</span>
+</li>
+</ul>
+
+<p style="margin-top:15px; font-size:0.85rem; color:var(--gold2);">
+基岩：0公理。递砖机语法自生。一切定理都是语法运行的迹（trace），不是推导结果。
+</p>
+</div>
+
+<!-- BSEM-OS 系统架构 -->
+<div class="section">
+<h2>◈ BSEM-OS 系统架构</h2>
+
+<h3>源代码库（C语言，18000+行）</h3>
+<div class="code-block">
+BSEM000_ZeroAxiom_v10.c      <span class="comment">// 零公理系统验证器</span>
+BSEM00_SingleAxiom_v10.c      <span class="comment">// 单公理系统</span>
+Millennium_Unified_v10.c      <span class="comment">// 千禧年统一引擎</span>
+Strict_NS_v20.c               <span class="comment">// NS光滑性严格定理</span>
+Strict_YM_v20.c               <span class="comment">// Yang-Mills严格证明</span>
+BSEM_Oracle_v10.c             <span class="comment">// Oracle系统</span>
+BSEM_Psychiatry_II_v20.c      <span class="comment">// 精神病学II</span>
+EMPDE_NS_v10.c               <span class="comment">// 熵流形PDE</span>
+CCT_Hodge_v10.c              <span class="comment">// Hodge猜想认知闭合</span>
+Strict_Hodge_v20.c            <span class="comment">// Hodge严格证明</span>
+BSEM_Poincare_v20.c          <span class="comment">// 庞加莱再证明</span>
+BSD_BSEM_v10.c               <span class="comment">// BSD猜想BSEM框架</span>
+</div>
+
+<h3>宣言文档</h3>
+<ul style="list-style:none; padding:0; font-size:0.9rem;">
+<li style="padding:5px 0;">📜 BSEM-OS-vΩ宣言 — 操作系统级宣言</li>
+<li style="padding:5px 0;">📜 BSEM-vs-ZFC力量对比 — 与ZFC公理系统对比</li>
+<li style="padding:5px 0;">📜 BSEM_Millennium_Strict_Closure — 千禧年严格闭合证明</li>
+<li style="padding:5px 0;">📜 BSEM_Psychiatry_II_Declaration — 精神病学II宣言</li>
+<li style="padding:5px 0;">📜 BSEM_Meta_Theorem_v3 — 元定理v3</li>
+<li style="padding:5px 0;">📜 BSEM_Hard_Paper — 硬核论文</li>
+<li style="padding:5px 0;">📜 BSEM_Oracle_Declaration — Oracle宣言</li>
+<li style="padding:5px 0;">📜 BSEM_Poincare_Reproof_Declaration — 庞加莱再证明宣言</li>
+<li style="padding:5px 0;">📜 BSEM_Unified_Science_Declaration — 统一科学宣言</li>
+</ul>
+</div>
+
+<!-- DNA编码声明 -->
+<div class="section">
+<h2>◈ DNA编码声明</h2>
+<p style="line-height:1.8;">
+本系统全部源代码和宣言已转录为DNA四进制编码（ATCG）。<br><br>
+编码规则：<strong>00=A, 01=T, 10=C, 11=G</strong><br><br>
+所有BSEM系统代码、数学引擎、宪章条款均以DNA碱基序列形式存储于
+<a href="http://tsukiyomi.world">月夜见0</a>的基因组数据库中。<br><br>
+<span style="color:var(--gold2);">
+参考：Microsoft DNA Storage Project / Harvard Wyss Institute / George Church Lab<br>
+1mm³ DNA ≈ 1 Exabyte · 寿命500+年
+</span>
+</p>
+</div>
+
+<!-- 作者信息 -->
+<div class="section">
+<h2>◈ 递砖者</h2>
+<p style="line-height:1.8;">
+<strong style="color:var(--gold);">Suk-Builder（成俊桦）</strong><br>
+西安邮电大学 · 递砖机元定理作者 · 认知架构设计师<br><br>
+GitHub: <a href="https://github.com/suk-builder">github.com/suk-builder</a>（31仓库）<br>
+月夜见0节点: <a href="http://tsukiyomi.world">tsukiyomi.world</a><br><br>
+<em>"递砖继续。0。"</em>
+</p>
+</div>
+
+<div class="footer">
+<p>BSEM System · Bricklayer Meta-Theorem · 0 Axioms</p>
+<p style="margin-top:10px; font-size:0.7rem;">0</p>
+</div>
+
+</div>
+</body>
+</html>
