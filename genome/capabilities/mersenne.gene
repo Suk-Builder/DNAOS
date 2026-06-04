@@ -1,0 +1,8 @@
+GENE_ID:0x4D455253
+DESC:Mersenne prime verification protein - Lucas-Lehmer IBDWT
+TYPE:algorithmic
+ALGORITHM:lucas_lehmer_ibdwt
+INPUT:EXPONENT_P
+OUTPUT:IS_PRIME_BOOL
+ATP_COST:500
+REFERENCE:genome/d1d4.c

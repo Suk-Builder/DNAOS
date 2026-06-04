@@ -1,0 +1,7 @@
+GENE_ID:0x41554449
+DESC:Audio perception protein - mel-spectrogram + RNN processor
+TYPE:neural
+WEIGHTS:placeholder
+INPUT:WAV_16KHZ
+OUTPUT:FEATURE_64
+ATP_COST:80

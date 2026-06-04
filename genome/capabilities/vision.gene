@@ -1,0 +1,7 @@
+GENE_ID:0x5649534E
+DESC:Visual perception protein - convolutional feature extractor
+TYPE:neural
+WEIGHTS:placeholder
+INPUT:IMAGE_224x224
+OUTPUT:FEATURE_128
+ATP_COST:100
