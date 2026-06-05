@@ -1,0 +1,51 @@
+# Full NSM Integration Test: Molecular + Neural + Control Flow
+
+# ---- Phase 1: Molecular layer (verify DNA ops still work) ----
+LOAD st[0] "ACGTACGTACGTACGT"
+COPY st[0] 2
+READ st[0]
+COUNT st[0]
+
+# ---- Phase 2: NSM Core: DAC + SET + READ + RST ----
+# Initialize row=5, col=10, pw=100ns via immediate-value syntax
+DAC 5 0 1000        ; V[5] = 1.0V (col=0 is ignored for DAC)
+SET 5 10 100        ; LTP on G[5][10]
+READ 40 5 10        ; st[40] = G[5][10] after SET
+RST 5 10 100        ; LTD on G[5][10]
+READ 41 5 10        ; st[41] = G[5][10] after RST
+
+# ---- Phase 3: VMM (Vector-Matrix Multiply) ----
+DAC 0 0 500         ; V[0] = 0.5V
+DAC 1 0 300         ; V[1] = 0.3V
+VMM                 ; I = G^T * V
+
+# ---- Phase 4: STDP + CHEM modulation ----
+STDP 3 7 25         ; pre=3, post=7, dt=25ms -> LTP
+STDP 7 3 -10        ; pre=7, post=3, dt=-10ms -> LTD
+READ st[0]          ; DEBUG: what is st[0] before CHEM?
+CHEM 0 0.3          ; dopamine boost
+
+# ---- Phase 5: GPU parallel on float nsm_val ----
+# st[40] and st[41] hold conductance readings
+SIN 42 40           ; st[42] = sin(st[40])
+COS 43 40           ; st[43] = cos(st[40])
+CMP 42 43           ; compare sin vs cos
+JNZ not_equal
+NOP
+LABEL not_equal
+
+# ---- Phase 6: REAGENT + SLEEP ----
+REAGENT 30 1
+SLEEP 50
+
+# ---- Phase 7: Molecular burn + final read ----
+BURN st[0]
+READ st[0]
+
+# Verify final NSM states
+READ 40
+READ 41
+READ 42
+READ 43
+
+HALT

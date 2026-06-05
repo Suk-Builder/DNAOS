@@ -1,0 +1,78 @@
+# ============================================================================
+# TORTURE ROUND 7 — 第61-70轮：更多边界
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+
+# 61. do_sub clamp: LLONG_MIN - 1 = 0 (clamped)
+NUM st[0] -9223372036854775808
+NUM st[1] 1
+SUB st[0] st[1]
+PRINT st[0]
+
+# 62. ADD overflow: LLONG_MAX + 1 = LLONG_MIN (wrap)
+NUM st[0] 9223372036854775807
+ADD st[0] st[41]
+PRINT st[0]
+
+# 63. CMP st[0]=LLONG_MIN vs st[1]=LLONG_MAX
+NUM st[0] -9223372036854775808
+NUM st[1] 9223372036854775807
+CMP st[0] st[1]
+JL @t63_ok
+NUM st[49] 999
+JMP @t64
+LABEL @t63_ok
+NUM st[49] 63
+PRINT st[49]
+
+# 64. GCD(LLONG_MAX, LLONG_MAX-1) = 1 (coprime)
+LABEL @t64
+NUM st[0] 9223372036854775807
+NUM st[1] 9223372036854775806
+GCD st[0] st[1]
+PRINT st[0]
+
+# 65. FACT 20 (max without overflow)
+NUM st[46] 20
+FACT st[49] st[46]
+PRINT st[49]
+
+# 66. NUM with leading zeros
+NUM st[0] 00042
+PRINT st[0]
+
+# 67. DIV 1/1
+NUM st[0] 1
+NUM st[1] 1
+DIV st[0] st[1]
+PRINT st[0]
+
+# 68. MUL 1 * LLONG_MAX
+NUM st[0] 1
+NUM st[1] 9223372036854775807
+MUL st[0] st[1]
+PRINT st[0]
+
+# 69. SQRT of 1
+NUM st[0] 1
+SQRT st[0]
+PRINT st[0]
+
+# 70. Nested labels (LABEL inside loop)
+NUM st[0] 0
+LABEL @outer70
+NUM st[1] 0
+LABEL @inner70
+ADD st[0] st[41]
+ADD st[1] st[41]
+CMP st[1] st[42]
+JL @inner70
+CMP st[0] st[42]
+JL @outer70
+PRINT st[0]
+
+NUM st[60] 7777777
+PRINT st[60]
+HALT

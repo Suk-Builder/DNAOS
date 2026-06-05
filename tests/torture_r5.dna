@@ -1,0 +1,62 @@
+# ============================================================================
+# TORTURE ROUND 5 — 第33-40轮：深层边界测试
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+
+# 33. DIV 各种组合
+NUM st[0] 7
+NUM st[1] 3
+DIV st[0] st[1]
+PRINT st[0]
+
+# 34. DIV negative
+NUM st[0] -7
+NUM st[1] 3
+DIV st[0] st[1]
+PRINT st[0]
+
+# 35. MUL chain
+NUM st[0] 2
+MUL st[0] st[42]
+MUL st[0] st[42]
+MUL st[0] st[42]
+PRINT st[0]
+
+# 36. SUB clamp chain
+NUM st[0] 5
+SUB st[0] st[42]
+SUB st[0] st[42]
+SUB st[0] st[42]
+PRINT st[0]
+
+# 37. POW 2^30
+NUM st[0] 2
+POW st[0] 30
+PRINT st[0]
+
+# 38. SQRT 完美平方
+NUM st[0] 1000000
+SQRT st[0]
+PRINT st[0]
+
+# 39. GCD (a,b) where a|b
+NUM st[0] 100
+NUM st[1] 25
+GCD st[0] st[1]
+PRINT st[0]
+
+# 40. FIB Fib(0)=0, Fib(1)=1, Fib(2)=1
+FIB st[49] 0
+PRINT st[49]
+FIB st[49] 1
+PRINT st[49]
+FIB st[49] 2
+PRINT st[49]
+FIB st[49] 3
+PRINT st[49]
+
+NUM st[60] 7777777
+PRINT st[60]
+HALT

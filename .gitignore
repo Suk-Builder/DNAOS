@@ -1,0 +1,23 @@
+# Build artifacts
+*.o
+*.out
+dnasm3
+dnasm3_new
+dnasm_v32
+dnasm_v33
+dnasm_nsm
+bsem_v41
+test_hal
+test_mersenne_report
+*.exe
+
+# Temp files
+*.tmp
+*.swp
+*~
+
+# GW data downloads
+gw_data/
+
+# Local config
+.env

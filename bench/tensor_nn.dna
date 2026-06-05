@@ -1,0 +1,350 @@
+; ============================================================
+; tensor_nn.dna - Neural Network / Tensor Module for DNAsm v3.3
+;
+; Tube Allocation (MUST NOT conflict with reserved tubes):
+;   st[0-39]:  RESERVED (multi-precision math, constants, temps)
+;   st[40]:    CONST 0
+;   st[41]:    CONST 1
+;   st[42]:    CONST 2
+;   st[43-45]: Module temp (general purpose)
+;   st[46]:    Input parameter (caller sets before CALL)
+;   st[47-48]: Loop counters / extra temps
+;   st[49]:    Return value (subroutine writes before RET)
+;   st[50-63]: Neural network workspace (this module's domain)
+;
+; NN Architecture 3-2-1:
+;   Inputs:       st[50]=i0, st[51]=i1, st[52]=i2
+;   Hidden W:     st[53]=W00, st[54]=W01, st[55]=W02
+;                 st[56]=W10, st[57]=W11, st[58]=W12
+;   Hidden bias:  st[59]=b0,  st[60]=b1
+;   Output W:     st[61]=V0,  st[62]=V1
+;   Output bias:  st[63]=c
+;
+; Format: NO main program, NO constants, NO HALT. Just subroutines.
+; Each subroutine: LABEL @name ... RET
+; ============================================================
+
+
+; ============================================================
+; SUBROUTINE: @relu
+; Rectified Linear Unit: ReLU(x) = max(0, x)
+; Input:  st[46] = x
+; Output: st[49] = ReLU(x)
+; In-place note: CLAMP st[k] 0 999999 applies ReLU in-place
+; ============================================================
+LABEL @relu
+    NUM st[49] 0          ; clear return tube
+    ADD st[49] st[46]     ; copy x into return tube
+    CLAMP st[49] 0 999999 ; ReLU: negative values clamped to 0
+    RET
+
+
+; ============================================================
+; SUBROUTINE: @sigmoid_approx
+; Piecewise-linear sigmoid approximation in 1000-scale.
+;   sigmoid(x) ~= clamp(0.5 + 0.15*x, 0, 1)
+; In DNAsm integer scale (x and output both *1000):
+;   result = CLAMP(500 + 15*x/100, 0, 1000)
+; Input:  st[46] = x (scaled by 1000, e.g. 500 means 0.5)
+; Output: st[49] = sigmoid(x) * 1000  (range 0..1000)
+; ------------------------------------------------------------
+; Example: x=0    -> 500+0     = 500  (sigmoid(0)=0.5)
+;          x=1000 -> 500+150   = 650  (sigmoid(1)~0.65)
+;          x=-500 -> 500-75    = 425  (sigmoid(-0.5)~0.42)
+;          x=5000 -> clamp 1250 = 1000 (sigmoid(5)~1.0)
+;          x=-5000-> clamp -250 = 0    (sigmoid(-5)~0.0)
+; ============================================================
+LABEL @sigmoid_approx
+    ; st[49] = x
+    NUM st[49] 0
+    ADD st[49] st[46]
+
+    ; st[49] = 15 * x
+    NUM st[43] 15
+    MUL st[49] st[43]
+
+    ; st[49] = (15 * x) / 100
+    NUM st[43] 100
+    DIV st[49] st[43]
+
+    ; st[49] = 500 + (15*x/100)
+    NUM st[43] 500
+    ADD st[49] st[43]
+
+    ; Clamp to [0, 1000]
+    CLAMP st[49] 0 1000
+    RET
+
+
+; ============================================================
+; SUBROUTINE: @nn_forward_3_2_1
+; Neural Network Forward Pass: 3 inputs -> 2 hidden (ReLU) -> 1 output (sigmoid)
+;
+; Weights must be pre-loaded by the caller before CALL:
+;   st[50-52] = input vector [i0, i1, i2]
+;   st[53-58] = hidden layer weights W00..W12
+;   st[59-60] = hidden biases b0, b1
+;   st[61-62] = output weights V0, V1
+;   st[63]    = output bias c
+;
+; Algorithm:
+;   h0 = ReLU(W00*i0 + W01*i1 + W02*i2 + b0)
+;   h1 = ReLU(W10*i0 + W11*i1 + W12*i2 + b1)
+;   o  = sigmoid(V0*h0 + V1*h1 + c)
+;
+; Temps:  st[43]=h0_accumulator, st[44]=h1_accumulator
+; Output: st[49] = network output (0-1000 scale)
+; ============================================================
+LABEL @nn_forward_3_2_1
+
+    ; ---- Hidden neuron 0 ----
+    ; h0 = ReLU( dot(W0_row, inputs) + b0 )
+    NUM st[43] 0                ; clear accumulator
+    MAD st[43] st[53] st[50]    ; += W00 * i0
+    MAD st[43] st[54] st[51]    ; += W01 * i1
+    MAD st[43] st[55] st[52]    ; += W02 * i2
+    ADD st[43] st[59]           ; += b0
+    CLAMP st[43] 0 999999       ; ReLU: negative -> 0
+
+    ; ---- Hidden neuron 1 ----
+    ; h1 = ReLU( dot(W1_row, inputs) + b1 )
+    NUM st[44] 0                ; clear accumulator
+    MAD st[44] st[56] st[50]    ; += W10 * i0
+    MAD st[44] st[57] st[51]    ; += W11 * i1
+    MAD st[44] st[58] st[52]    ; += W12 * i2
+    ADD st[44] st[60]           ; += b1
+    CLAMP st[44] 0 999999       ; ReLU: negative -> 0
+
+    ; ---- Output neuron ----
+    ; o_raw = V0*h0 + V1*h1 + c
+    NUM st[46] 0                ; clear output accumulator
+    MAD st[46] st[61] st[43]    ; += V0 * h0
+    MAD st[46] st[62] st[44]    ; += V1 * h1
+    ADD st[46] st[63]           ; += c (output bias)
+
+    ; Apply sigmoid: st[46] -> st[49]
+    CALL @sigmoid_approx
+    RET
+
+
+; ============================================================
+; SUBROUTINE: @nn_xor_demo
+; XOR problem demonstration using a 2-2-1 network.
+; Mapped onto the 3-2-1 forward pass with i2 fixed to 0.
+;
+; Hidden layer design:
+;   h0 = ReLU(+1*i0 - 1*i1 + 0)  -> positive only when i0=1, i1=0
+;   h1 = ReLU(-1*i0 + 1*i1 + 0)  -> positive only when i0=0, i1=1
+; Output layer:
+;   o = sigmoid(1*h0 + 1*h1 - 0.5)
+;
+; This structure detects the two "different" XOR cases separately
+; and combines them.  The -0.5 bias shifts (0,0) and (1,1) below
+; the 0.5 threshold.
+;
+; Expected output (all 4 lines printed):
+;   ~425  (XOR 0,0 = 0)
+;   ~1000 (XOR 0,1 = 1)
+;   ~1000 (XOR 1,0 = 1)
+;   ~425  (XOR 1,1 = 0)
+; ============================================================
+LABEL @nn_xor_demo
+
+    ; --- Load hidden layer weights (1000-scale) ---
+    NUM st[53] 1000             ; W00 = +1.0
+    NUM st[54] -1000            ; W01 = -1.0
+    NUM st[55] 0                ; W02 = 0
+    NUM st[56] -1000            ; W10 = -1.0
+    NUM st[57] 1000             ; W11 = +1.0
+    NUM st[58] 0                ; W12 = 0
+    NUM st[59] 0                ; b0  = 0
+    NUM st[60] 0                ; b1  = 0
+
+    ; --- Load output layer weights (1000-scale) ---
+    NUM st[61] 1000             ; V0  = +1.0
+    NUM st[62] 1000             ; V1  = +1.0
+    NUM st[63] -500             ; c   = -0.5
+
+    ; --- Test case 1: (0, 0) -> expect ~0 ---
+    NUM st[50] 0
+    NUM st[51] 0
+    NUM st[52] 0
+    CALL @nn_forward_3_2_1
+    PRINT st[49]
+
+    ; --- Test case 2: (0, 1) -> expect ~1 ---
+    NUM st[50] 0
+    NUM st[51] 1000
+    NUM st[52] 0
+    CALL @nn_forward_3_2_1
+    PRINT st[49]
+
+    ; --- Test case 3: (1, 0) -> expect ~1 ---
+    NUM st[50] 1000
+    NUM st[51] 0
+    NUM st[52] 0
+    CALL @nn_forward_3_2_1
+    PRINT st[49]
+
+    ; --- Test case 4: (1, 1) -> expect ~0 ---
+    NUM st[50] 1000
+    NUM st[51] 1000
+    NUM st[52] 0
+    CALL @nn_forward_3_2_1
+    PRINT st[49]
+
+    RET
+
+
+; ============================================================
+; SUBROUTINE: @softmax_3
+; Softmax for 3-class classification.
+; Converts raw class scores into probabilities that sum to 1000.
+;
+; Input:  st[50-52] = class scores (any integer range)
+; Output: st[50-52] = probabilities (sum to 1000, each 0-1000)
+;
+; Uses Taylor approximation for exp:
+;   exp(x) ~= 1000 + x + x^2/2000   (all in 1000-scale)
+;
+; Algorithm:
+;   1. Compute exp_approx for each of the 3 scores
+;   2. Sum all three exp_approx values
+;   3. prob_i = exp_i * 1000 / sum
+; ============================================================
+LABEL @softmax_3
+
+    ; ---- Compute exp_approx for score 0 ----
+    ; exp0 = 1000 + score0 + score0^2/2000
+    NUM st[43] 1000             ; base term
+    ADD st[43] st[50]           ; + score0
+    NUM st[44] 0
+    ADD st[44] st[50]
+    MUL st[44] st[50]           ; score0^2
+    NUM st[45] 2000
+    DIV st[44] st[45]           ; score0^2 / 2000
+    ADD st[43] st[44]           ; exp0 complete
+    CLAMP st[43] 1 100000       ; guard lower bound
+
+    ; ---- Compute exp_approx for score 1 ----
+    ; exp1 = 1000 + score1 + score1^2/2000
+    NUM st[44] 1000
+    ADD st[44] st[51]
+    NUM st[45] 0
+    ADD st[45] st[51]
+    MUL st[45] st[51]
+    NUM st[46] 2000
+    DIV st[45] st[46]
+    ADD st[44] st[45]           ; exp1 complete
+    CLAMP st[44] 1 100000
+
+    ; ---- Compute exp_approx for score 2 ----
+    ; exp2 = 1000 + score2 + score2^2/2000
+    NUM st[45] 1000
+    ADD st[45] st[52]
+    NUM st[46] 0
+    ADD st[46] st[52]
+    MUL st[46] st[52]
+    NUM st[47] 2000
+    DIV st[46] st[47]
+    ADD st[45] st[46]           ; exp2 complete
+    CLAMP st[45] 1 100000
+
+    ; ---- Sum all three exp_approx values ----
+    NUM st[46] 0
+    ADD st[46] st[43]           ; + exp0
+    ADD st[46] st[44]           ; + exp1
+    ADD st[46] st[45]           ; + exp2 -> total sum
+
+    ; Guard: if sum is 0, fall back to uniform distribution
+    CMP st[46] st[40]           ; compare sum with 0
+    JE @softmax_uniform
+
+    ; ---- Normalize: prob_i = exp_i * 1000 / sum ----
+    NUM st[47] 1000             ; scaling factor
+
+    ; prob0 = exp0 * 1000 / sum
+    NUM st[50] 0
+    ADD st[50] st[43]
+    MUL st[50] st[47]
+    DIV st[50] st[46]
+
+    ; prob1 = exp1 * 1000 / sum
+    NUM st[51] 0
+    ADD st[51] st[44]
+    MUL st[51] st[47]
+    DIV st[51] st[46]
+
+    ; prob2 = exp2 * 1000 / sum
+    NUM st[52] 0
+    ADD st[52] st[45]
+    MUL st[52] st[47]
+    DIV st[52] st[46]
+
+    JMP @softmax_done
+
+LABEL @softmax_uniform
+    ; Fallback: uniform distribution (1/3 each, summing to 1000)
+    NUM st[50] 333
+    NUM st[51] 333
+    NUM st[52] 334
+
+LABEL @softmax_done
+    RET
+
+
+; ============================================================
+; SUBROUTINE: @max_pool_1d
+; 1-Dimensional Max Pooling over 8 values.
+;
+; Input:  st[50-57] = 8 input values
+;         st[46]    = pool size (supported: 1, 2, 4, 8)
+; Output: st[50-57] = pooled results (written starting at st[50],
+;                     only first N values are meaningful)
+;         st[49]    = number of output values
+;
+; For pool_size=2:  [max(v0,v1), max(v2,v3), max(v4,v5), max(v6,v7)]
+; For pool_size=4:  [max(v0..v3), max(v4..v7)]
+; For pool_size=8:  [max(v0..v7)]
+; For pool_size=1:  identity (8 outputs, same as input)
+; ============================================================
+LABEL @max_pool_1d
+    CMP st[46] st[41]           ; pool_size == 1 ?
+    JE @maxpool_ps1
+    CMP st[46] st[42]           ; pool_size == 2 ?
+    JE @maxpool_ps2
+    NUM st[43] 4
+    CMP st[46] st[43]           ; pool_size == 4 ?
+    JE @maxpool_ps4
+    NUM st[43] 8
+    CMP st[46] st[43]           ; pool_size == 8 ?
+    JE @maxpool_ps8
+    ; Unsupported pool_size: default to pass-through
+    JMP @maxpool_ps1
+
+LABEL @maxpool_ps8
+    ; One group of 8 -> single max
+    REDUCE_MAX st[50] st[50] 8
+    NUM st[49] 1
+    RET
+
+LABEL @maxpool_ps4
+    ; Two groups of 4
+    REDUCE_MAX st[50] st[50] 4  ; max of st[50..53] -> st[50]
+    REDUCE_MAX st[51] st[54] 4  ; max of st[54..57] -> st[51]
+    NUM st[49] 2
+    RET
+
+LABEL @maxpool_ps2
+    ; Four groups of 2
+    REDUCE_MAX st[50] st[50] 2  ; max of st[50..51] -> st[50]
+    REDUCE_MAX st[51] st[52] 2  ; max of st[52..53] -> st[51]
+    REDUCE_MAX st[52] st[54] 2  ; max of st[54..55] -> st[52]
+    REDUCE_MAX st[53] st[56] 2  ; max of st[56..57] -> st[53]
+    NUM st[49] 4
+    RET
+
+LABEL @maxpool_ps1
+    ; Identity: each value is its own max
+    NUM st[49] 8
+    RET

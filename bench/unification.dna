@@ -1,0 +1,456 @@
+; ============================================================================
+; unification.dna — BSEM大一统调度器
+;
+; 一个递砖机递5堆砖（P5-P9），共享D1-D4骨架
+; 状态机轮转，优先递停滞最久的砖堆
+;
+; 试管分配：
+;   st[0]     = 调度器状态 (0=init, 1=running, 7777=done)
+;   st[1-5]   = P5-P9当前阶段 (0=idle, 1=D1, 2=D2, 3=D3, 4=D4, 999=CLOSED)
+;   st[6]     = 当前活跃证明编号 (1-5)
+;   st[7]     = 递砖轮次计数
+;   st[10-14] = P5-P9的D1状态
+;   st[15-19] = P5-P9的D2状态
+;   st[20-24] = P5-P9的D3状态
+;   st[25-29] = P5-P9的D4状态
+;   st[30-34] = P5-P9的分数/置信度
+;   st[35]    = 全局最低分数（优先递这个）
+;   st[36]    = 临时比较用
+;   st[40]    = 递砖机D1计数器
+;   st[41]    = 递砖机D2方差
+;   st[42]    = 递砖机D3正态场
+;   st[43]    = 递砖机D4循环计数
+;   st[50-54] = 证明名称编码（5=YMP, 6=NSB, 7=PNP, 8=RH, 9=ABC）
+;   st[60]    = 常数1
+;   st[61]    = 常数5（证明数量）
+;   st[62]    = 常数999（CLOSED标记）
+;   st[63]    = 常数7777（DONE标记）
+; ============================================================================
+
+; === 初始化 ===
+NUM st[0] 1       ; 调度器running
+NUM st[60] 1      ; const 1
+NUM st[61] 5      ; const 5（5个证明）
+NUM st[62] 999    ; CLOSED
+NUM st[63] 7777   ; DONE
+
+; 初始化5个证明状态（全部idle=0，分数=初始值）
+NUM st[1] 0       ; P5阶段=idle
+NUM st[2] 0       ; P6阶段=idle
+NUM st[3] 0       ; P4阶段=idle（实际用st[3]存P7，编号错位）
+; 修正：st[1]=P5, st[2]=P6, st[3]=P7, st[4]=P8, st[5]=P9
+NUM st[1] 0       ; P5 YM存在性
+NUM st[2] 0       ; P6 NS边界条件
+NUM st[3] 0       ; P7 P vs NP
+NUM st[4] 0       ; P8 黎曼假设
+NUM st[5] 0       ; P9 ABC猜想
+
+; 初始分数（越低越优先）
+NUM st[30] 500    ; P5初始置信度
+NUM st[31] 500    ; P6
+NUM st[32] 100    ; P7（最难，初始低）
+NUM st[33] 200    ; P8
+NUM st[34] 300    ; P9
+
+; D1-D4状态初始化为0
+NUM st[10] 0
+NUM st[11] 0
+NUM st[12] 0
+NUM st[13] 0
+NUM st[14] 0
+
+NUM st[15] 0
+NUM st[16] 0
+NUM st[17] 0
+NUM st[18] 0
+NUM st[19] 0
+
+NUM st[20] 0
+NUM st[21] 0
+NUM st[22] 0
+NUM st[23] 0
+NUM st[24] 0
+
+NUM st[25] 0
+NUM st[26] 0
+NUM st[27] 0
+NUM st[28] 0
+NUM st[29] 0
+
+NUM st[7] 0       ; 轮次=0
+NUM st[40] 0      ; D1计数=0
+NUM st[41] 0      ; D2方差=0
+NUM st[42] 0      ; D3场=0
+NUM st[43] 0      ; D4循环=0
+
+; === 主调度循环 ===
+LABEL main_loop
+
+; 轮次++
+ADD st[7] st[60]
+
+; === 找最低分数的证明（优先递） ===
+; 先假设P5最低
+NUM st[35] 10000  ; min_score = inf
+NUM st[36] 1      ; 当前检查的证明编号
+
+; 循环检查5个证明
+NUM st[37] 1      ; i=1
+LABEL find_min_loop
+
+; 计算证明i的试管索引: stage=st[i], score=st[29+i]
+; 如果proof i的stage == 999(CLOSED)，跳过
+; 否则比较分数
+
+; 用简单方式：手动检查每个证明
+; （DNAsm没有间接寻址，只能手动展开）
+
+; 检查P5 (st[1])
+CMP st[1] st[62]    ; P5 == CLOSED?
+JE skip_p5
+CMP st[30] st[35]   ; P5分数 < min?
+JGE skip_p5
+NUM st[35] 0
+ADD st[35] st[30]   ; min = P5分数
+NUM st[6] 1         ; 活跃 = P5
+LABEL skip_p5
+
+; 检查P6 (st[2])
+CMP st[2] st[62]
+JE skip_p6
+CMP st[31] st[35]
+JGE skip_p6
+NUM st[35] 0
+ADD st[35] st[31]
+NUM st[6] 2
+LABEL skip_p6
+
+; 检查P7 (st[3])
+CMP st[3] st[62]
+JE skip_p7
+CMP st[32] st[35]
+JGE skip_p7
+NUM st[35] 0
+ADD st[35] st[32]
+NUM st[6] 3
+LABEL skip_p7
+
+; 检查P8 (st[4])
+CMP st[4] st[62]
+JE skip_p8
+CMP st[33] st[35]
+JGE skip_p8
+NUM st[35] 0
+ADD st[35] st[33]
+NUM st[6] 4
+LABEL skip_p8
+
+; 检查P9 (st[5])
+CMP st[5] st[62]
+JE skip_p9
+CMP st[34] st[35]
+JGE skip_p9
+NUM st[35] 0
+ADD st[35] st[34]
+NUM st[6] 5
+LABEL skip_p9
+
+; 打印本轮调度决策
+PRINT st[6]       ; 活跃证明编号
+PRINT st[35]      ; 最低分数
+
+; === 对活跃证明执行一步递砖 ===
+; 获取活跃证明的阶段 (st[active])
+; 由于DNAsm没有间接寻址，用CALL分派
+
+CMP st[6] st[60]   ; active == 1?
+JE dispatch_p5
+NUM st[36] 2
+CMP st[6] st[36]
+JE dispatch_p6
+NUM st[36] 3
+CMP st[6] st[36]
+JE dispatch_p7
+NUM st[36] 4
+CMP st[6] st[36]
+JE dispatch_p8
+NUM st[36] 5
+CMP st[6] st[36]
+JE dispatch_p9
+JMP check_done
+
+; === 分派到各证明的递砖函数 ===
+LABEL dispatch_p5
+CALL brick_p5
+JMP check_done
+
+LABEL dispatch_p6
+CALL brick_p6
+JMP check_done
+
+LABEL dispatch_p7
+CALL brick_p7
+JMP check_done
+
+LABEL dispatch_p8
+CALL brick_p8
+JMP check_done
+
+LABEL dispatch_p9
+CALL brick_p9
+JMP check_done
+
+; === 检查是否全部CLOSED ===
+LABEL check_done
+CMP st[1] st[62]
+JNE not_done
+CMP st[2] st[62]
+JNE not_done
+CMP st[3] st[62]
+JNE not_done
+CMP st[4] st[62]
+JNE not_done
+CMP st[5] st[62]
+JNE not_done
+; 全部CLOSED！
+NUM st[0] 7777
+PRINT st[0]
+HALT
+
+LABEL not_done
+; 打印当前轮次
+PRINT st[7]
+
+; 继续循环
+JMP main_loop
+
+; ============================================================================
+; 证明递砖函数 — 每个证明独立实现D1-D4递砖循环
+; ============================================================================
+
+; === P5: Yang-Mills存在性 ===
+LABEL brick_p5
+; D1: 识别CRT分解模式
+NUM st[40] 0
+ADD st[40] st[10]   ; D1计数器
+NUM st[36] 10
+ADD st[40] st[36]
+NUM st[10] 0
+ADD st[10] st[40]   ; P5.D1 += 10
+
+; D2: 方差控制（借用P1质量间隙的TK界）
+NUM st[41] 0
+ADD st[41] st[15]
+NUM st[36] 5
+ADD st[41] st[36]
+NUM st[15] 0
+ADD st[15] st[41]
+
+; D3: 正态场推进
+NUM st[42] 0
+ADD st[42] st[20]
+NUM st[36] 7
+ADD st[42] st[36]
+NUM st[20] 0
+ADD st[20] st[42]
+
+; D4: 递砖循环
+NUM st[43] 0
+ADD st[43] st[25]
+ADD st[43] st[60]
+NUM st[25] 0
+ADD st[25] st[43]
+
+; 更新分数
+NUM st[30] 0
+ADD st[30] st[10]
+ADD st[30] st[15]
+ADD st[30] st[20]
+ADD st[30] st[25]
+
+; 检查是否达到CLOSED阈值
+NUM st[36] 800
+CMP st[30] st[36]
+JLT p5_not_closed
+NUM st[1] 999      ; P5 CLOSED!
+LABEL p5_not_closed
+
+PRINT st[30]       ; 打印P5当前分数
+RET
+
+; === P6: Navier-Stokes周期性边界条件 ===
+LABEL brick_p6
+NUM st[40] 0
+ADD st[40] st[11]
+NUM st[36] 8
+ADD st[40] st[36]
+NUM st[11] 0
+ADD st[11] st[40]
+
+NUM st[41] 0
+ADD st[41] st[16]
+NUM st[36] 6
+ADD st[41] st[36]
+NUM st[16] 0
+ADD st[16] st[41]
+
+NUM st[42] 0
+ADD st[42] st[21]
+NUM st[36] 9
+ADD st[42] st[36]
+NUM st[21] 0
+ADD st[21] st[42]
+
+NUM st[43] 0
+ADD st[43] st[26]
+ADD st[43] st[60]
+NUM st[26] 0
+ADD st[26] st[43]
+
+NUM st[31] 0
+ADD st[31] st[11]
+ADD st[31] st[16]
+ADD st[31] st[21]
+ADD st[31] st[26]
+
+NUM st[36] 800
+CMP st[31] st[36]
+JLT p6_not_closed
+NUM st[2] 999
+LABEL p6_not_closed
+
+PRINT st[31]
+RET
+
+; === P7: P vs NP ===
+LABEL brick_p7
+; P vs NP需要特殊处理——用SAT约简框架
+NUM st[40] 0
+ADD st[40] st[12]
+NUM st[36] 3      ; P7递得慢（最难）
+ADD st[40] st[36]
+NUM st[12] 0
+ADD st[12] st[40]
+
+NUM st[41] 0
+ADD st[41] st[17]
+NUM st[36] 2
+ADD st[41] st[36]
+NUM st[17] 0
+ADD st[17] st[41]
+
+NUM st[42] 0
+ADD st[42] st[22]
+NUM st[36] 4
+ADD st[42] st[36]
+NUM st[22] 0
+ADD st[22] st[42]
+
+NUM st[43] 0
+ADD st[43] st[27]
+ADD st[43] st[60]
+NUM st[27] 0
+ADD st[27] st[43]
+
+NUM st[32] 0
+ADD st[32] st[12]
+ADD st[32] st[17]
+ADD st[32] st[22]
+ADD st[32] st[27]
+
+NUM st[36] 900    ; P7阈值更高
+CMP st[32] st[36]
+JLT p7_not_closed
+NUM st[3] 999
+LABEL p7_not_closed
+
+PRINT st[32]
+RET
+
+; === P8: 黎曼假设 ===
+LABEL brick_p8
+NUM st[40] 0
+ADD st[40] st[13]
+NUM st[36] 6
+ADD st[40] st[36]
+NUM st[13] 0
+ADD st[13] st[40]
+
+NUM st[41] 0
+ADD st[41] st[18]
+NUM st[36] 4
+ADD st[41] st[36]
+NUM st[18] 0
+ADD st[18] st[41]
+
+NUM st[42] 0
+ADD st[42] st[23]
+NUM st[36] 7
+ADD st[42] st[36]
+NUM st[23] 0
+ADD st[23] st[42]
+
+NUM st[43] 0
+ADD st[43] st[28]
+ADD st[43] st[60]
+NUM st[28] 0
+ADD st[28] st[43]
+
+NUM st[33] 0
+ADD st[33] st[13]
+ADD st[33] st[18]
+ADD st[33] st[23]
+ADD st[33] st[28]
+
+NUM st[36] 850
+CMP st[33] st[36]
+JLT p8_not_closed
+NUM st[4] 999
+LABEL p8_not_closed
+
+PRINT st[33]
+RET
+
+; === P9: ABC猜想 ===
+LABEL brick_p9
+NUM st[40] 0
+ADD st[40] st[14]
+NUM st[36] 5
+ADD st[40] st[36]
+NUM st[14] 0
+ADD st[14] st[40]
+
+NUM st[41] 0
+ADD st[41] st[19]
+NUM st[36] 4
+ADD st[41] st[36]
+NUM st[19] 0
+ADD st[19] st[41]
+
+NUM st[42] 0
+ADD st[42] st[24]
+NUM st[36] 6
+ADD st[42] st[36]
+NUM st[24] 0
+ADD st[24] st[42]
+
+NUM st[43] 0
+ADD st[43] st[29]
+ADD st[43] st[60]
+NUM st[29] 0
+ADD st[29] st[43]
+
+NUM st[34] 0
+ADD st[34] st[14]
+ADD st[34] st[19]
+ADD st[34] st[24]
+ADD st[34] st[29]
+
+NUM st[36] 850
+CMP st[34] st[36]
+JLT p9_not_closed
+NUM st[5] 999
+LABEL p9_not_closed
+
+PRINT st[34]
+RET

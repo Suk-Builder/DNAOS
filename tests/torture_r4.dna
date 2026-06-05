@@ -1,0 +1,80 @@
+# ============================================================================
+# TORTURE ROUND 4 — 更多边界
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+
+# === 1. POW overflow ===
+NUM st[0] 100000
+POW st[0] 10
+PRINT st[0]      # 100000^10 = 10^50, overflows
+
+# === 2. POW 0^0 ===
+NUM st[0] 0
+POW st[0] 0
+PRINT st[0]      # mathematically undefined, check behavior
+
+# === 3. FIB large ===
+FIB st[49] 100
+PRINT st[49]     # Fib(100) overflows 64-bit
+
+# === 4. CMP negative ===
+NUM st[0] -100
+NUM st[1] 50
+CMP st[0] st[1]
+JL @neg_ok
+NUM st[49] 999
+PRINT st[49]
+JMP @t5
+LABEL @neg_ok
+NUM st[49] 1
+PRINT st[49]
+
+# === 5. JG with negative ===
+LABEL @t5
+NUM st[0] -100
+NUM st[1] -200
+CMP st[0] st[1]
+JG @neg2_ok
+NUM st[49] 998
+PRINT st[49]
+JMP @t6
+LABEL @neg2_ok
+NUM st[49] 2
+PRINT st[49]
+
+# === 6. JMP to undefined label ===
+LABEL @t6
+JMP @undefined_label
+NUM st[49] 997
+PRINT st[49]
+
+# === 7. SQRT of 0 ===
+NUM st[0] 0
+SQRT st[0]
+PRINT st[0]      # 0
+
+# === 8. SQRT of 1 ===
+NUM st[0] 1
+SQRT st[0]
+PRINT st[0]      # 1
+
+# === 9. SQRT of 2 ===
+NUM st[0] 2
+SQRT st[0]
+PRINT st[0]      # 1
+
+# === 10. LN of 1 ===
+NUM st[0] 1
+LN st[0]
+PRINT st[0]      # ln(1)*1000 = 0
+
+# === 11. LN of e (approx 2718) ===
+NUM st[0] 2718
+LN st[0]
+PRINT st[0]      # ~1000
+
+NUM st[60] 7777777
+PRINT st[60]
+HALT

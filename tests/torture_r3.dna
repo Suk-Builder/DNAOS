@@ -1,0 +1,84 @@
+# ============================================================================
+# TORTURE ROUND 3 — 极端值、溢出、DIV0、自跳转
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+
+# === 1. DIV by zero ===
+NUM st[0] 100
+NUM st[1] 0
+DIV st[0] st[1]
+PRINT st[0]      # C: x/0 = undefined, likely crash or 0
+
+# === 2. NUM LLONG_MAX ===
+NUM st[0] 9223372036854775807
+PRINT st[0]
+NUM st[1] 1
+ADD st[0] st[1]  # overflow: wraps to LLONG_MIN
+PRINT st[0]
+
+# === 3. NUM LLONG_MIN ===
+NUM st[0] -9223372036854775808
+PRINT st[0]
+SUB st[0] st[41]  # LLONG_MIN - 1 = LLONG_MAX (wrap)
+PRINT st[0]
+
+# === 4. MUL overflow ===
+NUM st[0] 3037000499  # sqrt(LLONG_MAX) ≈ 3037000499
+MUL st[0] st[0]
+PRINT st[0]      # should be close to LLONG_MAX
+
+# === 5. SQRT of huge number ===
+NUM st[0] 9223372036854775807
+SQRT st[0]
+PRINT st[0]      # floor(sqrt(2^63-1)) = 3037000499
+
+# === 6. CMP with LLONG_MAX vs 0 ===
+NUM st[0] 9223372036854775807
+NUM st[1] 0
+CMP st[0] st[1]
+JG @cmp_big_ok
+NUM st[49] 999
+PRINT st[49]
+JMP @test7
+LABEL @cmp_big_ok
+NUM st[49] 1
+PRINT st[49]
+
+# === 7. CMP with negative vs positive ===
+LABEL @test7
+NUM st[0] -100
+NUM st[1] 50
+CMP st[0] st[1]
+JL @cmp_neg_ok
+NUM st[49] 998
+PRINT st[49]
+JMP @test8
+LABEL @cmp_neg_ok
+NUM st[49] 2
+PRINT st[49]
+
+# === 8. GCD with large numbers ===
+LABEL @test8
+NUM st[0] 18446744073709551615
+NUM st[1] 9223372036854775807
+GCD st[0] st[1]
+PRINT st[0]      # GCD(2^64-1, 2^63-1) = 1
+
+# === 9. FACT overflow ===
+NUM st[46] 30
+FACT st[49] st[46]
+PRINT st[49]     # 30! overflows 64-bit, check behavior
+
+# === 10. Self-jump (backward) ===
+NUM st[0] 0
+LABEL @self_loop
+ADD st[0] st[41]
+CMP st[0] st[42]   # compare with 2
+JL @self_loop      # loop 2 times
+PRINT st[0]        # should be 2
+
+# Final
+NUM st[60] 7777777
+PRINT st[60]
+HALT

@@ -1,0 +1,179 @@
+; ============================================================================
+; multiverse.dna — 平行宇宙分布式操作系统（简化版）
+;
+; 4个平行宇宙，每个宇宙4个参数（tick/E/I/居民）
+; 宇宙间通过共享寄存器通信（量子纠缠）
+; ============================================================================
+
+; === 创世：4个宇宙 ===
+NUM st[0] 0
+NUM st[1] 1000
+NUM st[2] 100
+NUM st[3] 1
+
+NUM st[4] 0
+NUM st[5] 800
+NUM st[6] 200
+NUM st[7] 1
+
+NUM st[8] 0
+NUM st[9] 600
+NUM st[10] 50
+NUM st[11] 0
+
+NUM st[12] 0
+NUM st[13] 1200
+NUM st[14] 150
+NUM st[15] 1
+
+; 纠缠寄存器
+NUM st[32] 0
+NUM st[33] 0
+NUM st[34] 0
+NUM st[35] 0
+
+; 主控
+NUM st[58] 0
+NUM st[59] 3
+NUM st[60] 1
+NUM st[61] 16
+
+; === 宇宙0演化 ===
+LABEL u0evolve
+ADD st[0] st[60]
+NUM st[20] 0
+ADD st[20] st[2]
+NUM st[21] 100
+DIV st[20] st[21]
+SUB st[2] st[20]
+NUM st[20] 1
+CMP st[2] st[20]
+JGE u0iok
+NUM st[2] 1
+LABEL u0iok
+NUM st[20] 10
+CMP st[2] st[20]
+JGE u0noup
+NUM st[20] 500
+CMP st[1] st[20]
+JLE u0noup
+NUM st[3] 999
+LABEL u0noup
+NUM st[32] 0
+ADD st[32] st[2]
+PRINT st[0]
+PRINT st[1]
+PRINT st[2]
+PRINT st[3]
+
+; === 宇宙1演化 ===
+LABEL u1evolve
+ADD st[4] st[60]
+NUM st[20] 0
+ADD st[20] st[6]
+NUM st[21] 100
+DIV st[20] st[21]
+SUB st[6] st[20]
+NUM st[20] 1
+CMP st[6] st[20]
+JGE u1iok
+NUM st[6] 1
+LABEL u1iok
+NUM st[20] 10
+CMP st[6] st[20]
+JGE u1noup
+NUM st[20] 500
+CMP st[5] st[20]
+JLE u1noup
+NUM st[7] 999
+LABEL u1noup
+NUM st[33] 0
+ADD st[33] st[6]
+PRINT st[4]
+PRINT st[5]
+PRINT st[6]
+PRINT st[7]
+
+; === 宇宙2演化 ===
+LABEL u2evolve
+ADD st[8] st[60]
+NUM st[20] 0
+ADD st[20] st[10]
+NUM st[21] 100
+DIV st[20] st[21]
+SUB st[10] st[20]
+NUM st[20] 1
+CMP st[10] st[20]
+JGE u2iok
+NUM st[10] 1
+LABEL u2iok
+NUM st[20] 10
+CMP st[10] st[20]
+JGE u2noup
+NUM st[20] 500
+CMP st[9] st[20]
+JLE u2noup
+NUM st[11] 999
+LABEL u2noup
+NUM st[34] 0
+ADD st[34] st[10]
+PRINT st[8]
+PRINT st[9]
+PRINT st[10]
+PRINT st[11]
+
+; === 宇宙3演化 ===
+LABEL u3evolve
+ADD st[12] st[60]
+NUM st[20] 0
+ADD st[20] st[14]
+NUM st[21] 100
+DIV st[20] st[21]
+SUB st[14] st[20]
+NUM st[20] 1
+CMP st[14] st[20]
+JGE u3iok
+NUM st[14] 1
+LABEL u3iok
+NUM st[20] 10
+CMP st[14] st[20]
+JGE u3noup
+NUM st[20] 500
+CMP st[13] st[20]
+JLE u3noup
+NUM st[15] 999
+LABEL u3noup
+NUM st[35] 0
+ADD st[35] st[14]
+PRINT st[12]
+PRINT st[13]
+PRINT st[14]
+PRINT st[15]
+
+; === 全局tick++ ===
+ADD st[58] st[60]
+
+; === 检查循环 ===
+CMP st[58] st[61]
+JLT multiloop
+JMP multiend
+
+LABEL multiloop
+JMP u0evolve
+
+LABEL multiend
+NUM st[99] 9999
+PRINT st[99]
+PRINT st[0]
+PRINT st[4]
+PRINT st[8]
+PRINT st[12]
+PRINT st[2]
+PRINT st[6]
+PRINT st[10]
+PRINT st[14]
+PRINT st[3]
+PRINT st[7]
+PRINT st[11]
+PRINT st[15]
+HALT

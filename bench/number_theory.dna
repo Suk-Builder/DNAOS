@@ -1,0 +1,666 @@
+# ============================================================
+# DNAsm v3.3 Number Theory Module
+# Pure subroutines -- no main program, no HALT, no constants block.
+#
+# Subroutines:
+#   @pow_mod   - Fast modular exponentiation (binary / square-and-multiply)
+#   @sieve     - Enumerate primes <= n via trial division
+#   @euler_phi - Euler's totient function phi(n)
+#   @is_prime  - Primality test by trial division up to sqrt(n)
+#   @gcd_sub   - GCD(a,b) by repeated subtraction
+#   @crt       - Chinese Remainder Theorem (2 congruences, brute-force search)
+#
+# Global tube reservation (DO NOT conflict):
+#   st[0-6]:   Number A (7-digit multi-precision, BASE=10^6)
+#   st[7-13]:  Number B
+#   st[14-20]: Number C (result)
+#   st[21-27]: Number M (modulus)
+#   st[28-34]: Number T (temp)
+#   st[35]:    carry/borrow flag
+#   st[36-39]: single-digit temp
+#   st[40]:    CONST 0
+#   st[41]:    CONST 1
+#   st[42]:    CONST 2
+#   st[43]:    CONST 999999
+#   st[44]:    CONST 1000000
+#   st[45]:    CONST 7
+#   st[46]:    input n / parameter
+#   st[47-48]: loop counters
+#   st[49]:    return value
+#   st[50-63]: module workspace
+#
+# ISA v3.3 rules observed:
+#   - SUB clamps to 0 (no negative numbers)
+#   - No indirect addressing: all tube indices are compile-time literals
+#   - No immediate SUB/MUL/DIV: NUM to temp first when needed
+#   - Each subroutine: LABEL @name ... RET
+# ============================================================
+
+
+# ============================================================
+# 1. pow_mod -- Modular Exponentiation (binary method)
+# ============================================================
+# Computes base^exp mod mod using the square-and-multiply algorithm.
+#
+# Input:  st[50] = base, st[51] = exp, st[52] = mod
+# Output: st[49] = result
+# Workspace:
+#   st[53] = tmp (for intermediate products / remainders)
+#   st[54] = quot (for division-based modulo)
+#   st[55] = b_copy (base reduced mod mod, then squared each iteration)
+#   st[56] = e_copy (exp, halved each iteration)
+# Algorithm:
+#   result = 1
+#   base   = base % mod
+#   while exp > 0:
+#       if exp is odd:  result = (result * base) % mod
+#       base = (base * base) % mod
+#       exp  = exp / 2
+# ============================================================
+
+LABEL @pow_mod
+    # Guard: mod <= 1  =>  every residue modulo 1 is 0
+    CMP st[52] st[41]
+    JLE @pow_mod_ret_zero
+
+    # result = 1
+    NUM st[49] 1
+
+    # b_copy = base % mod  (reduce base once at the start)
+    NUM st[55] 0
+    ADD st[55] st[50]
+    NUM st[54] 0
+    ADD st[54] st[55]
+    DIV st[54] st[52]
+    MUL st[54] st[52]
+    SUB st[55] st[54]
+    # b_copy now holds base mod mod
+
+    # e_copy = exp
+    NUM st[56] 0
+    ADD st[56] st[51]
+
+LABEL @pow_mod_loop
+    # while e_copy > 0
+    CMP st[56] st[40]
+    JE @pow_mod_done
+
+    # --- Test whether e_copy is odd ---
+    # quot = e_copy / 2
+    NUM st[54] 0
+    ADD st[54] st[56]
+    DIV st[54] st[42]
+    # tmp  = quot * 2
+    NUM st[53] 0
+    ADD st[53] st[54]
+    MUL st[53] st[42]
+    # If tmp == e_copy  =>  e_copy was even
+    CMP st[53] st[56]
+    JE @pow_mod_sq
+
+    # --- Odd exponent: result = (result * b_copy) % mod ---
+    NUM st[53] 0
+    ADD st[53] st[49]
+    MUL st[53] st[55]
+    # Modulo reduction: tmp -= (tmp / mod) * mod
+    NUM st[54] 0
+    ADD st[54] st[53]
+    DIV st[54] st[52]
+    MUL st[54] st[52]
+    SUB st[53] st[54]
+    NUM st[49] 0
+    ADD st[49] st[53]
+
+LABEL @pow_mod_sq
+    # --- Square the base: b_copy = (b_copy * b_copy) % mod ---
+    NUM st[53] 0
+    ADD st[53] st[55]
+    MUL st[53] st[55]
+    # Modulo reduction
+    NUM st[54] 0
+    ADD st[54] st[53]
+    DIV st[54] st[52]
+    MUL st[54] st[52]
+    SUB st[53] st[54]
+    NUM st[55] 0
+    ADD st[55] st[53]
+
+    # --- Halve the exponent ---
+    DIV st[56] st[42]
+    JMP @pow_mod_loop
+
+LABEL @pow_mod_ret_zero
+    NUM st[49] 0
+LABEL @pow_mod_done
+    RET
+
+
+# ============================================================
+# 2. sieve -- Sieve of Eratosthenes (trial division version)
+# ============================================================
+# Enumerates every prime p <= n.  For each candidate we trial-divide
+# by every integer d from 2 up to floor(sqrt(candidate)).
+#
+# Input:  st[46] = n
+# Output: st[49] = count of primes found
+#         st[50] .. st[50+count-1] = the primes (up to 14 fit in st[50..63])
+# Workspace:
+#   st[35] = is_prime_flag (1 = still prime, 0 = composite)
+#   st[36] = candidate (current number being tested)
+#   st[37] = divisor  (trial divisor, runs 2 .. sqrt(candidate))
+#   st[38] = limit    (floor(sqrt(candidate)))
+#   st[39] = tmp      (holds (candidate/divisor)*divisor for divisibility test)
+#
+# Note: Because tube indices must be compile-time literals, storing a
+# prime at st[50+k] is done with a cascade of conditional jumps.
+# ============================================================
+
+LABEL @sieve
+    NUM st[49] 0              # count = 0
+
+    # If n < 2 there are no primes at all
+    CMP st[46] st[42]
+    JL @sieve_done
+
+    # Store 2 as the first prime
+    NUM st[50] 2
+    NUM st[49] 1              # count = 1
+
+    # Begin testing odd candidates from 3 upward
+    NUM st[36] 3
+
+LABEL @sieve_outer_loop
+    CMP st[36] st[46]         # while candidate <= n
+    JG @sieve_done
+
+    NUM st[35] 1              # is_prime_flag = true
+    NUM st[37] 2              # divisor = 2
+
+    # limit = floor(sqrt(candidate))
+    NUM st[38] 0
+    ADD st[38] st[36]
+    SQRT st[38]
+
+LABEL @sieve_inner_loop
+    # Continue while divisor <= limit AND still flagged as prime
+    CMP st[37] st[38]
+    JG @sieve_inner_done
+    CMP st[35] st[40]
+    JE @sieve_inner_done
+
+    # Divisibility test: candidate % divisor == 0  ?
+    #   tmp = (candidate / divisor) * divisor
+    #   if tmp == candidate  =>  divisor divides candidate evenly
+    NUM st[39] 0
+    ADD st[39] st[36]
+    DIV st[39] st[37]
+    MUL st[39] st[37]
+    CMP st[39] st[36]
+    JE @sieve_not_prime
+
+    ADD st[37] st[41]         # divisor++
+    JMP @sieve_inner_loop
+
+LABEL @sieve_not_prime
+    NUM st[35] 0              # is_prime_flag = false
+
+LABEL @sieve_inner_done
+    CMP st[35] st[41]         # if still marked prime...
+    JNE @sieve_next_cand
+
+    # --------------------------------------------------------
+    # Store prime in st[50 + count]  (conditional, no indirection)
+    # Only the first 14 primes fit in st[50] .. st[63].
+    # --------------------------------------------------------
+    CMP st[49] st[40]
+    JE @sieve_store_p0
+    CMP st[49] st[41]
+    JE @sieve_store_p1
+    CMP st[49] st[42]
+    JE @sieve_store_p2
+    NUM st[39] 3
+    CMP st[49] st[39]
+    JE @sieve_store_p3
+    NUM st[39] 4
+    CMP st[49] st[39]
+    JE @sieve_store_p4
+    NUM st[39] 5
+    CMP st[49] st[39]
+    JE @sieve_store_p5
+    NUM st[39] 6
+    CMP st[49] st[39]
+    JE @sieve_store_p6
+    NUM st[39] 7
+    CMP st[49] st[39]
+    JE @sieve_store_p7
+    NUM st[39] 8
+    CMP st[49] st[39]
+    JE @sieve_store_p8
+    NUM st[39] 9
+    CMP st[49] st[39]
+    JE @sieve_store_p9
+    NUM st[39] 10
+    CMP st[49] st[39]
+    JE @sieve_store_p10
+    NUM st[39] 11
+    CMP st[49] st[39]
+    JE @sieve_store_p11
+    NUM st[39] 12
+    CMP st[49] st[39]
+    JE @sieve_store_p12
+    NUM st[39] 13
+    CMP st[49] st[39]
+    JE @sieve_store_p13
+    JMP @sieve_after_store    # count >= 14: no room to store, just count
+
+LABEL @sieve_store_p0
+    NUM st[50] 0
+    ADD st[50] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p1
+    NUM st[51] 0
+    ADD st[51] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p2
+    NUM st[52] 0
+    ADD st[52] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p3
+    NUM st[53] 0
+    ADD st[53] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p4
+    NUM st[54] 0
+    ADD st[54] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p5
+    NUM st[55] 0
+    ADD st[55] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p6
+    NUM st[56] 0
+    ADD st[56] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p7
+    NUM st[57] 0
+    ADD st[57] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p8
+    NUM st[58] 0
+    ADD st[58] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p9
+    NUM st[59] 0
+    ADD st[59] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p10
+    NUM st[60] 0
+    ADD st[60] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p11
+    NUM st[61] 0
+    ADD st[61] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p12
+    NUM st[62] 0
+    ADD st[62] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p13
+    NUM st[63] 0
+    ADD st[63] st[36]
+    JMP @sieve_after_store
+
+LABEL @sieve_after_store
+    ADD st[49] st[41]         # count++
+
+LABEL @sieve_next_cand
+    ADD st[36] st[41]         # candidate++
+    JMP @sieve_outer_loop
+
+LABEL @sieve_done
+    RET
+
+
+# ============================================================
+# 3. euler_phi -- Euler's Totient Function
+# ============================================================
+# phi(n) = count of integers 1 <= k <= n with gcd(k,n) = 1
+# Formula: phi(n) = n * product over distinct prime factors p of (1 - 1/p)
+#
+# Input:  st[46] = n
+# Output: st[49] = phi(n)
+# Workspace:
+#   st[35] = result (accumulates the answer)
+#   st[36] = temp_n (remaining unfactored portion of n)
+#   st[37] = p (trial prime factor, starts at 2 then odd numbers)
+#   st[38] = tmp (for division / modulo intermediates)
+#   st[39] = p_sqr (p*p, compared against temp_n for loop bound)
+# Algorithm:
+#   result = n;  temp_n = n
+#   Factor out 2 specially, then test odd p = 3,5,7,...
+#   For each distinct prime p dividing temp_n:
+#       result -= result / p
+#       while temp_n % p == 0:  temp_n /= p
+#   If temp_n > 1 after the loop:  result -= result / temp_n
+# ============================================================
+
+LABEL @euler_phi
+    # result = n
+    NUM st[35] 0
+    ADD st[35] st[46]
+    # temp_n = n
+    NUM st[36] 0
+    ADD st[36] st[46]
+
+    # n == 0 or n == 1  =>  phi(1) = 1, phi(0) = 0
+    CMP st[36] st[41]
+    JLE @euler_phi_one
+
+    # --- Factor out 2 (the only even prime) ---
+    NUM st[37] 0
+    ADD st[37] st[36]
+    DIV st[37] st[42]
+    MUL st[37] st[42]
+    CMP st[37] st[36]
+    JNE @euler_phi_odd       # 2 does NOT divide temp_n
+
+    # 2 is a prime factor: result -= result / 2
+    NUM st[38] 0
+    ADD st[38] st[35]
+    DIV st[38] st[42]
+    SUB st[35] st[38]
+
+    # Strip all remaining factors of 2 from temp_n
+LABEL @euler_phi_remove2
+    NUM st[37] 0
+    ADD st[37] st[36]
+    DIV st[37] st[42]
+    MUL st[37] st[42]
+    CMP st[37] st[36]
+    JNE @euler_phi_odd       # no more factors of 2
+    DIV st[36] st[42]
+    JMP @euler_phi_remove2
+
+    # --- Test odd prime factors p = 3, 5, 7, ... ---
+LABEL @euler_phi_odd
+    NUM st[37] 3
+
+LABEL @euler_phi_loop
+    # Continue while p * p <= temp_n
+    NUM st[39] 0
+    ADD st[39] st[37]
+    MUL st[39] st[37]
+    CMP st[39] st[36]
+    JG @euler_phi_final
+
+    # Does p divide temp_n?
+    NUM st[38] 0
+    ADD st[38] st[36]
+    DIV st[38] st[37]
+    MUL st[38] st[37]
+    CMP st[38] st[36]
+    JNE @euler_phi_next_p
+
+    # p is a distinct prime factor: result -= result / p
+    NUM st[38] 0
+    ADD st[38] st[35]
+    DIV st[38] st[37]
+    SUB st[35] st[38]
+
+    # Remove ALL occurrences of p from temp_n
+LABEL @euler_phi_remove_p
+    NUM st[38] 0
+    ADD st[38] st[36]
+    DIV st[38] st[37]
+    MUL st[38] st[37]
+    CMP st[38] st[36]
+    JNE @euler_phi_next_p
+    DIV st[36] st[37]
+    JMP @euler_phi_remove_p
+
+LABEL @euler_phi_next_p
+    ADD st[37] st[42]         # p += 2 (skip even numbers)
+    JMP @euler_phi_loop
+
+    # If temp_n > 1, it itself is a remaining prime factor
+LABEL @euler_phi_final
+    CMP st[36] st[41]
+    JLE @euler_phi_ret
+    NUM st[38] 0
+    ADD st[38] st[35]
+    DIV st[38] st[36]
+    SUB st[35] st[38]
+
+LABEL @euler_phi_ret
+    NUM st[49] 0
+    ADD st[49] st[35]
+    RET
+
+LABEL @euler_phi_one
+    NUM st[49] 1
+    RET
+
+
+# ============================================================
+# 4. is_prime -- Primality Test by Trial Division
+# ============================================================
+# Tests whether n is prime by trial-dividing up to floor(sqrt(n)).
+#
+# Input:  st[46] = n
+# Output: st[49] = 1 if n is prime, 0 if composite
+# Workspace:
+#   st[35] = divisor (trial divisor, 2 then odd numbers 3,5,7,...)
+#   st[36] = limit (floor(sqrt(n)))
+#   st[37] = tmp (for divisibility check)
+# ============================================================
+
+LABEL @is_prime
+    # n <= 1  =>  not prime
+    CMP st[46] st[41]
+    JLE @is_prime_no
+
+    # n == 2  =>  prime
+    CMP st[46] st[42]
+    JE @is_prime_yes
+
+    # n == 3  =>  prime
+    NUM st[35] 3
+    CMP st[46] st[35]
+    JE @is_prime_yes
+
+    # n % 2 == 0  =>  composite (even numbers > 2)
+    NUM st[35] 0
+    ADD st[35] st[46]
+    DIV st[35] st[42]
+    MUL st[35] st[42]
+    CMP st[35] st[46]
+    JE @is_prime_no
+
+    # limit = floor(sqrt(n))
+    NUM st[36] 0
+    ADD st[36] st[46]
+    SQRT st[36]
+
+    # divisor = 3
+    NUM st[35] 3
+
+LABEL @is_prime_loop
+    CMP st[35] st[36]
+    JG @is_prime_yes          # divisor > limit  =>  prime
+
+    # Check n % divisor == 0
+    NUM st[37] 0
+    ADD st[37] st[46]
+    DIV st[37] st[35]
+    MUL st[37] st[35]
+    CMP st[37] st[46]
+    JE @is_prime_no           # divisible  =>  composite
+
+    ADD st[35] st[42]         # divisor += 2 (only odd divisors)
+    JMP @is_prime_loop
+
+LABEL @is_prime_yes
+    NUM st[49] 1
+    RET
+
+LABEL @is_prime_no
+    NUM st[49] 0
+    RET
+
+
+# ============================================================
+# 5. gcd_sub -- GCD by Repeated Subtraction
+# ============================================================
+# Computes gcd(a,b) using only SUB, CMP and jumps.
+# No modulo operator is needed.
+#
+# Input:  st[50] = a, st[51] = b
+# Output: st[49] = gcd(a,b)
+# Workspace:
+#   st[52] = copy_a (mutable copy of a)
+#   st[53] = copy_b (mutable copy of b)
+# Algorithm:
+#   while a != b:
+#       if a > b:  a = a - b
+#       else:      b = b - a
+#   return a
+# ============================================================
+
+LABEL @gcd_sub
+    NUM st[52] 0
+    ADD st[52] st[50]         # copy_a = a
+    NUM st[53] 0
+    ADD st[53] st[51]         # copy_b = b
+
+    # Handle a == 0 specially
+    CMP st[52] st[40]
+    JE @gcd_sub_a_zero
+
+    # Handle b == 0 specially
+    CMP st[53] st[40]
+    JE @gcd_sub_ret_a
+
+LABEL @gcd_sub_loop
+    CMP st[52] st[53]
+    JE @gcd_sub_ret_a         # a == b  =>  done
+    JL @gcd_sub_a_less        # a < b
+
+    # a > b:  a = a - b  (safe: a>b so SUB will not clamp)
+    SUB st[52] st[53]
+    JMP @gcd_sub_loop
+
+LABEL @gcd_sub_a_less
+    # a < b:  b = b - a  (safe: b>a so SUB will not clamp)
+    SUB st[53] st[52]
+    JMP @gcd_sub_loop
+
+LABEL @gcd_sub_a_zero
+    CMP st[53] st[40]
+    JE @gcd_sub_ret_zero      # both a and b are 0
+    NUM st[49] 0
+    ADD st[49] st[53]         # gcd(0, b) = b
+    RET
+
+LABEL @gcd_sub_ret_a
+    NUM st[49] 0
+    ADD st[49] st[52]
+    RET
+
+LABEL @gcd_sub_ret_zero
+    NUM st[49] 0
+    RET
+
+
+# ============================================================
+# 6. crt -- Chinese Remainder Theorem (2 congruences)
+# ============================================================
+# Solves the simultaneous congruences:
+#       x == a1 (mod m1)
+#       x == a2 (mod m2)
+# Returns the smallest non-negative solution x, or 0 if no
+# solution exists within [0, m1*m2).
+#
+# Uses brute-force search as requested (no extended Euclidean).
+#
+# Input:  st[50] = a1, st[51] = m1, st[52] = a2, st[53] = m2
+# Output: st[49] = x  (smallest non-negative solution)
+# Workspace:
+#   st[54] = x   (candidate being tested, 0, 1, 2, ...)
+#   st[55] = product = m1 * m2  (upper bound of search)
+#   st[56] = tmp  (for quotient*divisor in modulo reduction)
+#   st[57] = rem  (holds the remainder)
+# Algorithm:
+#   a1 = a1 % m1;  a2 = a2 % m2
+#   for x = 0 .. m1*m2 - 1:
+#       if x % m1 == a1  and  x % m2 == a2:
+#           return x
+#   return 0   (no solution found)
+# ============================================================
+
+LABEL @crt
+    # Guard: if either modulus is zero, congruence is ill-defined
+    CMP st[51] st[40]
+    JE @crt_no_sol
+    CMP st[53] st[40]
+    JE @crt_no_sol
+
+    # Reduce a1 modulo m1  (so 0 <= a1 < m1)
+    NUM st[56] 0
+    ADD st[56] st[50]
+    DIV st[56] st[51]
+    MUL st[56] st[51]
+    SUB st[50] st[56]
+
+    # Reduce a2 modulo m2  (so 0 <= a2 < m2)
+    NUM st[56] 0
+    ADD st[56] st[52]
+    DIV st[56] st[53]
+    MUL st[56] st[53]
+    SUB st[52] st[56]
+
+    # product = m1 * m2  (search upper bound, exclusive)
+    NUM st[55] 0
+    ADD st[55] st[51]
+    MUL st[55] st[53]
+
+    # x = 0
+    NUM st[54] 0
+
+LABEL @crt_loop
+    CMP st[54] st[55]
+    JGE @crt_no_sol           # x >= product  =>  exhausted search space
+
+    # --- Check congruence 1: x % m1 == a1 ---
+    NUM st[56] 0
+    ADD st[56] st[54]
+    DIV st[56] st[51]
+    MUL st[56] st[51]
+    NUM st[57] 0
+    ADD st[57] st[54]
+    SUB st[57] st[56]         # rem = x - (x/m1)*m1  ==  x % m1
+    CMP st[57] st[50]
+    JNE @crt_next_x
+
+    # --- Check congruence 2: x % m2 == a2 ---
+    NUM st[56] 0
+    ADD st[56] st[54]
+    DIV st[56] st[53]
+    MUL st[56] st[53]
+    NUM st[57] 0
+    ADD st[57] st[54]
+    SUB st[57] st[56]         # rem = x % m2
+    CMP st[57] st[52]
+    JNE @crt_next_x
+
+    # Both congruences satisfied!
+    NUM st[49] 0
+    ADD st[49] st[54]
+    RET
+
+LABEL @crt_next_x
+    ADD st[54] st[41]         # x++
+    JMP @crt_loop
+
+LABEL @crt_no_sol
+    NUM st[49] 0
+    RET

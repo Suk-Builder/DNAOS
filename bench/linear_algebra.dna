@@ -1,0 +1,366 @@
+; =============================================================================
+; linear_algebra.dna - Linear Algebra Module for DNAsm v3.3
+; =============================================================================
+; Pure DNAsm subroutines with zero external dependencies.
+; All tube indices are compile-time constants (no indirect addressing).
+;
+; TUBE ALLOCATION (per ISA_REFERENCE.md):
+;   st[40]:    CONST 0
+;   st[41]:    CONST 1
+;   st[42]:    CONST 2
+;   st[43-45]: temp
+;   st[46]:    input parameter N (vector size, 1-8)
+;   st[47]:    input parameter scalar
+;   st[48]:    loop counter (reused across subroutines)
+;   st[49]:    return value
+;   st[50-63]: vector/matrix workspace
+;
+; VECTOR LAYOUT:
+;   Vector A: st[50..50+N-1]  (max 8 elements: st[50-57])
+;   Vector B: st[55..55+N-1]  (max 8 elements: st[55-62])
+;   Result C: st[50..]        (overwrites A)
+;
+; MATRIX LAYOUT (3x3):
+;   Matrix M: st[50-58] row-major  [M00 M01 M02 M10 M11 M12 M20 M21 M22]
+;   Vector x: st[59-61]
+;   Result y: st[59-61]          (overwrites x)
+;
+; MATRIX LAYOUT (2x2):
+;   Matrix A: st[50-53]          [A00 A01 A10 A11]
+;   Matrix B: st[54-57]          [B00 B01 B10 B11]
+;   Matrix C: st[58-61]          [C00 C01 C10 C11]
+; =============================================================================
+
+
+; ---------------------------------------------------------------------------
+; SUBROUTINE: vec_add
+; Element-wise vector addition: C = A + B (result stored in A)
+; Input:  st[50..57]=A, st[55..62]=B, st[46]=N (size 1-8)
+; Output: st[50..50+N-1]=C
+;
+; The ADD ordering is carefully chosen to handle A/B overlap at st[55-57]:
+; B[0-2] reside at st[55-57] which are also A[5-7]. By processing A[0-4]
+; first, B[0-2] are read before their tubes become write destinations.
+; Uses st[48] as loop counter.
+; ---------------------------------------------------------------------------
+LABEL @vec_add
+    ADD st[50] st[55]           # A[0] += B[0]  (always executed)
+    NUM st[48] 1
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[51] st[56]           # A[1] += B[1]
+    ADD st[48] st[41]           # i = 2
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[52] st[57]           # A[2] += B[2]
+    ADD st[48] st[41]           # i = 3
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[53] st[58]           # A[3] += B[3]
+    ADD st[48] st[41]           # i = 4
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[54] st[59]           # A[4] += B[4]
+    ADD st[48] st[41]           # i = 5
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[55] st[60]           # A[5] += B[5]  (st[55] was B[0], consumed)
+    ADD st[48] st[41]           # i = 6
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[56] st[61]           # A[6] += B[6]  (st[56] was B[1], consumed)
+    ADD st[48] st[41]           # i = 7
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[57] st[62]           # A[7] += B[7]  (st[57] was B[2], consumed)
+
+LABEL @vec_add_done
+    RET
+
+
+; ---------------------------------------------------------------------------
+; SUBROUTINE: vec_scale
+; Vector scalar multiply: A = A * scalar
+; Input:  st[50..57]=A, st[46]=N (size 1-8), st[47]=scalar
+; Output: st[50..50+N-1]=A scaled in-place
+; Uses st[48] as loop counter (scalar at st[47] preserved).
+; ---------------------------------------------------------------------------
+LABEL @vec_scale
+    MUL st[50] st[47]           # A[0] *= scalar  (always executed)
+    NUM st[48] 1
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[51] st[47]           # A[1] *= scalar
+    ADD st[48] st[41]           # i = 2
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[52] st[47]           # A[2] *= scalar
+    ADD st[48] st[41]           # i = 3
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[53] st[47]           # A[3] *= scalar
+    ADD st[48] st[41]           # i = 4
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[54] st[47]           # A[4] *= scalar
+    ADD st[48] st[41]           # i = 5
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[55] st[47]           # A[5] *= scalar
+    ADD st[48] st[41]           # i = 6
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[56] st[47]           # A[6] *= scalar
+    ADD st[48] st[41]           # i = 7
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[57] st[47]           # A[7] *= scalar
+
+LABEL @vec_scale_done
+    RET
+
+
+; ---------------------------------------------------------------------------
+; SUBROUTINE: vec_dot
+; Vector dot product: result = sum(A[i] * B[i])
+; Input:  st[50..57]=A, st[55..62]=B, st[46]=N (size 1-8)
+; Output: st[49]=dot product
+;
+; Uses sequential MAD accumulation for correctness with all N values.
+; (DOT instruction could be used if caller guarantees zero-padding to 8.)
+; Uses st[48] as loop counter.
+; ---------------------------------------------------------------------------
+LABEL @vec_dot
+    NUM st[49] 0                # result = 0
+    MAD st[49] st[50] st[55]    # result += A[0] * B[0]
+    NUM st[48] 1
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[51] st[56]    # result += A[1] * B[1]
+    ADD st[48] st[41]           # i = 2
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[52] st[57]    # result += A[2] * B[2]
+    ADD st[48] st[41]           # i = 3
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[53] st[58]    # result += A[3] * B[3]
+    ADD st[48] st[41]           # i = 4
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[54] st[59]    # result += A[4] * B[4]
+    ADD st[48] st[41]           # i = 5
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[55] st[60]    # result += A[5] * B[5]
+    ADD st[48] st[41]           # i = 6
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[56] st[61]    # result += A[6] * B[6]
+    ADD st[48] st[41]           # i = 7
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[57] st[62]    # result += A[7] * B[7]
+
+LABEL @vec_dot_done
+    RET
+
+
+; ---------------------------------------------------------------------------
+; SUBROUTINE: vec_l2norm
+; Vector L2 norm squared: result = sum(A[i]^2)
+; Input:  st[50..57]=A, st[46]=N (size 1-8)
+; Output: st[49]=norm squared
+;
+; Self dot-product using MAD accumulation.
+; Uses st[48] as loop counter.
+; ---------------------------------------------------------------------------
+LABEL @vec_l2norm
+    NUM st[49] 0                # result = 0
+    MAD st[49] st[50] st[50]    # result += A[0] * A[0]
+    NUM st[48] 1
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[51] st[51]    # result += A[1] * A[1]
+    ADD st[48] st[41]           # i = 2
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[52] st[52]    # result += A[2] * A[2]
+    ADD st[48] st[41]           # i = 3
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[53] st[53]    # result += A[3] * A[3]
+    ADD st[48] st[41]           # i = 4
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[54] st[54]    # result += A[4] * A[4]
+    ADD st[48] st[41]           # i = 5
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[55] st[55]    # result += A[5] * A[5]
+    ADD st[48] st[41]           # i = 6
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[56] st[56]    # result += A[6] * A[6]
+    ADD st[48] st[41]           # i = 7
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[57] st[57]    # result += A[7] * A[7]
+
+LABEL @vec_l2norm_done
+    RET
+
+
+; ---------------------------------------------------------------------------
+; SUBROUTINE: mat_vec_mul_3x3
+; 3x3 Matrix-Vector multiplication: y = M * x
+; Input:  st[50-58]=M (3x3 row-major), st[59-61]=x
+; Output: st[59-61]=y=Mx  (overwrites x)
+;
+; Strategy: save x components in progressively freed matrix rows,
+; then use MAD chains for each output element.
+;   st[50]=M00 st[51]=M01 st[52]=M02
+;   st[53]=M10 st[54]=M11 st[55]=M12
+;   st[56]=M20 st[57]=M21 st[58]=M22
+;   st[59]=x0  st[60]=x1  st[61]=x2
+; Uses st[62] for temp storage (x0) and st[50]/st[53] for saving x1/x2.
+; Note: matrix M is corrupted during computation.
+; ---------------------------------------------------------------------------
+LABEL @mat_vec_mul_3x3
+    # ---- Save x0 and compute y0 = M00*x0 + M01*x1 + M02*x2 ----
+    NUM st[62] 0
+    ADD st[62] st[59]           # st[62] = x0 (saved)
+
+    NUM st[59] 0                # y0 accumulator = 0
+    MAD st[59] st[50] st[62]    # y0 += M00 * x0
+    MAD st[59] st[51] st[60]    # y0 += M01 * x1
+    MAD st[59] st[52] st[61]    # y0 += M02 * x2
+
+    # ---- Save x1 to freed M00 slot, compute y1 = M10*x0 + M11*x1 + M12*x2 ----
+    NUM st[50] 0
+    ADD st[50] st[60]           # st[50] = x1 (saved in freed M00 slot)
+
+    NUM st[60] 0                # y1 accumulator = 0
+    MAD st[60] st[53] st[62]    # y1 += M10 * x0
+    MAD st[60] st[54] st[50]    # y1 += M11 * x1 (from saved)
+    MAD st[60] st[55] st[61]    # y1 += M12 * x2
+
+    # ---- Save x2 to freed M10 slot, compute y2 = M20*x0 + M21*x1 + M22*x2 ----
+    NUM st[53] 0
+    ADD st[53] st[61]           # st[53] = x2 (saved in freed M10 slot)
+
+    NUM st[61] 0                # y2 accumulator = 0
+    MAD st[61] st[56] st[62]    # y2 += M20 * x0
+    MAD st[61] st[57] st[50]    # y2 += M21 * x1 (from saved)
+    MAD st[61] st[58] st[53]    # y2 += M22 * x2 (from saved)
+    # st[59]=y0, st[60]=y1, st[61]=y2
+
+    RET
+
+
+; ---------------------------------------------------------------------------
+; SUBROUTINE: mat_mul_2x2
+; 2x2 Matrix multiplication: C = A * B
+; Input:  st[50-53]=A, st[54-57]=B
+;         A = [A00 A01 A10 A11], B = [B00 B01 B10 B11]
+; Output: st[58-61]=C
+;         C = [C00 C01 C10 C11]
+;
+; Uses direct MAD accumulation. No overlap between A, B, C.
+; C00 = A00*B00 + A01*B10
+; C01 = A00*B01 + A01*B11
+; C10 = A10*B00 + A11*B10
+; C11 = A10*B01 + A11*B11
+; ---------------------------------------------------------------------------
+LABEL @mat_mul_2x2
+    # ---- C00 = A00*B00 + A01*B10 ----
+    NUM st[58] 0
+    MAD st[58] st[50] st[54]    # C00 += A00 * B00
+    MAD st[58] st[51] st[56]    # C00 += A01 * B10
+
+    # ---- C01 = A00*B01 + A01*B11 ----
+    NUM st[59] 0
+    MAD st[59] st[50] st[55]    # C01 += A00 * B01
+    MAD st[59] st[51] st[57]    # C01 += A01 * B11
+
+    # ---- C10 = A10*B00 + A11*B10 ----
+    NUM st[60] 0
+    MAD st[60] st[52] st[54]    # C10 += A10 * B00
+    MAD st[60] st[53] st[56]    # C10 += A11 * B10
+
+    # ---- C11 = A10*B01 + A11*B11 ----
+    NUM st[61] 0
+    MAD st[61] st[52] st[55]    # C11 += A10 * B01
+    MAD st[61] st[53] st[57]    # C11 += A11 * B11
+
+    RET
+
+
+; ---------------------------------------------------------------------------
+; SUBROUTINE: mat_transpose_3x3
+; In-place transpose of a 3x3 matrix
+; Input/Output: st[50-58] = 3x3 matrix (row-major)
+;
+; Before:  M00 M01 M02   After:  M00 M10 M20
+;          M10 M11 M12           M01 M11 M21
+;          M20 M21 M22           M02 M12 M22
+;
+; Swaps 3 off-diagonal pairs using st[62] as temp:
+;   M01(st[51]) <-> M10(st[53])
+;   M02(st[52]) <-> M20(st[56])
+;   M12(st[55]) <-> M21(st[57])
+; ---------------------------------------------------------------------------
+LABEL @mat_transpose_3x3
+    # ---- Swap M01(st[51]) with M10(st[53]) ----
+    NUM st[62] 0
+    ADD st[62] st[51]           # temp = M01
+    NUM st[51] 0
+    ADD st[51] st[53]           # M01 = M10
+    NUM st[53] 0
+    ADD st[53] st[62]           # M10 = temp
+
+    # ---- Swap M02(st[52]) with M20(st[56]) ----
+    NUM st[62] 0
+    ADD st[62] st[52]           # temp = M02
+    NUM st[52] 0
+    ADD st[52] st[56]           # M02 = M20
+    NUM st[56] 0
+    ADD st[56] st[62]           # M20 = temp
+
+    # ---- Swap M12(st[55]) with M21(st[57]) ----
+    NUM st[62] 0
+    ADD st[62] st[55]           # temp = M12
+    NUM st[55] 0
+    ADD st[55] st[57]           # M12 = M21
+    NUM st[57] 0
+    ADD st[57] st[62]           # M21 = temp
+
+    RET

@@ -1,0 +1,123 @@
+# ============================================================================
+# TORTURE ROUND 2 — 深层测试 COPY/SIN/COS/溢出/冲突
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+
+# === 1. COPY test ===
+NUM st[0] 42
+COPY st[1] 5     # copy 5 times? Let's see what it does
+PRINT st[0]      # should be 42
+PRINT st[1]      # ?
+
+# === 2. SIN precision: sin(pi/6)=0.5 → 500 ===
+NUM st[0] 524    # pi/6 ≈ 0.5236, *1000 = 524
+SIN st[49] st[0]
+PRINT st[49]     # should be ~500
+
+# sin(pi/4) ≈ 0.707 → 707
+NUM st[0] 785
+SIN st[49] st[0]
+PRINT st[49]     # ~707
+
+# sin(pi/3) ≈ 0.866 → 866
+NUM st[0] 1047
+SIN st[49] st[0]
+PRINT st[49]     # ~866
+
+# === 3. COS precision ===
+NUM st[0] 524    # cos(pi/6) ≈ 0.866 → 866
+COS st[49] st[0]
+PRINT st[49]     # ~866
+
+# === 4. Tube conflict: subroutine modifies caller's tubes ===
+NUM st[50] 100
+NUM st[51] 200
+CALL @modify_tubes
+PRINT st[50]     # 100 or 999?
+PRINT st[51]     # 200 or 888?
+
+# === 5. Deep CALL (64 levels - should work) ===
+CALL @level0
+PRINT st[49]     # should be 64
+
+# === 6. JMP backward (loop) ===
+NUM st[0] 0
+NUM st[1] 10
+LABEL @back_loop
+ADD st[0] st[41]
+CMP st[0] st[1]
+JL @back_loop
+PRINT st[0]      # 10
+
+# === 7. MUL by zero after non-zero ===
+NUM st[0] 1000
+MUL st[0] st[40]  # *0
+PRINT st[0]      # 0
+
+# === 8. ADD chain overflow check ===
+NUM st[0] 5000000000000000000
+ADD st[0] st[0]
+PRINT st[0]      # 10^19 > 2^63-1? wraps around
+
+# === 9. CMP with same register ===
+NUM st[0] 5
+CMP st[0] st[0]
+JE @same_ok
+NUM st[49] 997
+LABEL @same_ok
+PRINT st[49]     # should be 0 (CMP didn't change st[49])
+
+# === 10. LABEL redefinition (last one wins?) ===
+CALL @dup_label
+PRINT st[49]
+JMP @final
+
+LABEL @dup_label
+NUM st[49] 111
+RET
+LABEL @dup_label  # redefined
+NUM st[49] 222
+RET
+
+LABEL @final
+NUM st[60] 7777777
+PRINT st[60]
+HALT
+
+LABEL @modify_tubes
+NUM st[50] 999   # clobber st[50]
+NUM st[51] 888   # clobber st[51]
+RET
+
+LABEL @level0
+CALL @level1
+RET
+LABEL @level1
+CALL @level2
+RET
+LABEL @level2
+CALL @level3
+RET
+LABEL @level3
+CALL @level4
+RET
+LABEL @level4
+CALL @level5
+RET
+LABEL @level5
+CALL @level6
+RET
+LABEL @level6
+CALL @level7
+RET
+LABEL @level7
+CALL @level8
+RET
+LABEL @level8
+CALL @level9
+RET
+LABEL @level9
+NUM st[49] 10
+RET

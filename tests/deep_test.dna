@@ -1,0 +1,127 @@
+# ============================================================================
+# DEEP TEST — 深层压力测试
+# 重点: tube污染、SIN/COS精度、DIV by 0、负数、嵌套CALL/RET
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+
+# === 1. Tube污染测试: 子程序是否修改了不该改的tube ===
+NUM st[50] 100
+NUM st[51] 200
+NUM st[52] 300
+NUM st[53] 400
+NUM st[54] 500
+
+# Call a local subroutine that uses tubes 50+
+CALL @tube_test
+
+# Check if st[50-54] survived
+PRINT st[50]   # should be 100
+PRINT st[51]   # should be 200
+PRINT st[52]   # should be 300
+PRINT st[53]   # should be 400
+PRINT st[54]   # should be 500
+
+JMP @test2
+
+LABEL @tube_test
+# This subroutine should NOT touch st[50-54]
+NUM st[60] 999
+ADD st[60] st[60]
+RET
+
+LABEL @test2
+
+# === 2. SIN precision ===
+NUM st[0] 0
+SIN st[49] st[0]
+PRINT st[49]   # sin(0)=0 → 0
+
+NUM st[0] 1571  # ~pi/2 * 1000
+SIN st[49] st[0]
+PRINT st[49]   # should be ~1000
+
+NUM st[0] 3142  # ~pi * 1000
+SIN st[49] st[0]
+PRINT st[49]   # should be ~0
+
+# === 3. COS precision ===
+NUM st[0] 0
+COS st[49] st[0]
+PRINT st[49]   # cos(0)=1 → 1000
+
+NUM st[0] 1571
+COS st[49] st[0]
+PRINT st[49]   # should be ~0
+
+# === 4. POW edge cases ===
+NUM st[0] 0
+POW st[0] 5
+PRINT st[0]    # 0^5 = 0
+
+NUM st[0] 1
+POW st[0] 100
+PRINT st[0]    # 1^100 = 1
+
+NUM st[0] 10
+POW st[0] 1
+PRINT st[0]    # 10^1 = 10
+
+# === 5. SQRT edge cases ===
+NUM st[0] 1
+SQRT st[0]
+PRINT st[0]    # 1
+
+NUM st[0] 2
+SQRT st[0]
+PRINT st[0]    # 1
+
+NUM st[0] 999999999999
+SQRT st[0]
+PRINT st[0]    # floor(sqrt(10^12)) = 10^6 = 1000000
+
+# === 6. GCD edge cases ===
+NUM st[0] 1
+NUM st[1] 1
+GCD st[0] st[1]
+PRINT st[0]    # 1
+
+NUM st[0] 100
+NUM st[1] 100
+GCD st[0] st[1]
+PRINT st[0]    # 100
+
+# === 7. MUL overflow check ===
+NUM st[0] 1000000000
+MUL st[0] st[0]
+PRINT st[0]    # 10^18 (near 64-bit limit)
+
+# === 8. Deep nested CALL (6 levels) ===
+CALL @d1
+PRINT st[49]
+JMP @end
+
+LABEL @d1
+CALL @d2
+RET
+LABEL @d2
+CALL @d3
+RET
+LABEL @d3
+CALL @d4
+RET
+LABEL @d4
+CALL @d5
+RET
+LABEL @d5
+CALL @d6
+RET
+LABEL @d6
+NUM st[49] 666
+RET
+
+LABEL @end
+NUM st[60] 7777777
+PRINT st[60]
+HALT

@@ -1,0 +1,265 @@
+# ============================================================================
+# TORTURE ROUND 1 — 56 opcodes全覆盖 + 边界值
+# 目的: 每个opcode至少执行一次，验证基本行为正确
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+
+# === v1: Molecular (12 ops) ===
+# These are DNA string ops, test with basic calls
+UNZIP st[50]
+HYB st[50] st[51]
+DISPL st[50] st[51]
+CLEAVE st[50]
+LIGATE st[50] st[51]
+POLY st[50] st[51] 10
+MELT st[50]
+ANNEAL st[50] st[51]
+NUM st[50] 42
+FIND st[50] "42"
+COUNT st[50] "4"
+SPLIT st[50]
+MIX st[50] st[51]
+PRINT st[41]    # 1 = molecular ops done
+
+# === v2: I/O (5 ops) ===
+COPY st[51] st[50]
+BURN st[52]
+LOAD st[53] "test"
+TEMP 37
+NOP
+PRINT st[42]    # 2 = I/O ops done
+
+# === v3: Arithmetic (13 ops) ===
+NUM st[0] 5
+ADD st[0] st[41]
+PRINT st[0]     # 6
+
+NUM st[0] 10
+SUB st[0] st[42]
+PRINT st[0]     # 8
+
+NUM st[0] 6
+MUL st[0] st[42]
+PRINT st[0]     # 12
+
+NUM st[0] 15
+DIV st[0] st[42]
+PRINT st[0]     # 7
+
+FIB st[49] 10
+PRINT st[49]    # 55
+
+NUM st[46] 17
+CALL @is_prime
+PRINT st[49]    # 1
+
+FACT st[49] 5
+PRINT st[49]    # 120
+
+NUM st[0] 2
+POW st[0] 8
+PRINT st[0]     # 256
+
+NUM st[0] 25
+SQRT st[0]
+PRINT st[0]     # 5
+
+NUM st[0] 48
+NUM st[1] 18
+GCD st[0] st[1]
+PRINT st[0]     # 6
+
+NUM st[0] 100
+LN st[0]
+PRINT st[0]     # ln(100)*1000 ≈ 4605
+
+PRINT st[42]    # 2 = arithmetic done
+
+# === v3.1: GPU (11 ops) ===
+NUM st[50] 1
+NUM st[51] 2
+NUM st[52] 3
+NUM st[53] 4
+PARA st[50] 4 st[53]
+
+REDUCE_SUM st[49] st[50] 4
+PRINT st[49]    # 10
+
+REDUCE_MAX st[49] st[50] 4
+PRINT st[49]    # 4
+
+DOT st[49] st[50] st[51] 3
+PRINT st[49]    # 1*2+2*3+3*4=20
+
+NUM st[49] 10
+MAD st[49] st[50] st[51]
+PRINT st[49]    # 10+1*2=12
+
+NUM st[0] 100
+NUM st[1] 200
+LERP st[49] st[0] st[1] 500
+PRINT st[49]    # 150
+
+NUM st[49] 500
+CLAMP st[49] 0 100
+PRINT st[49]    # 100
+
+NUM st[0] 1571
+SIN st[49] st[0]
+PRINT st[49]    # ~1000
+
+NUM st[0] 0
+COS st[49] st[0]
+PRINT st[49]    # 1000
+
+NUM st[49] 10
+FMA st[49] st[50] st[51]
+PRINT st[49]    # 10+1*2=12
+
+SYNC
+
+PRINT st[42]    # 2 = GPU done
+
+# === v3.2+v3.3: Control Flow (11 ops) ===
+LABEL @cf_test
+JMP @cf_jmp
+NUM st[49] 999   # should be skipped
+LABEL @cf_jmp
+NUM st[49] 1
+PRINT st[49]     # 1
+
+NUM st[0] 0
+CMP st[0] st[40]
+JZ @cf_jz
+NUM st[49] 998
+LABEL @cf_jz
+PRINT st[49]     # 0 (JZ didn't change it)
+
+NUM st[0] 5
+CMP st[0] st[40]
+JNZ @cf_jnz
+NUM st[49] 997
+LABEL @cf_jnz
+PRINT st[49]     # 5 (JNZ didn't change it)
+
+NUM st[0] 5
+NUM st[1] 5
+CMP st[0] st[1]
+JE @cf_je
+NUM st[49] 996
+LABEL @cf_je
+PRINT st[49]     # 0 (JE jumped)
+
+NUM st[0] 3
+NUM st[1] 5
+CMP st[0] st[1]
+JNE @cf_jne
+NUM st[49] 995
+LABEL @cf_jne
+PRINT st[49]     # 3 (JNE jumped)
+
+NUM st[0] 3
+NUM st[1] 5
+CMP st[0] st[1]
+JL @cf_jl
+NUM st[49] 994
+LABEL @cf_jl
+PRINT st[49]     # 3 (JL jumped)
+
+NUM st[0] 3
+NUM st[1] 5
+CMP st[0] st[1]
+JLE @cf_jle
+NUM st[49] 993
+LABEL @cf_jle
+PRINT st[49]     # 3 (JLE jumped)
+
+NUM st[0] 7
+NUM st[1] 5
+CMP st[0] st[1]
+JG @cf_jg
+NUM st[49] 992
+LABEL @cf_jg
+PRINT st[49]     # 7 (JG jumped)
+
+NUM st[0] 7
+NUM st[1] 5
+CMP st[0] st[1]
+JGE @cf_jge
+NUM st[49] 991
+LABEL @cf_jge
+PRINT st[49]     # 7 (JGE jumped)
+
+CALL @cf_sub
+PRINT st[49]     # 42
+
+PRINT st[42]     # 2 = control flow done
+
+# === CALL/RET stress ===
+CALL @nest_a
+PRINT st[49]     # 999
+
+# === Final ===
+NUM st[60] 7777777
+PRINT st[60]
+HALT
+
+LABEL @is_prime
+NUM st[47] 2
+LABEL @ip_loop
+NUM st[48] 0
+ADD st[48] st[47]
+MUL st[48] st[47]
+CMP st[48] st[46]
+JG @ip_yes
+NUM st[48] 0
+ADD st[48] st[46]
+DIV st[48] st[47]
+MUL st[48] st[47]
+CMP st[48] st[46]
+JE @ip_no
+ADD st[47] st[41]
+JMP @ip_loop
+LABEL @ip_yes
+NUM st[49] 1
+RET
+LABEL @ip_no
+NUM st[49] 0
+RET
+
+LABEL @cf_sub
+NUM st[49] 42
+RET
+
+LABEL @nest_a
+CALL @nest_b
+RET
+LABEL @nest_b
+CALL @nest_c
+RET
+LABEL @nest_c
+CALL @nest_d
+RET
+LABEL @nest_d
+CALL @nest_e
+RET
+LABEL @nest_e
+CALL @nest_f
+RET
+LABEL @nest_f
+CALL @nest_g
+RET
+LABEL @nest_g
+CALL @nest_h
+RET
+LABEL @nest_h
+CALL @nest_i
+RET
+LABEL @nest_i
+CALL @nest_j
+RET
+LABEL @nest_j
+NUM st[49] 999
+RET

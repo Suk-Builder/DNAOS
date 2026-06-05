@@ -1,0 +1,147 @@
+# ll_mersenne_real.dna -- Lucas-Lehmer Test, pure DNAsm + GMP
+# REAL calculation. NO hardcoded results.
+# CMP is avoided on important tubes; st[10] used as comparison scratch only.
+
+NUM st[4] 2         ; const 2
+NUM st[5] 1         ; const 1
+NUM st[20] 0        ; total
+NUM st[21] 0        ; passed
+
+# === LL subroutine v3: CMP-free ===
+# Input: st[1] = p (preserved during m-computation, then becomes iter)
+# Output: st[0] = 1 if prime, 0 if composite
+# Uses: st[1],st[2],st[6],st[7], st[10] scratch
+LABEL @ll
+    ; check p==2: st[10] = p-2, JZ if zero
+    NUM st[10] 0
+    ADD st[10] st[1]
+    SUB st[10] st[4]
+    JZ @ll_yes
+
+    ; m = 2^p - 1
+    NUM st[2] 1       ; m=1
+    NUM st[6] 0       ; i=0
+LABEL @ll_pw
+    NUM st[10] 0
+    ADD st[10] st[6]
+    SUB st[10] st[1]
+    JGE @ll_pwd       ; i>=p?
+    MUL st[2] st[4]   ; m*=2
+    ADD st[6] st[5]   ; i++
+    JMP @ll_pw
+LABEL @ll_pwd
+    SUB st[2] st[5]   ; m=2^p-1
+
+    ; s=4, iter=p-2
+    NUM st[7] 4
+    NUM st[6] 0       ; i=0
+    SUB st[1] st[4]   ; st[1]=p-2 (= iter count)
+
+LABEL @ll_it
+    NUM st[10] 0
+    ADD st[10] st[6]
+    SUB st[10] st[1]
+    JGE @ll_ck         ; i>=iter?
+    MUL st[7] st[7]    ; s=s*s
+    SUB st[7] st[4]    ; s-=2
+    MOD st[7] st[2]    ; s%=m
+    ADD st[6] st[5]    ; i++
+    JMP @ll_it
+
+LABEL @ll_ck
+    NUM st[10] 0
+    ADD st[10] st[7]   ; st[10]=s
+    JZ @ll_yes         ; s==0?
+    NUM st[0] 0
+    RET
+LABEL @ll_yes
+    NUM st[0] 1
+    RET
+
+# === MAIN: 10 Mersenne exponents ===
+LABEL @main
+    NUM st[1] 2   ; CALL @ll ; ADD st[20] st[5] ; ADD st[21] st[0] ; NUM st[30] 2   ; PRINT st[30] ; PRINT st[0]
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[30] 2
+    PRINT st[30]
+    PRINT st[0]
+
+    NUM st[1] 3
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[31] 3
+    PRINT st[31]
+    PRINT st[0]
+
+    NUM st[1] 5
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[32] 5
+    PRINT st[32]
+    PRINT st[0]
+
+    NUM st[1] 7
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[33] 7
+    PRINT st[33]
+    PRINT st[0]
+
+    NUM st[1] 13
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[34] 13
+    PRINT st[34]
+    PRINT st[0]
+
+    NUM st[1] 17
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[35] 17
+    PRINT st[35]
+    PRINT st[0]
+
+    NUM st[1] 19
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[36] 19
+    PRINT st[36]
+    PRINT st[0]
+
+    NUM st[1] 31
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[37] 31
+    PRINT st[37]
+    PRINT st[0]
+
+    NUM st[1] 61
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[38] 61
+    PRINT st[38]
+    PRINT st[0]
+
+    NUM st[1] 127
+    CALL @ll
+    ADD st[20] st[5]
+    ADD st[21] st[0]
+    NUM st[39] 127
+    PRINT st[39]
+    PRINT st[0]
+
+    PRINT st[20]
+    PRINT st[21]
+    NUM st[40] 777
+    PRINT st[40]
+    HALT

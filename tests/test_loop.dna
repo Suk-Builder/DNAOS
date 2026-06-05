@@ -1,0 +1,72 @@
+; test_loop.dna -- DNAsm v3.2 循环/分支指令测试
+; 测试: LABEL/JMP/JZ/JNZ/JE/JNE/CMP/CALL/RET
+
+; === 测试1: 计数器循环 (1到5) ===
+NUM st[0] 1
+NUM st[1] 5
+
+LABEL count_loop
+PRINT st[0]
+NUM st[2] 1
+ADD st[0] st[2]
+CMP st[0] st[1]
+JNE count_loop
+
+; === 测试2: JZ跳转 (零检测) ===
+NUM st[10] 0
+CMP st[10] st[10]
+JZ zero_detected
+NUM st[11] 999
+LABEL zero_detected
+NUM st[11] 111
+PRINT st[11]
+
+; === 测试3: CALL/RET 子程序 ===
+NUM st[20] 3
+CALL double_it
+PRINT st[20]
+NUM st[20] 7
+CALL double_it
+PRINT st[20]
+
+; === 测试4: 嵌套循环 (3x3乘法) ===
+NUM st[30] 1
+LABEL outer_loop
+NUM st[32] 1
+LABEL inner_loop
+NUM st[33] 0
+ADD st[33] st[30]
+MUL st[33] st[32]
+PRINT st[33]
+NUM st[34] 1
+ADD st[32] st[34]
+NUM st[35] 4
+CMP st[32] st[35]
+JNE inner_loop
+NUM st[34] 1
+ADD st[30] st[34]
+NUM st[35] 4
+CMP st[30] st[35]
+JNE outer_loop
+
+; === 测试5: JNZ (非零跳转) ===
+NUM st[40] 5
+CMP st[40] st[40]
+JNZ not_zero
+NUM st[41] 999
+JMP nz_done
+LABEL not_zero
+NUM st[41] 555
+LABEL nz_done
+PRINT st[41]
+
+; === 最终 ===
+NUM st[50] 7777
+PRINT st[50]
+HALT
+
+; === 子程序: 把st[20]翻倍 ===
+LABEL double_it
+NUM st[25] 2
+MUL st[20] st[25]
+RET

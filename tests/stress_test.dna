@@ -1,0 +1,179 @@
+# ============================================================================
+# STRESS TEST — 全面验证 v3.3 + libbsem_math.dna 所有边界情况
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+
+# === TEST 1: MAD 边界 ===
+# MAD with zero operand
+NUM st[0] 5
+NUM st[1] 0
+NUM st[2] 10
+NUM st[49] 0
+MAD st[49] st[0] st[1]    # 5*0+0 = 0
+PRINT st[49]
+
+# MAD with all zeros
+NUM st[49] 0
+MAD st[49] st[40] st[40]  # 0*0+0 = 0
+PRINT st[49]
+
+# MAD large numbers
+NUM st[0] 100000
+NUM st[1] 100000
+NUM st[49] 0
+MAD st[49] st[0] st[1]    # 100000*100000 = 10^10
+PRINT st[49]
+
+# === TEST 2: CLAMP 边界 ===
+# CLAMP negative (SUB clamps to 0, but NUM can load negative)
+NUM st[49] -100
+CLAMP st[49] 0 1000       # should become 0
+PRINT st[49]
+
+# CLAMP overflow
+NUM st[49] 5000
+CLAMP st[49] 0 1000       # should become 1000
+PRINT st[49]
+
+# CLAMP normal
+NUM st[49] 500
+CLAMP st[49] 0 1000       # should stay 500
+PRINT st[49]
+
+# === TEST 3: REDUCE_MAX ===
+NUM st[50] 3
+NUM st[51] 9
+NUM st[52] 1
+NUM st[53] 7
+REDUCE_MAX st[49] st[50] 4
+PRINT st[49]              # should be 9
+
+# === TEST 4: DOT ===
+NUM st[50] 1
+NUM st[51] 2
+NUM st[52] 3
+NUM st[55] 4
+NUM st[56] 5
+NUM st[57] 6
+DOT st[49] st[50] st[55] st[52]  # 1*4+2*5+3*6=32, but st[52]=3 acts as what?
+PRINT st[49]
+
+# === TEST 5: GCD edge cases ===
+NUM st[50] 0
+NUM st[51] 0
+CALL @gcd_sub
+PRINT st[49]              # gcd(0,0) = 0
+
+NUM st[50] 0
+NUM st[51] 5
+CALL @gcd_sub
+PRINT st[49]              # gcd(0,5) = 5
+
+NUM st[50] 7
+NUM st[51] 0
+CALL @gcd_sub
+PRINT st[49]              # gcd(7,0) = 7
+
+# === TEST 6: pow_mod edge cases ===
+NUM st[50] 2
+NUM st[51] 0
+NUM st[52] 17
+CALL @pow_mod
+PRINT st[49]              # 2^0 mod 17 = 1
+
+NUM st[50] 2
+NUM st[51] 10
+NUM st[52] 1
+CALL @pow_mod
+PRINT st[49]              # 2^10 mod 1 = 0
+
+# === TEST 7: is_prime edge cases ===
+NUM st[46] 1
+CALL @is_prime
+PRINT st[49]              # 1 is not prime = 0
+
+NUM st[46] 2
+CALL @is_prime
+PRINT st[49]              # 2 is prime = 1
+
+NUM st[46] 4
+CALL @is_prime
+PRINT st[49]              # 4 is not prime = 0
+
+# === TEST 8: euler_phi edge cases ===
+NUM st[46] 1
+CALL @euler_phi
+PRINT st[49]              # phi(1) = 1
+
+NUM st[46] 2
+CALL @euler_phi
+PRINT st[49]              # phi(2) = 1
+
+NUM st[46] 100
+CALL @euler_phi
+PRINT st[49]              # phi(100) = 40
+
+# === TEST 9: mat_mul_2x2 ===
+# A = [1 0; 0 1] (identity), B = [1 2; 3 4]
+NUM st[50] 1
+NUM st[51] 0
+NUM st[52] 0
+NUM st[53] 1
+NUM st[54] 1
+NUM st[55] 2
+NUM st[56] 3
+NUM st[57] 4
+CALL @mat_mul_2x2
+# Result C should be [1 2; 3 4]
+PRINT st[58]
+PRINT st[59]
+PRINT st[60]
+PRINT st[61]
+
+# === TEST 10: vec_scale ===
+NUM st[50] 1
+NUM st[51] 2
+NUM st[52] 3
+NUM st[46] 3
+NUM st[47] 10
+CALL @vec_scale
+PRINT st[50]              # 10
+PRINT st[51]              # 20
+PRINT st[52]              # 30
+
+# === TEST 11: sigmoid_approx extremes ===
+NUM st[46] -5000
+CALL @sigmoid_approx
+PRINT st[49]              # should be near 0
+
+NUM st[46] 0
+CALL @sigmoid_approx
+PRINT st[49]              # should be 500
+
+NUM st[46] 5000
+CALL @sigmoid_approx
+PRINT st[49]              # should be near 1000
+
+# === TEST 12: mat_transpose_3x3 ===
+# M = [1 2 3; 4 5 6; 7 8 9]
+NUM st[50] 1
+NUM st[51] 2
+NUM st[52] 3
+NUM st[53] 4
+NUM st[54] 5
+NUM st[55] 6
+NUM st[56] 7
+NUM st[57] 8
+NUM st[58] 9
+CALL @mat_transpose_3x3
+# After transpose: [1 4 7; 2 5 8; 3 6 9]
+PRINT st[51]              # should be 4 (was M01=2, now M10=4)
+PRINT st[52]              # should be 7 (was M02=3, now M20=7)
+PRINT st[53]              # should be 2 (was M10=4, now M01=2)
+
+# Final
+NUM st[60] 7777777
+PRINT st[60]
+HALT

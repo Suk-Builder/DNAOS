@@ -1,0 +1,119 @@
+# ============================================================================
+# EDGE TEST — 边界和角落情况
+# 负数、0、1、MAX_INT、所有CMP+跳转组合
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+
+# === 1. 负数: NUM可以加载, 但SUB clamps ===
+NUM st[0] -100
+PRINT st[0]          # should print -100
+
+NUM st[0] 5
+NUM st[1] 10
+SUB st[0] st[1]     # 5-10 = 0 (clamped, not -5)
+PRINT st[0]
+
+# 负数 × 正数
+NUM st[0] -5
+NUM st[1] 3
+MUL st[0] st[1]     # -15
+PRINT st[0]
+
+# 负数 × 负数
+NUM st[0] -5
+NUM st[1] -3
+MUL st[0] st[1]     # 15
+PRINT st[0]
+
+# === 2. CLAMP with negative input ===
+NUM st[0] -500
+CLAMP st[0] 0 1000
+PRINT st[0]         # should be 0
+
+# CLAMP with negative min (weird but valid)
+NUM st[0] -500
+CLAMP st[0] -1000 1000
+PRINT st[0]         # -500 stays (within [-1000,1000])
+
+# === 3. CMP with equal values, all 4 flags ===
+NUM st[0] 5
+NUM st[1] 5
+CMP st[0] st[1]
+# flag_e=1 (equal), flag_z depends on st[0]
+# JE should jump, JLE should jump, JGE should jump
+# JL should NOT jump, JG should NOT jump
+JE @cmp_ok1
+NUM st[49] 991
+PRINT st[49]
+JMP @cmp2
+LABEL @cmp_ok1
+NUM st[49] 1
+PRINT st[49]
+
+LABEL @cmp2
+CMP st[0] st[1]
+JLE @cmp_ok2
+NUM st[49] 992
+PRINT st[49]
+JMP @cmp3
+LABEL @cmp_ok2
+NUM st[49] 2
+PRINT st[49]
+
+LABEL @cmp3
+CMP st[0] st[1]
+JGE @cmp_ok3
+NUM st[49] 993
+PRINT st[49]
+JMP @cmp4
+LABEL @cmp_ok3
+NUM st[49] 3
+PRINT st[49]
+
+# JL should NOT jump when equal
+LABEL @cmp4
+CMP st[0] st[1]
+JL @cmp_fail4
+NUM st[49] 4       # should execute (JL NOT taken)
+PRINT st[49]
+JMP @cmp5
+LABEL @cmp_fail4
+NUM st[49] 994
+PRINT st[49]
+
+# JG should NOT jump when equal
+LABEL @cmp5
+CMP st[0] st[1]
+JG @cmp_fail5
+NUM st[49] 5       # should execute (JG NOT taken)
+PRINT st[49]
+JMP @cmp_zero
+LABEL @cmp_fail5
+NUM st[49] 995
+PRINT st[49]
+
+# === 4. CMP with zero (flag_z check) ===
+LABEL @cmp_zero
+NUM st[0] 0
+NUM st[1] 5
+CMP st[0] st[1]    # st[0]=0, so flag_z=1
+JZ @jz_ok
+NUM st[49] 996
+PRINT st[49]
+JMP @final
+LABEL @jz_ok
+NUM st[49] 6
+PRINT st[49]
+
+# === 5. Large number division ===
+LABEL @final
+NUM st[0] 9223372036854775807  # LLONG_MAX
+NUM st[1] 2
+DIV st[0] st[1]
+PRINT st[0]        # 4611686018427387903
+
+NUM st[60] 7777777
+PRINT st[60]
+HALT

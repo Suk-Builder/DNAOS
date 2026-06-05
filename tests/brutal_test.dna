@@ -1,0 +1,280 @@
+# ============================================================================
+# BRUTAL TEST — 全方位压力测试 v3.3 ISA
+# 覆盖所有边界: 0, 1, 负数, 大数, 所有条件跳转, 嵌套CALL
+# ============================================================================
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+NUM st[43] 999999
+NUM st[44] 1000000
+
+# === TEST 1: 条件跳转全覆盖 ===
+# JE (equal)
+NUM st[0] 5
+NUM st[1] 5
+CMP st[0] st[1]
+JE @t1_pass
+NUM st[49] 999
+PRINT st[49]
+JMP @t2
+LABEL @t1_pass
+NUM st[49] 1
+PRINT st[49]
+
+# JNE (not equal)
+LABEL @t2
+NUM st[0] 5
+NUM st[1] 3
+CMP st[0] st[1]
+JNE @t2_pass
+NUM st[49] 998
+PRINT st[49]
+JMP @t3
+LABEL @t2_pass
+NUM st[49] 2
+PRINT st[49]
+
+# JL (less)
+LABEL @t3
+NUM st[0] 3
+NUM st[1] 5
+CMP st[0] st[1]
+JL @t3_pass
+NUM st[49] 997
+PRINT st[49]
+JMP @t4
+LABEL @t3_pass
+NUM st[49] 3
+PRINT st[49]
+
+# JG (greater)
+LABEL @t4
+NUM st[0] 7
+NUM st[1] 5
+CMP st[0] st[1]
+JG @t4_pass
+NUM st[49] 996
+PRINT st[49]
+JMP @t5
+LABEL @t4_pass
+NUM st[49] 4
+PRINT st[49]
+
+# JLE (less or equal - equal case)
+LABEL @t5
+NUM st[0] 5
+NUM st[1] 5
+CMP st[0] st[1]
+JLE @t5_pass
+NUM st[49] 995
+PRINT st[49]
+JMP @t6
+LABEL @t5_pass
+NUM st[49] 5
+PRINT st[49]
+
+# JGE (greater or equal - greater case)
+LABEL @t6
+NUM st[0] 8
+NUM st[1] 5
+CMP st[0] st[1]
+JGE @t6_pass
+NUM st[49] 994
+PRINT st[49]
+JMP @t7
+LABEL @t6_pass
+NUM st[49] 6
+PRINT st[49]
+
+# JZ (zero)
+LABEL @t7
+NUM st[0] 0
+CMP st[0] st[40]
+JZ @t7_pass
+NUM st[49] 993
+PRINT st[49]
+JMP @t8
+LABEL @t7_pass
+NUM st[49] 7
+PRINT st[49]
+
+# JNZ (non-zero)
+LABEL @t8
+NUM st[0] 42
+CMP st[0] st[40]
+JNZ @t8_pass
+NUM st[49] 992
+PRINT st[49]
+JMP @t9
+LABEL @t8_pass
+NUM st[49] 8
+PRINT st[49]
+
+# === TEST 9: 算术运算边界 ===
+LABEL @t9
+# ADD: 0 + 0
+NUM st[0] 0
+ADD st[0] st[40]
+PRINT st[0]
+
+# SUB: 5 - 3 = 2
+NUM st[0] 5
+NUM st[1] 3
+SUB st[0] st[1]
+PRINT st[0]
+
+# SUB clamp: 3 - 5 = 0 (not negative!)
+NUM st[0] 3
+NUM st[1] 5
+SUB st[0] st[1]
+PRINT st[0]
+
+# MUL: 0 * anything = 0
+NUM st[0] 0
+MUL st[0] st[43]
+PRINT st[0]
+
+# MUL large: 100000 * 100000 = 10^10
+NUM st[0] 100000
+MUL st[0] st[0]
+PRINT st[0]
+
+# DIV: 7 / 3 = 2
+NUM st[0] 7
+NUM st[1] 3
+DIV st[0] st[1]
+PRINT st[0]
+
+# DIV by zero: 5 / 0 = 0 (check behavior)
+NUM st[0] 5
+NUM st[1] 0
+DIV st[0] st[1]
+PRINT st[0]
+
+# POW: 2^10 = 1024
+NUM st[0] 2
+POW st[0] 10
+PRINT st[0]
+
+# POW: 10^0 = 1
+NUM st[0] 10
+POW st[0] 0
+PRINT st[0]
+
+# SQRT: 144 = 12
+NUM st[0] 144
+SQRT st[0]
+PRINT st[0]
+
+# SQRT: 0 = 0
+NUM st[0] 0
+SQRT st[0]
+PRINT st[0]
+
+# GCD
+NUM st[0] 48
+NUM st[1] 18
+GCD st[0] st[1]
+PRINT st[0]
+
+# === TEST 10: FIB/FACT边界 ===
+FIB st[49] 0
+PRINT st[49]
+
+FIB st[49] 1
+PRINT st[49]
+
+FIB st[49] 20
+PRINT st[49]
+
+FACT st[49] 0
+PRINT st[49]
+
+FACT st[49] 1
+PRINT st[49]
+
+FACT st[49] 10
+PRINT st[49]
+
+# === TEST 11: MAD/FMA ===
+NUM st[0] 5
+NUM st[1] 3
+NUM st[2] 2
+NUM st[49] 10
+MAD st[49] st[0] st[1]
+PRINT st[49]
+
+NUM st[49] 10
+FMA st[49] st[0] st[1]
+PRINT st[49]
+
+# MAD with 0
+NUM st[49] 0
+MAD st[49] st[40] st[40]
+PRINT st[49]
+
+# === TEST 12: LERP ===
+NUM st[0] 100
+NUM st[1] 200
+NUM st[2] 500  # t=500 (0.5)
+LERP st[49] st[0] st[1] st[2]
+PRINT st[49]
+
+# === TEST 13: CLAMP ===
+NUM st[49] -100
+CLAMP st[49] 0 1000
+PRINT st[49]
+
+NUM st[49] 5000
+CLAMP st[49] 0 1000
+PRINT st[49]
+
+NUM st[49] 500
+CLAMP st[49] 0 1000
+PRINT st[49]
+
+# === TEST 14: REDUCE_SUM/MAX ===
+NUM st[50] 3
+NUM st[51] 9
+NUM st[52] 1
+NUM st[53] 7
+REDUCE_SUM st[49] st[50] 4
+PRINT st[49]
+REDUCE_MAX st[49] st[50] 4
+PRINT st[49]
+
+# === TEST 15: DOT ===
+NUM st[50] 1
+NUM st[51] 2
+NUM st[52] 3
+NUM st[55] 4
+NUM st[56] 5
+NUM st[57] 6
+DOT st[49] st[50] st[55] 3
+PRINT st[49]
+
+# === TEST 16: CALL/RET嵌套深度 ===
+CALL @nest1
+PRINT st[49]
+JMP @final
+
+LABEL @nest1
+CALL @nest2
+RET
+
+LABEL @nest2
+CALL @nest3
+RET
+
+LABEL @nest3
+CALL @nest4
+RET
+
+LABEL @nest4
+NUM st[49] 42
+RET
+
+LABEL @final
+NUM st[60] 7777777
+PRINT st[60]
+HALT
