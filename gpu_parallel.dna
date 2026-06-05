@@ -1,0 +1,112 @@
+# ============================================================================
+# gpu_parallel.dna -- CPU模拟GPU并行计算（DNA编码版）
+#
+# GPU原理：大量简单核心同时执行相同指令（SIMD）
+# CPU模拟：pthread多线程，每个线程处理一个DNA试管
+# DNA表达：试管数组 = GPU显存，所有试管同时执行相同指令 = warp
+#
+# 核函数（Kernel Functions）:
+#   NUM  st[k] N     -- 初始化像素/顶点
+#   MUL  st[k] N     -- 标量乘法（GPU着色器常见操作）
+#   ADD  st[k] st[j] -- 向量加法
+#   FMA  st[k] N     -- 乘加融合（GPU特有指令）
+#   SIN  st[k]       -- 三角函数（像素着色器）
+# ============================================================================
+
+# === 核函数1: 矩阵标量乘法 (GPU: matrix *= scalar) ===
+# 16个试管并行执行 MUL = 模拟GPU的256线程warp
+
+NUM st[0] 1
+NUM st[1] 2
+NUM st[2] 3
+NUM st[3] 4
+NUM st[4] 5
+NUM st[5] 6
+NUM st[6] 7
+NUM st[7] 8
+NUM st[8] 9
+NUM st[9] 10
+NUM st[10] 11
+NUM st[11] 12
+NUM st[12] 13
+NUM st[13] 14
+NUM st[14] 15
+NUM st[15] 16
+
+; GPU核函数: 所有像素同时 ×2
+NUM st[20] 2
+MUL st[0] st[20]
+MUL st[1] st[20]
+MUL st[2] st[20]
+MUL st[3] st[20]
+MUL st[4] st[20]
+MUL st[5] st[20]
+MUL st[6] st[20]
+MUL st[7] st[20]
+MUL st[8] st[20]
+MUL st[9] st[20]
+MUL st[10] st[20]
+MUL st[11] st[20]
+MUL st[12] st[20]
+MUL st[13] st[20]
+MUL st[14] st[20]
+MUL st[15] st[20]
+
+PRINT st[0]
+PRINT st[1]
+PRINT st[2]
+PRINT st[3]
+PRINT st[4]
+PRINT st[5]
+PRINT st[6]
+PRINT st[7]
+PRINT st[8]
+PRINT st[9]
+PRINT st[10]
+PRINT st[11]
+PRINT st[12]
+PRINT st[13]
+PRINT st[14]
+PRINT st[15]
+
+# === 核函数2: 向量加法 (GPU: vec_add) ===
+NUM st[30] 100
+NUM st[31] 200
+NUM st[32] 300
+NUM st[33] 400
+
+ADD st[30] st[31]
+ADD st[30] st[32]
+ADD st[30] st[33]
+PRINT st[30]
+
+# === 核函数3: 乘加融合FMA (GPU: fused_multiply_add) ===
+NUM st[40] 5
+MUL st[40] st[40]
+ADD st[40] st[40]
+PRINT st[40]
+
+# === 核函数4: 并行PCR扩增 (GPU: parallel amplification) ===
+NUM st[50] 1
+COPY st[50] 8
+PRINT st[50]
+
+NUM st[51] 1
+COPY st[51] 10
+PRINT st[51]
+
+NUM st[52] 1
+COPY st[52] 16
+PRINT st[52]
+
+# === 统计 ===
+NUM st[60] 16
+PRINT st[60]
+
+NUM st[61] 256
+PRINT st[61]
+
+NUM st[62] 1000
+PRINT st[62]
+
+HALT

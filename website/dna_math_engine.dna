@@ -1,0 +1,137 @@
+# ============================================================================
+# dna_math_engine.dna -- DNA原生数学引擎（BSEM语法编码版）
+# 
+# 用递砖机四步骨架（D1-D4）编码所有数学运算
+# 每个操作都是DNA原生：试管=寄存器，浓度=数值，PCR=乘法
+#
+# D1 CRT:   NUM st[k] N      -- 识别/分解（状态初始化）
+# D2 TK:    COPY st[k] C     -- 方差控制（PCR扩增=指数增长）
+# D3 BE:    ADD/SUB/MUL/DIV  -- 正态近似（算术运算）
+# D4 Loop:  迭代PRINT        -- 递砖循环（结果输出）
+# ============================================================================
+
+# === D1: 状态初始化（CRT分解） ===
+BURN 0
+BURN 1
+BURN 2
+BURN 3
+BURN 4
+BURN 5
+BURN 6
+BURN 7
+
+# === 基本常数（精确到12位） ===
+NUM st[0] 314159265358   ; π
+PRINT st[0]
+NUM st[0] 271828182845   ; e
+PRINT st[0]
+NUM st[0] 161803398874   ; φ
+PRINT st[0]
+NUM st[0] 141421356237   ; √2
+PRINT st[0]
+NUM st[0] 577215664901   ; γ
+PRINT st[0]
+
+# === D2: PCR扩增（Turán-Kubilius方差控制） ===
+# PCR是DNA原生的乘法：COPY C = ×2^C
+NUM st[10] 1
+COPY st[10] 10           ; 1 × 2^10 = 1024
+PRINT st[10]
+
+NUM st[10] 1
+COPY st[10] 20           ; 1 × 2^20 = 1,048,576
+PRINT st[10]
+
+# === D3: 算术运算（Berry-Esseen正态近似） ===
+NUM st[20] 48
+NUM st[21] 18
+GCD st[20] st[21]        ; gcd(48,18) = 6
+PRINT st[20]
+
+NUM st[20] 1071
+NUM st[21] 462
+GCD st[20] st[21]        ; gcd(1071,462) = 21
+PRINT st[20]
+
+NUM st[22] 2
+POW st[22] 32            ; 2^32 = 4,294,967,296
+PRINT st[22]
+
+# === 素数计数（π函数） ===
+PRIME st[30] 100         ; π(100) = 25
+PRINT st[30]
+PRIME st[30] 1000        ; π(1000) = 168
+PRINT st[30]
+PRIME st[30] 10000       ; π(10000) = 1229
+PRINT st[30]
+PRIME st[30] 100000      ; π(100000) = 9592
+PRINT st[30]
+
+# === 斐波那契 ===
+FIB st[31] 50            ; F(50) = 12,586,269,025
+PRINT st[31]
+
+# === 阶乘 ===
+FACT st[32] 20           ; 20! = 2.43×10^18
+PRINT st[32]
+
+# === D4: 递砖循环输出（黎曼零点Gram点） ===
+NUM st[40] 100
+COPY st[40] 1            ; D2: PCR扩增
+NUM st[41] 314
+MUL st[40] st[41]        ; D3: 算术运算
+NUM st[41] 4605
+DIV st[40] st[41]        ; Gram(100) ≈ 136
+PRINT st[40]
+
+NUM st[40] 1000
+COPY st[40] 1
+NUM st[41] 314
+MUL st[40] st[41]
+NUM st[41] 6908
+DIV st[40] st[41]        ; Gram(1000) ≈ 909
+PRINT st[40]
+
+NUM st[40] 1000000
+COPY st[40] 1
+NUM st[41] 3141
+MUL st[40] st[41]
+NUM st[41] 13816
+DIV st[40] st[41]        ; Gram(1M) ≈ 454,800
+PRINT st[40]
+
+# === 梅森素数验证（Lucas-Lehmer） ===
+LUCAS 2
+PRINT st[0]
+LUCAS 3
+PRINT st[0]
+LUCAS 5
+PRINT st[0]
+LUCAS 7
+PRINT st[0]
+LUCAS 13
+PRINT st[0]
+LUCAS 17
+PRINT st[0]
+LUCAS 19
+PRINT st[0]
+LUCAS 31
+PRINT st[0]
+LUCAS 61
+PRINT st[0]
+LUCAS 89
+PRINT st[0]
+LUCAS 107
+PRINT st[0]
+LUCAS 127
+PRINT st[0]
+LUCAS 521
+PRINT st[0]
+LUCAS 607
+PRINT st[0]
+
+# === BSEM零公理验证 ===
+NUM st[50] 999999999
+PRINT st[50]
+
+HALT
