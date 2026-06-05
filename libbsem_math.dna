@@ -1,0 +1,2061 @@
+# ============================================================================
+# libbsem_math.dna -- BSEM Pure DNAsm Mathematics Library v3.0
+# DNAsm v3.3 ISA | ZERO external dependencies
+# 
+# MODULES:
+#   1. Multi-precision Lucas-Lehmer (M_127 verified)
+#   2. Number Theory (pow_mod, sieve, euler_phi, is_prime, gcd_sub, crt)
+#   3. Linear Algebra (vec_add, vec_scale, vec_dot, vec_l2norm,
+#                      mat_vec_mul_3x3, mat_mul_2x2, mat_transpose_3x3)
+#   4. Tensor/NN (relu, sigmoid_approx, nn_forward_3_2_1,
+#                 nn_xor_demo, softmax_3, max_pool_1d)
+#
+# TUBE MAP:
+#   st[0-6]:   A (multi-precision, 7 digits, BASE=10^6)
+#   st[7-13]:  B
+#   st[14-20]: C (result/square)
+#   st[21-27]: M (modulus)
+#   st[28-34]: T (temp)
+#   st[35]:    carry/borrow
+#   st[36-39]: temp single-digit
+#   st[40]:    CONST 0
+#   st[41]:    CONST 1
+#   st[42]:    CONST 2
+#   st[43]:    CONST 999999
+#   st[44]:    CONST 1000000 (BASE)
+#   st[45]:    CONST 7 (N_DIGITS)
+#   st[46]:    input parameter
+#   st[47-48]: loop counters
+#   st[49]:    return value
+#   st[50-63]: workspace (vectors, matrices, NN)
+# ============================================================================
+
+# === CONSTANTS ===
+NUM st[40] 0
+NUM st[41] 1
+NUM st[42] 2
+NUM st[43] 999999
+NUM st[44] 1000000
+NUM st[45] 7
+
+# ============================================================================
+# MAIN TEST PROGRAM (must be FIRST -- DNAsm executes from line 1)
+# ============================================================================
+
+# --- Section 1: Mersenne Primes (single-precision) ---
+NUM st[46] 3
+CALL @lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 5
+CALL @lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 7
+CALL @lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 13
+CALL @lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 17
+CALL @lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 19
+CALL @lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 23
+CALL @lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 29
+CALL @lucas_lehmer
+PRINT st[49]
+
+# --- Section 2: Mersenne Primes (multi-precision) ---
+NUM st[46] 61
+CALL @mp_lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 89
+CALL @mp_lucas_lehmer
+PRINT st[49]
+
+NUM st[46] 127
+CALL @mp_lucas_lehmer
+PRINT st[49]
+
+# --- Section 3: Number Theory ---
+# pow_mod: 3^100 mod 17 = ?
+NUM st[50] 3
+NUM st[51] 100
+NUM st[52] 17
+CALL @pow_mod
+PRINT st[49]
+
+# sieve: primes up to 30
+NUM st[46] 30
+CALL @sieve
+PRINT st[49]
+
+# euler_phi: phi(30) = 8
+NUM st[46] 30
+CALL @euler_phi
+PRINT st[49]
+
+# is_prime: 97
+NUM st[46] 97
+CALL @is_prime
+PRINT st[49]
+
+# gcd_sub: gcd(48, 18) = 6
+NUM st[50] 48
+NUM st[51] 18
+CALL @gcd_sub
+PRINT st[49]
+
+# crt: x ≡ 2 (mod 3), x ≡ 3 (mod 5) => x = 8
+NUM st[50] 2
+NUM st[51] 3
+NUM st[52] 3
+NUM st[53] 5
+CALL @crt
+PRINT st[49]
+
+# --- Section 4: Linear Algebra ---
+# vec_dot: [1,2,3]·[4,5,6] = 4+10+18 = 32
+NUM st[50] 1
+NUM st[51] 2
+NUM st[52] 3
+NUM st[55] 4
+NUM st[56] 5
+NUM st[57] 6
+NUM st[46] 3
+CALL @vec_dot
+PRINT st[49]
+
+# mat_vec_mul_3x3: I*[1,2,3] = [1,2,3]
+# Identity matrix setup:
+NUM st[50] 1  # M00=1
+NUM st[51] 0  # M01=0
+NUM st[52] 0  # M02=0
+NUM st[53] 0  # M10=0
+NUM st[54] 1  # M11=1
+NUM st[55] 0  # M12=0
+NUM st[56] 0  # M20=0
+NUM st[57] 0  # M21=0
+NUM st[58] 1  # M22=1
+# Input vector x=[1,2,3]
+NUM st[59] 1  # x0=1
+NUM st[60] 2  # x1=2
+NUM st[61] 3  # x2=3
+CALL @mat_vec_mul_3x3
+PRINT st[59]
+PRINT st[60]
+PRINT st[61]
+
+# --- Section 5: Neural Network (XOR demo) ---
+CALL @nn_xor_demo
+
+# --- Section 6: Math demos ---
+FIB st[51] 20
+PRINT st[51]
+
+FACT st[51] 10
+PRINT st[51]
+
+NUM st[50] 144
+SQRT st[50]
+PRINT st[50]
+
+NUM st[50] 2
+POW st[50] 10
+PRINT st[50]
+
+NUM st[50] 48
+NUM st[51] 18
+GCD st[50] st[51]
+PRINT st[50]
+
+# Final marker
+NUM st[60] 7777777
+PRINT st[60]
+
+HALT
+
+
+# ============================================================================
+# PART A: SINGLE-PRECISION LUCAS-LEHMER (p <= 30)
+# Input: st[46] = p  |  Output: st[49] = 1(PRIME) / 0(COMPOSITE)
+# ============================================================================
+
+LABEL @lucas_lehmer
+NUM st[1] 1
+NUM st[47] 0
+LABEL @ll_sp_mp
+CMP st[47] st[46]
+JE @ll_sp_mp_done
+MUL st[1] st[42]
+ADD st[47] st[41]
+JMP @ll_sp_mp
+LABEL @ll_sp_mp_done
+SUB st[1] st[41]
+
+NUM st[0] 4
+NUM st[48] 0
+ADD st[48] st[46]
+SUB st[48] st[42]
+
+NUM st[47] 0
+LABEL @ll_sp_loop
+CMP st[47] st[48]
+JE @ll_sp_check
+
+MUL st[0] st[0]
+SUB st[0] st[42]
+
+NUM st[50] 0
+ADD st[50] st[0]
+DIV st[50] st[1]
+NUM st[52] 0
+ADD st[52] st[50]
+MUL st[52] st[1]
+SUB st[0] st[52]
+
+ADD st[47] st[41]
+JMP @ll_sp_loop
+
+LABEL @ll_sp_check
+CMP st[0] st[40]
+JE @ll_sp_prime
+NUM st[49] 0
+RET
+LABEL @ll_sp_prime
+NUM st[49] 1
+RET
+
+# ============================================================================
+# PART B: MULTI-PRECISION LUCAS-LEHMER (p up to 127)
+# Uses 7-digit BASE=10^6 integers. Requires v3.3 JL/JLE/JG/JGE.
+# ============================================================================
+
+LABEL @big_zero_A
+NUM st[0] 0
+NUM st[1] 0
+NUM st[2] 0
+NUM st[3] 0
+NUM st[4] 0
+NUM st[5] 0
+NUM st[6] 0
+RET
+
+LABEL @big_zero_B
+NUM st[7] 0
+NUM st[8] 0
+NUM st[9] 0
+NUM st[10] 0
+NUM st[11] 0
+NUM st[12] 0
+NUM st[13] 0
+RET
+
+LABEL @big_zero_C
+NUM st[14] 0
+NUM st[15] 0
+NUM st[16] 0
+NUM st[17] 0
+NUM st[18] 0
+NUM st[19] 0
+NUM st[20] 0
+RET
+
+LABEL @big_zero_M
+NUM st[21] 0
+NUM st[22] 0
+NUM st[23] 0
+NUM st[24] 0
+NUM st[25] 0
+NUM st[26] 0
+NUM st[27] 0
+RET
+
+LABEL @big_cmp_A_M
+CMP st[6] st[27]
+JE @bc_d5
+JG @bc_a_greater
+JMP @bc_m_greater
+LABEL @bc_d5
+CMP st[5] st[26]
+JE @bc_d4
+JG @bc_a_greater
+JMP @bc_m_greater
+LABEL @bc_d4
+CMP st[4] st[25]
+JE @bc_d3
+JG @bc_a_greater
+JMP @bc_m_greater
+LABEL @bc_d3
+CMP st[3] st[24]
+JE @bc_d2
+JG @bc_a_greater
+JMP @bc_m_greater
+LABEL @bc_d2
+CMP st[2] st[23]
+JE @bc_d1
+JG @bc_a_greater
+JMP @bc_m_greater
+LABEL @bc_d1
+CMP st[1] st[22]
+JE @bc_d0
+JG @bc_a_greater
+JMP @bc_m_greater
+LABEL @bc_d0
+CMP st[0] st[21]
+JE @bc_equal
+JG @bc_a_greater
+JMP @bc_m_greater
+LABEL @bc_equal
+NUM st[49] 0
+RET
+LABEL @bc_a_greater
+NUM st[49] 1
+RET
+LABEL @bc_m_greater
+NUM st[49] -1
+RET
+
+LABEL @big_sub_A_M
+NUM st[36] 0
+SUB st[0] st[21]
+SUB st[0] st[36]
+CMP st[0] st[40]
+JGE @bs_d0_ok
+ADD st[0] st[44]
+NUM st[36] 1
+JMP @bs_d1
+LABEL @bs_d0_ok
+NUM st[36] 0
+LABEL @bs_d1
+SUB st[1] st[22]
+SUB st[1] st[36]
+CMP st[1] st[40]
+JGE @bs_d1_ok
+ADD st[1] st[44]
+NUM st[36] 1
+JMP @bs_d2
+LABEL @bs_d1_ok
+NUM st[36] 0
+LABEL @bs_d2
+SUB st[2] st[23]
+SUB st[2] st[36]
+CMP st[2] st[40]
+JGE @bs_d2_ok
+ADD st[2] st[44]
+NUM st[36] 1
+JMP @bs_d3
+LABEL @bs_d2_ok
+NUM st[36] 0
+LABEL @bs_d3
+SUB st[3] st[24]
+SUB st[3] st[36]
+CMP st[3] st[40]
+JGE @bs_d3_ok
+ADD st[3] st[44]
+NUM st[36] 1
+JMP @bs_d4
+LABEL @bs_d3_ok
+NUM st[36] 0
+LABEL @bs_d4
+SUB st[4] st[25]
+SUB st[4] st[36]
+CMP st[4] st[40]
+JGE @bs_d4_ok
+ADD st[4] st[44]
+NUM st[36] 1
+JMP @bs_d5
+LABEL @bs_d4_ok
+NUM st[36] 0
+LABEL @bs_d5
+SUB st[5] st[26]
+SUB st[5] st[36]
+CMP st[5] st[40]
+JGE @bs_d5_ok
+ADD st[5] st[44]
+NUM st[36] 1
+JMP @bs_d6
+LABEL @bs_d5_ok
+NUM st[36] 0
+LABEL @bs_d6
+SUB st[6] st[27]
+SUB st[6] st[36]
+CMP st[6] st[40]
+JGE @bs_d6_ok
+ADD st[6] st[44]
+NUM st[36] 1
+RET
+LABEL @bs_d6_ok
+NUM st[36] 0
+RET
+
+LABEL @big_is_zero_A
+CMP st[0] st[40]
+JNE @biza_no
+CMP st[1] st[40]
+JNE @biza_no
+CMP st[2] st[40]
+JNE @biza_no
+CMP st[3] st[40]
+JNE @biza_no
+CMP st[4] st[40]
+JNE @biza_no
+CMP st[5] st[40]
+JNE @biza_no
+CMP st[6] st[40]
+JNE @biza_no
+NUM st[49] 1
+RET
+LABEL @biza_no
+NUM st[49] 0
+RET
+
+LABEL @big_mod_A_M
+CALL @big_cmp_A_M
+CMP st[49] st[40]
+JLE @bma_done
+CALL @big_sub_A_M
+JMP @big_mod_A_M
+LABEL @bma_done
+RET
+
+LABEL @mp_compute_M
+CALL @big_zero_M
+NUM st[21] 1
+NUM st[47] 0
+LABEL @mpcm_loop
+CMP st[47] st[46]
+JE @mpcm_sub1
+NUM st[35] 0
+MUL st[21] st[42]
+ADD st[21] st[35]
+CMP st[21] st[44]
+JL @mpcm_d0_nc
+SUB st[21] st[44]
+NUM st[35] 1
+JMP @mpcm_d1
+LABEL @mpcm_d0_nc
+NUM st[35] 0
+LABEL @mpcm_d1
+MUL st[22] st[42]
+ADD st[22] st[35]
+CMP st[22] st[44]
+JL @mpcm_d1_nc
+SUB st[22] st[44]
+NUM st[35] 1
+JMP @mpcm_d2
+LABEL @mpcm_d1_nc
+NUM st[35] 0
+LABEL @mpcm_d2
+MUL st[23] st[42]
+ADD st[23] st[35]
+CMP st[23] st[44]
+JL @mpcm_d2_nc
+SUB st[23] st[44]
+NUM st[35] 1
+JMP @mpcm_d3
+LABEL @mpcm_d2_nc
+NUM st[35] 0
+LABEL @mpcm_d3
+MUL st[24] st[42]
+ADD st[24] st[35]
+CMP st[24] st[44]
+JL @mpcm_d3_nc
+SUB st[24] st[44]
+NUM st[35] 1
+JMP @mpcm_d4
+LABEL @mpcm_d3_nc
+NUM st[35] 0
+LABEL @mpcm_d4
+MUL st[25] st[42]
+ADD st[25] st[35]
+CMP st[25] st[44]
+JL @mpcm_d4_nc
+SUB st[25] st[44]
+NUM st[35] 1
+JMP @mpcm_d5
+LABEL @mpcm_d4_nc
+NUM st[35] 0
+LABEL @mpcm_d5
+MUL st[26] st[42]
+ADD st[26] st[35]
+CMP st[26] st[44]
+JL @mpcm_d5_nc
+SUB st[26] st[44]
+NUM st[35] 1
+JMP @mpcm_d6
+LABEL @mpcm_d5_nc
+NUM st[35] 0
+LABEL @mpcm_d6
+MUL st[27] st[42]
+ADD st[27] st[35]
+CMP st[27] st[44]
+JL @mpcm_d6_nc
+SUB st[27] st[44]
+NUM st[35] 1
+JMP @mpcm_next
+LABEL @mpcm_d6_nc
+NUM st[35] 0
+LABEL @mpcm_next
+ADD st[47] st[41]
+JMP @mpcm_loop
+LABEL @mpcm_sub1
+SUB st[21] st[41]
+CMP st[21] st[40]
+JGE @mpcm_ret
+ADD st[21] st[44]
+SUB st[22] st[41]
+CMP st[22] st[40]
+JGE @mpcm_ret
+ADD st[22] st[44]
+SUB st[23] st[41]
+CMP st[23] st[40]
+JGE @mpcm_ret
+ADD st[23] st[44]
+SUB st[24] st[41]
+CMP st[24] st[40]
+JGE @mpcm_ret
+ADD st[24] st[44]
+SUB st[25] st[41]
+CMP st[25] st[40]
+JGE @mpcm_ret
+ADD st[25] st[44]
+SUB st[26] st[41]
+CMP st[26] st[40]
+JGE @mpcm_ret
+ADD st[26] st[44]
+SUB st[27] st[41]
+LABEL @mpcm_ret
+RET
+
+LABEL @mp_lucas_lehmer
+CALL @mp_compute_M
+CALL @big_zero_A
+NUM st[0] 4
+NUM st[48] 0
+ADD st[48] st[46]
+SUB st[48] st[42]
+NUM st[47] 0
+LABEL @mp_ll_loop
+CMP st[47] st[48]
+JE @mp_ll_check
+CALL @big_zero_C
+NUM st[37] 0
+ADD st[37] st[0]
+MUL st[37] st[0]
+ADD st[14] st[37]
+CMP st[14] st[44]
+JL @mp_sq_0
+SUB st[14] st[44]
+NUM st[35] 1
+ADD st[15] st[35]
+LABEL @mp_sq_0
+NUM st[37] 0
+ADD st[37] st[0]
+MUL st[37] st[1]
+MUL st[37] st[42]
+ADD st[15] st[37]
+CMP st[15] st[44]
+JL @mp_sq_1
+SUB st[15] st[44]
+NUM st[35] 1
+ADD st[16] st[35]
+LABEL @mp_sq_1
+NUM st[37] 0
+ADD st[37] st[0]
+MUL st[37] st[2]
+MUL st[37] st[42]
+ADD st[16] st[37]
+NUM st[37] 0
+ADD st[37] st[1]
+MUL st[37] st[1]
+ADD st[16] st[37]
+CMP st[16] st[44]
+JL @mp_sq_2
+SUB st[16] st[44]
+NUM st[35] 1
+ADD st[17] st[35]
+LABEL @mp_sq_2
+CMP st[16] st[44]
+JL @mp_sq_c3
+SUB st[16] st[44]
+NUM st[35] 1
+ADD st[17] st[35]
+LABEL @mp_sq_c3
+CMP st[17] st[44]
+JL @mp_sq_c4
+SUB st[17] st[44]
+NUM st[35] 1
+ADD st[18] st[35]
+LABEL @mp_sq_c4
+CMP st[18] st[44]
+JL @mp_sq_c5
+SUB st[18] st[44]
+NUM st[35] 1
+ADD st[19] st[35]
+LABEL @mp_sq_c5
+CMP st[19] st[44]
+JL @mp_sq_c6
+SUB st[19] st[44]
+NUM st[35] 1
+ADD st[20] st[35]
+LABEL @mp_sq_c6
+SUB st[14] st[42]
+CMP st[14] st[40]
+JGE @mp_sub2_ok
+ADD st[14] st[44]
+SUB st[15] st[41]
+CMP st[15] st[40]
+JGE @mp_sub2_ok
+ADD st[15] st[44]
+SUB st[16] st[41]
+CMP st[16] st[40]
+JGE @mp_sub2_ok
+ADD st[16] st[44]
+SUB st[17] st[41]
+CMP st[17] st[40]
+JGE @mp_sub2_ok
+ADD st[17] st[44]
+SUB st[18] st[41]
+CMP st[18] st[40]
+JGE @mp_sub2_ok
+ADD st[18] st[44]
+SUB st[19] st[41]
+CMP st[19] st[40]
+JGE @mp_sub2_ok
+ADD st[19] st[44]
+SUB st[20] st[41]
+LABEL @mp_sub2_ok
+NUM st[0] 0
+ADD st[0] st[14]
+NUM st[1] 0
+ADD st[1] st[15]
+NUM st[2] 0
+ADD st[2] st[16]
+NUM st[3] 0
+ADD st[3] st[17]
+NUM st[4] 0
+ADD st[4] st[18]
+NUM st[5] 0
+ADD st[5] st[19]
+NUM st[6] 0
+ADD st[6] st[20]
+CALL @big_mod_A_M
+ADD st[47] st[41]
+JMP @mp_ll_loop
+LABEL @mp_ll_check
+CALL @big_is_zero_A
+RET
+
+
+# ============================================================================
+# PART C: NUMBER THEORY MODULE
+# ============================================================================
+
+# ============================================================
+# DNAsm v3.3 Number Theory Module
+# Pure subroutines -- no main program, no HALT, no constants block.
+#
+# Subroutines:
+#   @pow_mod   - Fast modular exponentiation (binary / square-and-multiply)
+#   @sieve     - Enumerate primes <= n via trial division
+#   @euler_phi - Euler's totient function phi(n)
+#   @is_prime  - Primality test by trial division up to sqrt(n)
+#   @gcd_sub   - GCD(a,b) by repeated subtraction
+#   @crt       - Chinese Remainder Theorem (2 congruences, brute-force search)
+#
+# Global tube reservation (DO NOT conflict):
+#   st[0-6]:   Number A (7-digit multi-precision, BASE=10^6)
+#   st[7-13]:  Number B
+#   st[14-20]: Number C (result)
+#   st[21-27]: Number M (modulus)
+#   st[28-34]: Number T (temp)
+#   st[35]:    carry/borrow flag
+#   st[36-39]: single-digit temp
+#   st[40]:    CONST 0
+#   st[41]:    CONST 1
+#   st[42]:    CONST 2
+#   st[43]:    CONST 999999
+#   st[44]:    CONST 1000000
+#   st[45]:    CONST 7
+#   st[46]:    input n / parameter
+#   st[47-48]: loop counters
+#   st[49]:    return value
+#   st[50-63]: module workspace
+#
+# ISA v3.3 rules observed:
+#   - SUB clamps to 0 (no negative numbers)
+#   - No indirect addressing: all tube indices are compile-time literals
+#   - No immediate SUB/MUL/DIV: NUM to temp first when needed
+#   - Each subroutine: LABEL @name ... RET
+# ============================================================
+
+
+# ============================================================
+# 1. pow_mod -- Modular Exponentiation (binary method)
+# ============================================================
+# Computes base^exp mod mod using the square-and-multiply algorithm.
+#
+# Input:  st[50] = base, st[51] = exp, st[52] = mod
+# Output: st[49] = result
+# Workspace:
+#   st[53] = tmp (for intermediate products / remainders)
+#   st[54] = quot (for division-based modulo)
+#   st[55] = b_copy (base reduced mod mod, then squared each iteration)
+#   st[56] = e_copy (exp, halved each iteration)
+# Algorithm:
+#   result = 1
+#   base   = base % mod
+#   while exp > 0:
+#       if exp is odd:  result = (result * base) % mod
+#       base = (base * base) % mod
+#       exp  = exp / 2
+# ============================================================
+
+LABEL @pow_mod
+    # Guard: mod <= 1  =>  every residue modulo 1 is 0
+    CMP st[52] st[41]
+    JLE @pow_mod_ret_zero
+
+    # result = 1
+    NUM st[49] 1
+
+    # b_copy = base % mod  (reduce base once at the start)
+    NUM st[55] 0
+    ADD st[55] st[50]
+    NUM st[54] 0
+    ADD st[54] st[55]
+    DIV st[54] st[52]
+    MUL st[54] st[52]
+    SUB st[55] st[54]
+    # b_copy now holds base mod mod
+
+    # e_copy = exp
+    NUM st[56] 0
+    ADD st[56] st[51]
+
+LABEL @pow_mod_loop
+    # while e_copy > 0
+    CMP st[56] st[40]
+    JE @pow_mod_done
+
+    # --- Test whether e_copy is odd ---
+    # quot = e_copy / 2
+    NUM st[54] 0
+    ADD st[54] st[56]
+    DIV st[54] st[42]
+    # tmp  = quot * 2
+    NUM st[53] 0
+    ADD st[53] st[54]
+    MUL st[53] st[42]
+    # If tmp == e_copy  =>  e_copy was even
+    CMP st[53] st[56]
+    JE @pow_mod_sq
+
+    # --- Odd exponent: result = (result * b_copy) % mod ---
+    NUM st[53] 0
+    ADD st[53] st[49]
+    MUL st[53] st[55]
+    # Modulo reduction: tmp -= (tmp / mod) * mod
+    NUM st[54] 0
+    ADD st[54] st[53]
+    DIV st[54] st[52]
+    MUL st[54] st[52]
+    SUB st[53] st[54]
+    NUM st[49] 0
+    ADD st[49] st[53]
+
+LABEL @pow_mod_sq
+    # --- Square the base: b_copy = (b_copy * b_copy) % mod ---
+    NUM st[53] 0
+    ADD st[53] st[55]
+    MUL st[53] st[55]
+    # Modulo reduction
+    NUM st[54] 0
+    ADD st[54] st[53]
+    DIV st[54] st[52]
+    MUL st[54] st[52]
+    SUB st[53] st[54]
+    NUM st[55] 0
+    ADD st[55] st[53]
+
+    # --- Halve the exponent ---
+    DIV st[56] st[42]
+    JMP @pow_mod_loop
+
+LABEL @pow_mod_ret_zero
+    NUM st[49] 0
+LABEL @pow_mod_done
+    RET
+
+
+# ============================================================
+# 2. sieve -- Sieve of Eratosthenes (trial division version)
+# ============================================================
+# Enumerates every prime p <= n.  For each candidate we trial-divide
+# by every integer d from 2 up to floor(sqrt(candidate)).
+#
+# Input:  st[46] = n
+# Output: st[49] = count of primes found
+#         st[50] .. st[50+count-1] = the primes (up to 14 fit in st[50..63])
+# Workspace:
+#   st[35] = is_prime_flag (1 = still prime, 0 = composite)
+#   st[36] = candidate (current number being tested)
+#   st[37] = divisor  (trial divisor, runs 2 .. sqrt(candidate))
+#   st[38] = limit    (floor(sqrt(candidate)))
+#   st[39] = tmp      (holds (candidate/divisor)*divisor for divisibility test)
+#
+# Note: Because tube indices must be compile-time literals, storing a
+# prime at st[50+k] is done with a cascade of conditional jumps.
+# ============================================================
+
+LABEL @sieve
+    NUM st[49] 0              # count = 0
+
+    # If n < 2 there are no primes at all
+    CMP st[46] st[42]
+    JL @sieve_done
+
+    # Store 2 as the first prime
+    NUM st[50] 2
+    NUM st[49] 1              # count = 1
+
+    # Begin testing odd candidates from 3 upward
+    NUM st[36] 3
+
+LABEL @sieve_outer_loop
+    CMP st[36] st[46]         # while candidate <= n
+    JG @sieve_done
+
+    NUM st[35] 1              # is_prime_flag = true
+    NUM st[37] 2              # divisor = 2
+
+    # limit = floor(sqrt(candidate))
+    NUM st[38] 0
+    ADD st[38] st[36]
+    SQRT st[38]
+
+LABEL @sieve_inner_loop
+    # Continue while divisor <= limit AND still flagged as prime
+    CMP st[37] st[38]
+    JG @sieve_inner_done
+    CMP st[35] st[40]
+    JE @sieve_inner_done
+
+    # Divisibility test: candidate % divisor == 0  ?
+    #   tmp = (candidate / divisor) * divisor
+    #   if tmp == candidate  =>  divisor divides candidate evenly
+    NUM st[39] 0
+    ADD st[39] st[36]
+    DIV st[39] st[37]
+    MUL st[39] st[37]
+    CMP st[39] st[36]
+    JE @sieve_not_prime
+
+    ADD st[37] st[41]         # divisor++
+    JMP @sieve_inner_loop
+
+LABEL @sieve_not_prime
+    NUM st[35] 0              # is_prime_flag = false
+
+LABEL @sieve_inner_done
+    CMP st[35] st[41]         # if still marked prime...
+    JNE @sieve_next_cand
+
+    # --------------------------------------------------------
+    # Store prime in st[50 + count]  (conditional, no indirection)
+    # Only the first 14 primes fit in st[50] .. st[63].
+    # --------------------------------------------------------
+    CMP st[49] st[40]
+    JE @sieve_store_p0
+    CMP st[49] st[41]
+    JE @sieve_store_p1
+    CMP st[49] st[42]
+    JE @sieve_store_p2
+    NUM st[39] 3
+    CMP st[49] st[39]
+    JE @sieve_store_p3
+    NUM st[39] 4
+    CMP st[49] st[39]
+    JE @sieve_store_p4
+    NUM st[39] 5
+    CMP st[49] st[39]
+    JE @sieve_store_p5
+    NUM st[39] 6
+    CMP st[49] st[39]
+    JE @sieve_store_p6
+    NUM st[39] 7
+    CMP st[49] st[39]
+    JE @sieve_store_p7
+    NUM st[39] 8
+    CMP st[49] st[39]
+    JE @sieve_store_p8
+    NUM st[39] 9
+    CMP st[49] st[39]
+    JE @sieve_store_p9
+    NUM st[39] 10
+    CMP st[49] st[39]
+    JE @sieve_store_p10
+    NUM st[39] 11
+    CMP st[49] st[39]
+    JE @sieve_store_p11
+    NUM st[39] 12
+    CMP st[49] st[39]
+    JE @sieve_store_p12
+    NUM st[39] 13
+    CMP st[49] st[39]
+    JE @sieve_store_p13
+    JMP @sieve_after_store    # count >= 14: no room to store, just count
+
+LABEL @sieve_store_p0
+    NUM st[50] 0
+    ADD st[50] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p1
+    NUM st[51] 0
+    ADD st[51] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p2
+    NUM st[52] 0
+    ADD st[52] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p3
+    NUM st[53] 0
+    ADD st[53] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p4
+    NUM st[54] 0
+    ADD st[54] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p5
+    NUM st[55] 0
+    ADD st[55] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p6
+    NUM st[56] 0
+    ADD st[56] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p7
+    NUM st[57] 0
+    ADD st[57] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p8
+    NUM st[58] 0
+    ADD st[58] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p9
+    NUM st[59] 0
+    ADD st[59] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p10
+    NUM st[60] 0
+    ADD st[60] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p11
+    NUM st[61] 0
+    ADD st[61] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p12
+    NUM st[62] 0
+    ADD st[62] st[36]
+    JMP @sieve_after_store
+LABEL @sieve_store_p13
+    NUM st[63] 0
+    ADD st[63] st[36]
+    JMP @sieve_after_store
+
+LABEL @sieve_after_store
+    ADD st[49] st[41]         # count++
+
+LABEL @sieve_next_cand
+    ADD st[36] st[41]         # candidate++
+    JMP @sieve_outer_loop
+
+LABEL @sieve_done
+    RET
+
+
+# ============================================================
+# 3. euler_phi -- Euler's Totient Function
+# ============================================================
+# phi(n) = count of integers 1 <= k <= n with gcd(k,n) = 1
+# Formula: phi(n) = n * product over distinct prime factors p of (1 - 1/p)
+#
+# Input:  st[46] = n
+# Output: st[49] = phi(n)
+# Workspace:
+#   st[35] = result (accumulates the answer)
+#   st[36] = temp_n (remaining unfactored portion of n)
+#   st[37] = p (trial prime factor, starts at 2 then odd numbers)
+#   st[38] = tmp (for division / modulo intermediates)
+#   st[39] = p_sqr (p*p, compared against temp_n for loop bound)
+# Algorithm:
+#   result = n;  temp_n = n
+#   Factor out 2 specially, then test odd p = 3,5,7,...
+#   For each distinct prime p dividing temp_n:
+#       result -= result / p
+#       while temp_n % p == 0:  temp_n /= p
+#   If temp_n > 1 after the loop:  result -= result / temp_n
+# ============================================================
+
+LABEL @euler_phi
+    # result = n
+    NUM st[35] 0
+    ADD st[35] st[46]
+    # temp_n = n
+    NUM st[36] 0
+    ADD st[36] st[46]
+
+    # n == 0 or n == 1  =>  phi(1) = 1, phi(0) = 0
+    CMP st[36] st[41]
+    JLE @euler_phi_one
+
+    # --- Factor out 2 (the only even prime) ---
+    NUM st[37] 0
+    ADD st[37] st[36]
+    DIV st[37] st[42]
+    MUL st[37] st[42]
+    CMP st[37] st[36]
+    JNE @euler_phi_odd       # 2 does NOT divide temp_n
+
+    # 2 is a prime factor: result -= result / 2
+    NUM st[38] 0
+    ADD st[38] st[35]
+    DIV st[38] st[42]
+    SUB st[35] st[38]
+
+    # Strip all remaining factors of 2 from temp_n
+LABEL @euler_phi_remove2
+    NUM st[37] 0
+    ADD st[37] st[36]
+    DIV st[37] st[42]
+    MUL st[37] st[42]
+    CMP st[37] st[36]
+    JNE @euler_phi_odd       # no more factors of 2
+    DIV st[36] st[42]
+    JMP @euler_phi_remove2
+
+    # --- Test odd prime factors p = 3, 5, 7, ... ---
+LABEL @euler_phi_odd
+    NUM st[37] 3
+
+LABEL @euler_phi_loop
+    # Continue while p * p <= temp_n
+    NUM st[39] 0
+    ADD st[39] st[37]
+    MUL st[39] st[37]
+    CMP st[39] st[36]
+    JG @euler_phi_final
+
+    # Does p divide temp_n?
+    NUM st[38] 0
+    ADD st[38] st[36]
+    DIV st[38] st[37]
+    MUL st[38] st[37]
+    CMP st[38] st[36]
+    JNE @euler_phi_next_p
+
+    # p is a distinct prime factor: result -= result / p
+    NUM st[38] 0
+    ADD st[38] st[35]
+    DIV st[38] st[37]
+    SUB st[35] st[38]
+
+    # Remove ALL occurrences of p from temp_n
+LABEL @euler_phi_remove_p
+    NUM st[38] 0
+    ADD st[38] st[36]
+    DIV st[38] st[37]
+    MUL st[38] st[37]
+    CMP st[38] st[36]
+    JNE @euler_phi_next_p
+    DIV st[36] st[37]
+    JMP @euler_phi_remove_p
+
+LABEL @euler_phi_next_p
+    ADD st[37] st[42]         # p += 2 (skip even numbers)
+    JMP @euler_phi_loop
+
+    # If temp_n > 1, it itself is a remaining prime factor
+LABEL @euler_phi_final
+    CMP st[36] st[41]
+    JLE @euler_phi_ret
+    NUM st[38] 0
+    ADD st[38] st[35]
+    DIV st[38] st[36]
+    SUB st[35] st[38]
+
+LABEL @euler_phi_ret
+    NUM st[49] 0
+    ADD st[49] st[35]
+    RET
+
+LABEL @euler_phi_one
+    NUM st[49] 1
+    RET
+
+
+# ============================================================
+# 4. is_prime -- Primality Test by Trial Division
+# ============================================================
+# Tests whether n is prime by trial-dividing up to floor(sqrt(n)).
+#
+# Input:  st[46] = n
+# Output: st[49] = 1 if n is prime, 0 if composite
+# Workspace:
+#   st[35] = divisor (trial divisor, 2 then odd numbers 3,5,7,...)
+#   st[36] = limit (floor(sqrt(n)))
+#   st[37] = tmp (for divisibility check)
+# ============================================================
+
+LABEL @is_prime
+    # n <= 1  =>  not prime
+    CMP st[46] st[41]
+    JLE @is_prime_no
+
+    # n == 2  =>  prime
+    CMP st[46] st[42]
+    JE @is_prime_yes
+
+    # n == 3  =>  prime
+    NUM st[35] 3
+    CMP st[46] st[35]
+    JE @is_prime_yes
+
+    # n % 2 == 0  =>  composite (even numbers > 2)
+    NUM st[35] 0
+    ADD st[35] st[46]
+    DIV st[35] st[42]
+    MUL st[35] st[42]
+    CMP st[35] st[46]
+    JE @is_prime_no
+
+    # limit = floor(sqrt(n))
+    NUM st[36] 0
+    ADD st[36] st[46]
+    SQRT st[36]
+
+    # divisor = 3
+    NUM st[35] 3
+
+LABEL @is_prime_loop
+    CMP st[35] st[36]
+    JG @is_prime_yes          # divisor > limit  =>  prime
+
+    # Check n % divisor == 0
+    NUM st[37] 0
+    ADD st[37] st[46]
+    DIV st[37] st[35]
+    MUL st[37] st[35]
+    CMP st[37] st[46]
+    JE @is_prime_no           # divisible  =>  composite
+
+    ADD st[35] st[42]         # divisor += 2 (only odd divisors)
+    JMP @is_prime_loop
+
+LABEL @is_prime_yes
+    NUM st[49] 1
+    RET
+
+LABEL @is_prime_no
+    NUM st[49] 0
+    RET
+
+
+# ============================================================
+# 5. gcd_sub -- GCD by Repeated Subtraction
+# ============================================================
+# Computes gcd(a,b) using only SUB, CMP and jumps.
+# No modulo operator is needed.
+#
+# Input:  st[50] = a, st[51] = b
+# Output: st[49] = gcd(a,b)
+# Workspace:
+#   st[52] = copy_a (mutable copy of a)
+#   st[53] = copy_b (mutable copy of b)
+# Algorithm:
+#   while a != b:
+#       if a > b:  a = a - b
+#       else:      b = b - a
+#   return a
+# ============================================================
+
+LABEL @gcd_sub
+    NUM st[52] 0
+    ADD st[52] st[50]         # copy_a = a
+    NUM st[53] 0
+    ADD st[53] st[51]         # copy_b = b
+
+    # Handle a == 0 specially
+    CMP st[52] st[40]
+    JE @gcd_sub_a_zero
+
+    # Handle b == 0 specially
+    CMP st[53] st[40]
+    JE @gcd_sub_ret_a
+
+LABEL @gcd_sub_loop
+    CMP st[52] st[53]
+    JE @gcd_sub_ret_a         # a == b  =>  done
+    JL @gcd_sub_a_less        # a < b
+
+    # a > b:  a = a - b  (safe: a>b so SUB will not clamp)
+    SUB st[52] st[53]
+    JMP @gcd_sub_loop
+
+LABEL @gcd_sub_a_less
+    # a < b:  b = b - a  (safe: b>a so SUB will not clamp)
+    SUB st[53] st[52]
+    JMP @gcd_sub_loop
+
+LABEL @gcd_sub_a_zero
+    CMP st[53] st[40]
+    JE @gcd_sub_ret_zero      # both a and b are 0
+    NUM st[49] 0
+    ADD st[49] st[53]         # gcd(0, b) = b
+    RET
+
+LABEL @gcd_sub_ret_a
+    NUM st[49] 0
+    ADD st[49] st[52]
+    RET
+
+LABEL @gcd_sub_ret_zero
+    NUM st[49] 0
+    RET
+
+
+# ============================================================
+# 6. crt -- Chinese Remainder Theorem (2 congruences)
+# ============================================================
+# Solves the simultaneous congruences:
+#       x == a1 (mod m1)
+#       x == a2 (mod m2)
+# Returns the smallest non-negative solution x, or 0 if no
+# solution exists within [0, m1*m2).
+#
+# Uses brute-force search as requested (no extended Euclidean).
+#
+# Input:  st[50] = a1, st[51] = m1, st[52] = a2, st[53] = m2
+# Output: st[49] = x  (smallest non-negative solution)
+# Workspace:
+#   st[54] = x   (candidate being tested, 0, 1, 2, ...)
+#   st[55] = product = m1 * m2  (upper bound of search)
+#   st[56] = tmp  (for quotient*divisor in modulo reduction)
+#   st[57] = rem  (holds the remainder)
+# Algorithm:
+#   a1 = a1 % m1;  a2 = a2 % m2
+#   for x = 0 .. m1*m2 - 1:
+#       if x % m1 == a1  and  x % m2 == a2:
+#           return x
+#   return 0   (no solution found)
+# ============================================================
+
+LABEL @crt
+    # Guard: if either modulus is zero, congruence is ill-defined
+    CMP st[51] st[40]
+    JE @crt_no_sol
+    CMP st[53] st[40]
+    JE @crt_no_sol
+
+    # Reduce a1 modulo m1  (so 0 <= a1 < m1)
+    NUM st[56] 0
+    ADD st[56] st[50]
+    DIV st[56] st[51]
+    MUL st[56] st[51]
+    SUB st[50] st[56]
+
+    # Reduce a2 modulo m2  (so 0 <= a2 < m2)
+    NUM st[56] 0
+    ADD st[56] st[52]
+    DIV st[56] st[53]
+    MUL st[56] st[53]
+    SUB st[52] st[56]
+
+    # product = m1 * m2  (search upper bound, exclusive)
+    NUM st[55] 0
+    ADD st[55] st[51]
+    MUL st[55] st[53]
+
+    # x = 0
+    NUM st[54] 0
+
+LABEL @crt_loop
+    CMP st[54] st[55]
+    JGE @crt_no_sol           # x >= product  =>  exhausted search space
+
+    # --- Check congruence 1: x % m1 == a1 ---
+    NUM st[56] 0
+    ADD st[56] st[54]
+    DIV st[56] st[51]
+    MUL st[56] st[51]
+    NUM st[57] 0
+    ADD st[57] st[54]
+    SUB st[57] st[56]         # rem = x - (x/m1)*m1  ==  x % m1
+    CMP st[57] st[50]
+    JNE @crt_next_x
+
+    # --- Check congruence 2: x % m2 == a2 ---
+    NUM st[56] 0
+    ADD st[56] st[54]
+    DIV st[56] st[53]
+    MUL st[56] st[53]
+    NUM st[57] 0
+    ADD st[57] st[54]
+    SUB st[57] st[56]         # rem = x % m2
+    CMP st[57] st[52]
+    JNE @crt_next_x
+
+    # Both congruences satisfied!
+    NUM st[49] 0
+    ADD st[49] st[54]
+    RET
+
+LABEL @crt_next_x
+    ADD st[54] st[41]         # x++
+    JMP @crt_loop
+
+LABEL @crt_no_sol
+    NUM st[49] 0
+    RET
+
+
+
+# ============================================================================
+# PART D: LINEAR ALGEBRA MODULE
+# ============================================================================
+
+# =============================================================================
+# linear_algebra.dna - Linear Algebra Module for DNAsm v3.3
+# =============================================================================
+# Pure DNAsm subroutines with zero external dependencies.
+# All tube indices are compile-time constants (no indirect addressing).
+#
+# TUBE ALLOCATION (per ISA_REFERENCE.md):
+#   st[40]:    CONST 0
+#   st[41]:    CONST 1
+#   st[42]:    CONST 2
+#   st[43-45]: temp
+#   st[46]:    input parameter N (vector size, 1-8)
+#   st[47]:    input parameter scalar
+#   st[48]:    loop counter (reused across subroutines)
+#   st[49]:    return value
+#   st[50-63]: vector/matrix workspace
+#
+# VECTOR LAYOUT:
+#   Vector A: st[50..50+N-1]  (max 8 elements: st[50-57])
+#   Vector B: st[55..55+N-1]  (max 8 elements: st[55-62])
+#   Result C: st[50..]        (overwrites A)
+#
+# MATRIX LAYOUT (3x3):
+#   Matrix M: st[50-58] row-major  [M00 M01 M02 M10 M11 M12 M20 M21 M22]
+#   Vector x: st[59-61]
+#   Result y: st[59-61]          (overwrites x)
+#
+# MATRIX LAYOUT (2x2):
+#   Matrix A: st[50-53]          [A00 A01 A10 A11]
+#   Matrix B: st[54-57]          [B00 B01 B10 B11]
+#   Matrix C: st[58-61]          [C00 C01 C10 C11]
+# =============================================================================
+
+
+# ---------------------------------------------------------------------------
+# SUBROUTINE: vec_add
+# Element-wise vector addition: C = A + B (result stored in A)
+# Input:  st[50..57]=A, st[55..62]=B, st[46]=N (size 1-8)
+# Output: st[50..50+N-1]=C
+#
+# The ADD ordering is carefully chosen to handle A/B overlap at st[55-57]:
+# B[0-2] reside at st[55-57] which are also A[5-7]. By processing A[0-4]
+# first, B[0-2] are read before their tubes become write destinations.
+# Uses st[48] as loop counter.
+# ---------------------------------------------------------------------------
+LABEL @vec_add
+    ADD st[50] st[55]           # A[0] += B[0]  (always executed)
+    NUM st[48] 1
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[51] st[56]           # A[1] += B[1]
+    ADD st[48] st[41]           # i = 2
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[52] st[57]           # A[2] += B[2]
+    ADD st[48] st[41]           # i = 3
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[53] st[58]           # A[3] += B[3]
+    ADD st[48] st[41]           # i = 4
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[54] st[59]           # A[4] += B[4]
+    ADD st[48] st[41]           # i = 5
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[55] st[60]           # A[5] += B[5]  (st[55] was B[0], consumed)
+    ADD st[48] st[41]           # i = 6
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[56] st[61]           # A[6] += B[6]  (st[56] was B[1], consumed)
+    ADD st[48] st[41]           # i = 7
+    CMP st[46] st[48]
+    JE @vec_add_done
+
+    ADD st[57] st[62]           # A[7] += B[7]  (st[57] was B[2], consumed)
+
+LABEL @vec_add_done
+    RET
+
+
+# ---------------------------------------------------------------------------
+# SUBROUTINE: vec_scale
+# Vector scalar multiply: A = A * scalar
+# Input:  st[50..57]=A, st[46]=N (size 1-8), st[47]=scalar
+# Output: st[50..50+N-1]=A scaled in-place
+# Uses st[48] as loop counter (scalar at st[47] preserved).
+# ---------------------------------------------------------------------------
+LABEL @vec_scale
+    MUL st[50] st[47]           # A[0] *= scalar  (always executed)
+    NUM st[48] 1
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[51] st[47]           # A[1] *= scalar
+    ADD st[48] st[41]           # i = 2
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[52] st[47]           # A[2] *= scalar
+    ADD st[48] st[41]           # i = 3
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[53] st[47]           # A[3] *= scalar
+    ADD st[48] st[41]           # i = 4
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[54] st[47]           # A[4] *= scalar
+    ADD st[48] st[41]           # i = 5
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[55] st[47]           # A[5] *= scalar
+    ADD st[48] st[41]           # i = 6
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[56] st[47]           # A[6] *= scalar
+    ADD st[48] st[41]           # i = 7
+    CMP st[46] st[48]
+    JE @vec_scale_done
+
+    MUL st[57] st[47]           # A[7] *= scalar
+
+LABEL @vec_scale_done
+    RET
+
+
+# ---------------------------------------------------------------------------
+# SUBROUTINE: vec_dot
+# Vector dot product: result = sum(A[i] * B[i])
+# Input:  st[50..57]=A, st[55..62]=B, st[46]=N (size 1-8)
+# Output: st[49]=dot product
+#
+# Uses sequential MAD accumulation for correctness with all N values.
+# (DOT instruction could be used if caller guarantees zero-padding to 8.)
+# Uses st[48] as loop counter.
+# ---------------------------------------------------------------------------
+LABEL @vec_dot
+    NUM st[49] 0                # result = 0
+    MAD st[49] st[50] st[55]    # result += A[0] * B[0]
+    NUM st[48] 1
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[51] st[56]    # result += A[1] * B[1]
+    ADD st[48] st[41]           # i = 2
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[52] st[57]    # result += A[2] * B[2]
+    ADD st[48] st[41]           # i = 3
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[53] st[58]    # result += A[3] * B[3]
+    ADD st[48] st[41]           # i = 4
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[54] st[59]    # result += A[4] * B[4]
+    ADD st[48] st[41]           # i = 5
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[55] st[60]    # result += A[5] * B[5]
+    ADD st[48] st[41]           # i = 6
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[56] st[61]    # result += A[6] * B[6]
+    ADD st[48] st[41]           # i = 7
+    CMP st[46] st[48]
+    JE @vec_dot_done
+
+    MAD st[49] st[57] st[62]    # result += A[7] * B[7]
+
+LABEL @vec_dot_done
+    RET
+
+
+# ---------------------------------------------------------------------------
+# SUBROUTINE: vec_l2norm
+# Vector L2 norm squared: result = sum(A[i]^2)
+# Input:  st[50..57]=A, st[46]=N (size 1-8)
+# Output: st[49]=norm squared
+#
+# Self dot-product using MAD accumulation.
+# Uses st[48] as loop counter.
+# ---------------------------------------------------------------------------
+LABEL @vec_l2norm
+    NUM st[49] 0                # result = 0
+    MAD st[49] st[50] st[50]    # result += A[0] * A[0]
+    NUM st[48] 1
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[51] st[51]    # result += A[1] * A[1]
+    ADD st[48] st[41]           # i = 2
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[52] st[52]    # result += A[2] * A[2]
+    ADD st[48] st[41]           # i = 3
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[53] st[53]    # result += A[3] * A[3]
+    ADD st[48] st[41]           # i = 4
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[54] st[54]    # result += A[4] * A[4]
+    ADD st[48] st[41]           # i = 5
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[55] st[55]    # result += A[5] * A[5]
+    ADD st[48] st[41]           # i = 6
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[56] st[56]    # result += A[6] * A[6]
+    ADD st[48] st[41]           # i = 7
+    CMP st[46] st[48]
+    JE @vec_l2norm_done
+
+    MAD st[49] st[57] st[57]    # result += A[7] * A[7]
+
+LABEL @vec_l2norm_done
+    RET
+
+
+# ---------------------------------------------------------------------------
+# SUBROUTINE: mat_vec_mul_3x3
+# 3x3 Matrix-Vector multiplication: y = M * x
+# Input:  st[50-58]=M (3x3 row-major), st[59-61]=x
+# Output: st[59-61]=y=Mx  (overwrites x)
+#
+# Strategy: save x components in progressively freed matrix rows,
+# then use MAD chains for each output element.
+#   st[50]=M00 st[51]=M01 st[52]=M02
+#   st[53]=M10 st[54]=M11 st[55]=M12
+#   st[56]=M20 st[57]=M21 st[58]=M22
+#   st[59]=x0  st[60]=x1  st[61]=x2
+# Uses st[62] for temp storage (x0) and st[50]/st[53] for saving x1/x2.
+# Note: matrix M is corrupted during computation.
+# ---------------------------------------------------------------------------
+LABEL @mat_vec_mul_3x3
+    # ---- Save x0 and compute y0 = M00*x0 + M01*x1 + M02*x2 ----
+    NUM st[62] 0
+    ADD st[62] st[59]           # st[62] = x0 (saved)
+
+    NUM st[59] 0                # y0 accumulator = 0
+    MAD st[59] st[50] st[62]    # y0 += M00 * x0
+    MAD st[59] st[51] st[60]    # y0 += M01 * x1
+    MAD st[59] st[52] st[61]    # y0 += M02 * x2
+
+    # ---- Save x1 to freed M00 slot, compute y1 = M10*x0 + M11*x1 + M12*x2 ----
+    NUM st[50] 0
+    ADD st[50] st[60]           # st[50] = x1 (saved in freed M00 slot)
+
+    NUM st[60] 0                # y1 accumulator = 0
+    MAD st[60] st[53] st[62]    # y1 += M10 * x0
+    MAD st[60] st[54] st[50]    # y1 += M11 * x1 (from saved)
+    MAD st[60] st[55] st[61]    # y1 += M12 * x2
+
+    # ---- Save x2 to freed M10 slot, compute y2 = M20*x0 + M21*x1 + M22*x2 ----
+    NUM st[53] 0
+    ADD st[53] st[61]           # st[53] = x2 (saved in freed M10 slot)
+
+    NUM st[61] 0                # y2 accumulator = 0
+    MAD st[61] st[56] st[62]    # y2 += M20 * x0
+    MAD st[61] st[57] st[50]    # y2 += M21 * x1 (from saved)
+    MAD st[61] st[58] st[53]    # y2 += M22 * x2 (from saved)
+    # st[59]=y0, st[60]=y1, st[61]=y2
+
+    RET
+
+
+# ---------------------------------------------------------------------------
+# SUBROUTINE: mat_mul_2x2
+# 2x2 Matrix multiplication: C = A * B
+# Input:  st[50-53]=A, st[54-57]=B
+#         A = [A00 A01 A10 A11], B = [B00 B01 B10 B11]
+# Output: st[58-61]=C
+#         C = [C00 C01 C10 C11]
+#
+# Uses direct MAD accumulation. No overlap between A, B, C.
+# C00 = A00*B00 + A01*B10
+# C01 = A00*B01 + A01*B11
+# C10 = A10*B00 + A11*B10
+# C11 = A10*B01 + A11*B11
+# ---------------------------------------------------------------------------
+LABEL @mat_mul_2x2
+    # ---- C00 = A00*B00 + A01*B10 ----
+    NUM st[58] 0
+    MAD st[58] st[50] st[54]    # C00 += A00 * B00
+    MAD st[58] st[51] st[56]    # C00 += A01 * B10
+
+    # ---- C01 = A00*B01 + A01*B11 ----
+    NUM st[59] 0
+    MAD st[59] st[50] st[55]    # C01 += A00 * B01
+    MAD st[59] st[51] st[57]    # C01 += A01 * B11
+
+    # ---- C10 = A10*B00 + A11*B10 ----
+    NUM st[60] 0
+    MAD st[60] st[52] st[54]    # C10 += A10 * B00
+    MAD st[60] st[53] st[56]    # C10 += A11 * B10
+
+    # ---- C11 = A10*B01 + A11*B11 ----
+    NUM st[61] 0
+    MAD st[61] st[52] st[55]    # C11 += A10 * B01
+    MAD st[61] st[53] st[57]    # C11 += A11 * B11
+
+    RET
+
+
+# ---------------------------------------------------------------------------
+# SUBROUTINE: mat_transpose_3x3
+# In-place transpose of a 3x3 matrix
+# Input/Output: st[50-58] = 3x3 matrix (row-major)
+#
+# Before:  M00 M01 M02   After:  M00 M10 M20
+#          M10 M11 M12           M01 M11 M21
+#          M20 M21 M22           M02 M12 M22
+#
+# Swaps 3 off-diagonal pairs using st[62] as temp:
+#   M01(st[51]) <-> M10(st[53])
+#   M02(st[52]) <-> M20(st[56])
+#   M12(st[55]) <-> M21(st[57])
+# ---------------------------------------------------------------------------
+LABEL @mat_transpose_3x3
+    # ---- Swap M01(st[51]) with M10(st[53]) ----
+    NUM st[62] 0
+    ADD st[62] st[51]           # temp = M01
+    NUM st[51] 0
+    ADD st[51] st[53]           # M01 = M10
+    NUM st[53] 0
+    ADD st[53] st[62]           # M10 = temp
+
+    # ---- Swap M02(st[52]) with M20(st[56]) ----
+    NUM st[62] 0
+    ADD st[62] st[52]           # temp = M02
+    NUM st[52] 0
+    ADD st[52] st[56]           # M02 = M20
+    NUM st[56] 0
+    ADD st[56] st[62]           # M20 = temp
+
+    # ---- Swap M12(st[55]) with M21(st[57]) ----
+    NUM st[62] 0
+    ADD st[62] st[55]           # temp = M12
+    NUM st[55] 0
+    ADD st[55] st[57]           # M12 = M21
+    NUM st[57] 0
+    ADD st[57] st[62]           # M21 = temp
+
+    RET
+
+
+
+# ============================================================================
+# PART E: TENSOR / NEURAL NETWORK MODULE
+# ============================================================================
+
+# ============================================================
+# tensor_nn.dna - Neural Network / Tensor Module for DNAsm v3.3
+#
+# Tube Allocation (MUST NOT conflict with reserved tubes):
+#   st[0-39]:  RESERVED (multi-precision math, constants, temps)
+#   st[40]:    CONST 0
+#   st[41]:    CONST 1
+#   st[42]:    CONST 2
+#   st[43-45]: Module temp (general purpose)
+#   st[46]:    Input parameter (caller sets before CALL)
+#   st[47-48]: Loop counters / extra temps
+#   st[49]:    Return value (subroutine writes before RET)
+#   st[50-63]: Neural network workspace (this module's domain)
+#
+# NN Architecture 3-2-1:
+#   Inputs:       st[50]=i0, st[51]=i1, st[52]=i2
+#   Hidden W:     st[53]=W00, st[54]=W01, st[55]=W02
+#                 st[56]=W10, st[57]=W11, st[58]=W12
+#   Hidden bias:  st[59]=b0,  st[60]=b1
+#   Output W:     st[61]=V0,  st[62]=V1
+#   Output bias:  st[63]=c
+#
+# Format: NO main program, NO constants, NO HALT. Just subroutines.
+# Each subroutine: LABEL @name ... RET
+# ============================================================
+
+
+# ============================================================
+# SUBROUTINE: @relu
+# Rectified Linear Unit: ReLU(x) = max(0, x)
+# Input:  st[46] = x
+# Output: st[49] = ReLU(x)
+# In-place note: CLAMP st[k] 0 999999 applies ReLU in-place
+# ============================================================
+LABEL @relu
+    NUM st[49] 0          ; clear return tube
+    ADD st[49] st[46]     ; copy x into return tube
+    CLAMP st[49] 0 999999 ; ReLU: negative values clamped to 0
+    RET
+
+
+# ============================================================
+# SUBROUTINE: @sigmoid_approx
+# Piecewise-linear sigmoid approximation in 1000-scale.
+#   sigmoid(x) ~= clamp(0.5 + 0.15*x, 0, 1)
+# In DNAsm integer scale (x and output both *1000):
+#   result = CLAMP(500 + 15*x/100, 0, 1000)
+# Input:  st[46] = x (scaled by 1000, e.g. 500 means 0.5)
+# Output: st[49] = sigmoid(x) * 1000  (range 0..1000)
+# ------------------------------------------------------------
+# Example: x=0    -> 500+0     = 500  (sigmoid(0)=0.5)
+#          x=1000 -> 500+150   = 650  (sigmoid(1)~0.65)
+#          x=-500 -> 500-75    = 425  (sigmoid(-0.5)~0.42)
+#          x=5000 -> clamp 1250 = 1000 (sigmoid(5)~1.0)
+#          x=-5000-> clamp -250 = 0    (sigmoid(-5)~0.0)
+# ============================================================
+LABEL @sigmoid_approx
+# st[49] = x
+    NUM st[49] 0
+    ADD st[49] st[46]
+
+# st[49] = 15 * x
+    NUM st[43] 15
+    MUL st[49] st[43]
+
+# st[49] = (15 * x) / 100
+    NUM st[43] 100
+    DIV st[49] st[43]
+
+# st[49] = 500 + (15*x/100)
+    NUM st[43] 500
+    ADD st[49] st[43]
+
+# Clamp to [0, 1000]
+    CLAMP st[49] 0 1000
+    RET
+
+
+# ============================================================
+# SUBROUTINE: @nn_forward_3_2_1
+# Neural Network Forward Pass: 3 inputs -> 2 hidden (ReLU) -> 1 output (sigmoid)
+#
+# Weights must be pre-loaded by the caller before CALL:
+#   st[50-52] = input vector [i0, i1, i2]
+#   st[53-58] = hidden layer weights W00..W12
+#   st[59-60] = hidden biases b0, b1
+#   st[61-62] = output weights V0, V1
+#   st[63]    = output bias c
+#
+# Algorithm:
+#   h0 = ReLU(W00*i0 + W01*i1 + W02*i2 + b0)
+#   h1 = ReLU(W10*i0 + W11*i1 + W12*i2 + b1)
+#   o  = sigmoid(V0*h0 + V1*h1 + c)
+#
+# Temps:  st[43]=h0_accumulator, st[44]=h1_accumulator
+# Output: st[49] = network output (0-1000 scale)
+# ============================================================
+LABEL @nn_forward_3_2_1
+
+# ---- Hidden neuron 0 ----
+# h0 = ReLU( dot(W0_row, inputs) + b0 )
+    NUM st[43] 0                ; clear accumulator
+    MAD st[43] st[53] st[50]    ; += W00 * i0
+    MAD st[43] st[54] st[51]    ; += W01 * i1
+    MAD st[43] st[55] st[52]    ; += W02 * i2
+    ADD st[43] st[59]           ; += b0
+    CLAMP st[43] 0 999999       ; ReLU: negative -> 0
+
+# ---- Hidden neuron 1 ----
+# h1 = ReLU( dot(W1_row, inputs) + b1 )
+    NUM st[44] 0                ; clear accumulator
+    MAD st[44] st[56] st[50]    ; += W10 * i0
+    MAD st[44] st[57] st[51]    ; += W11 * i1
+    MAD st[44] st[58] st[52]    ; += W12 * i2
+    ADD st[44] st[60]           ; += b1
+    CLAMP st[44] 0 999999       ; ReLU: negative -> 0
+
+# ---- Output neuron ----
+# o_raw = V0*h0 + V1*h1 + c
+    NUM st[46] 0                ; clear output accumulator
+    MAD st[46] st[61] st[43]    ; += V0 * h0
+    MAD st[46] st[62] st[44]    ; += V1 * h1
+    ADD st[46] st[63]           ; += c (output bias)
+
+# Apply sigmoid: st[46] -> st[49]
+    CALL @sigmoid_approx
+    RET
+
+
+# ============================================================
+# SUBROUTINE: @nn_xor_demo
+# XOR problem demonstration using a 2-2-1 network.
+# Mapped onto the 3-2-1 forward pass with i2 fixed to 0.
+#
+# Hidden layer design:
+#   h0 = ReLU(+1*i0 - 1*i1 + 0)  -> positive only when i0=1, i1=0
+#   h1 = ReLU(-1*i0 + 1*i1 + 0)  -> positive only when i0=0, i1=1
+# Output layer:
+#   o = sigmoid(1*h0 + 1*h1 - 0.5)
+#
+# This structure detects the two "different" XOR cases separately
+# and combines them.  The -0.5 bias shifts (0,0) and (1,1) below
+# the 0.5 threshold.
+#
+# Expected output (all 4 lines printed):
+#   ~425  (XOR 0,0 = 0)
+#   ~1000 (XOR 0,1 = 1)
+#   ~1000 (XOR 1,0 = 1)
+#   ~425  (XOR 1,1 = 0)
+# ============================================================
+LABEL @nn_xor_demo
+
+# --- Load hidden layer weights (1000-scale) ---
+    NUM st[53] 1000             ; W00 = +1.0
+    NUM st[54] -1000            ; W01 = -1.0
+    NUM st[55] 0                ; W02 = 0
+    NUM st[56] -1000            ; W10 = -1.0
+    NUM st[57] 1000             ; W11 = +1.0
+    NUM st[58] 0                ; W12 = 0
+    NUM st[59] 0                ; b0  = 0
+    NUM st[60] 0                ; b1  = 0
+
+# --- Load output layer weights (1000-scale) ---
+    NUM st[61] 1000             ; V0  = +1.0
+    NUM st[62] 1000             ; V1  = +1.0
+    NUM st[63] -500             ; c   = -0.5
+
+# --- Test case 1: (0, 0) -> expect ~0 ---
+    NUM st[50] 0
+    NUM st[51] 0
+    NUM st[52] 0
+    CALL @nn_forward_3_2_1
+    PRINT st[49]
+
+# --- Test case 2: (0, 1) -> expect ~1 ---
+    NUM st[50] 0
+    NUM st[51] 1000
+    NUM st[52] 0
+    CALL @nn_forward_3_2_1
+    PRINT st[49]
+
+# --- Test case 3: (1, 0) -> expect ~1 ---
+    NUM st[50] 1000
+    NUM st[51] 0
+    NUM st[52] 0
+    CALL @nn_forward_3_2_1
+    PRINT st[49]
+
+# --- Test case 4: (1, 1) -> expect ~0 ---
+    NUM st[50] 1000
+    NUM st[51] 1000
+    NUM st[52] 0
+    CALL @nn_forward_3_2_1
+    PRINT st[49]
+
+    RET
+
+
+# ============================================================
+# SUBROUTINE: @softmax_3
+# Softmax for 3-class classification.
+# Converts raw class scores into probabilities that sum to 1000.
+#
+# Input:  st[50-52] = class scores (any integer range)
+# Output: st[50-52] = probabilities (sum to 1000, each 0-1000)
+#
+# Uses Taylor approximation for exp:
+#   exp(x) ~= 1000 + x + x^2/2000   (all in 1000-scale)
+#
+# Algorithm:
+#   1. Compute exp_approx for each of the 3 scores
+#   2. Sum all three exp_approx values
+#   3. prob_i = exp_i * 1000 / sum
+# ============================================================
+LABEL @softmax_3
+
+# ---- Compute exp_approx for score 0 ----
+# exp0 = 1000 + score0 + score0^2/2000
+    NUM st[43] 1000             ; base term
+    ADD st[43] st[50]           ; + score0
+    NUM st[44] 0
+    ADD st[44] st[50]
+    MUL st[44] st[50]           ; score0^2
+    NUM st[45] 2000
+    DIV st[44] st[45]           ; score0^2 / 2000
+    ADD st[43] st[44]           ; exp0 complete
+    CLAMP st[43] 1 100000       ; guard lower bound
+
+# ---- Compute exp_approx for score 1 ----
+# exp1 = 1000 + score1 + score1^2/2000
+    NUM st[44] 1000
+    ADD st[44] st[51]
+    NUM st[45] 0
+    ADD st[45] st[51]
+    MUL st[45] st[51]
+    NUM st[46] 2000
+    DIV st[45] st[46]
+    ADD st[44] st[45]           ; exp1 complete
+    CLAMP st[44] 1 100000
+
+# ---- Compute exp_approx for score 2 ----
+# exp2 = 1000 + score2 + score2^2/2000
+    NUM st[45] 1000
+    ADD st[45] st[52]
+    NUM st[46] 0
+    ADD st[46] st[52]
+    MUL st[46] st[52]
+    NUM st[47] 2000
+    DIV st[46] st[47]
+    ADD st[45] st[46]           ; exp2 complete
+    CLAMP st[45] 1 100000
+
+# ---- Sum all three exp_approx values ----
+    NUM st[46] 0
+    ADD st[46] st[43]           ; + exp0
+    ADD st[46] st[44]           ; + exp1
+    ADD st[46] st[45]           ; + exp2 -> total sum
+
+# Guard: if sum is 0, fall back to uniform distribution
+    CMP st[46] st[40]           ; compare sum with 0
+    JE @softmax_uniform
+
+# ---- Normalize: prob_i = exp_i * 1000 / sum ----
+    NUM st[47] 1000             ; scaling factor
+
+# prob0 = exp0 * 1000 / sum
+    NUM st[50] 0
+    ADD st[50] st[43]
+    MUL st[50] st[47]
+    DIV st[50] st[46]
+
+# prob1 = exp1 * 1000 / sum
+    NUM st[51] 0
+    ADD st[51] st[44]
+    MUL st[51] st[47]
+    DIV st[51] st[46]
+
+# prob2 = exp2 * 1000 / sum
+    NUM st[52] 0
+    ADD st[52] st[45]
+    MUL st[52] st[47]
+    DIV st[52] st[46]
+
+    JMP @softmax_done
+
+LABEL @softmax_uniform
+# Fallback: uniform distribution (1/3 each, summing to 1000)
+    NUM st[50] 333
+    NUM st[51] 333
+    NUM st[52] 334
+
+LABEL @softmax_done
+    RET
+
+
+# ============================================================
+# SUBROUTINE: @max_pool_1d
+# 1-Dimensional Max Pooling over 8 values.
+#
+# Input:  st[50-57] = 8 input values
+#         st[46]    = pool size (supported: 1, 2, 4, 8)
+# Output: st[50-57] = pooled results (written starting at st[50],
+#                     only first N values are meaningful)
+#         st[49]    = number of output values
+#
+# For pool_size=2:  [max(v0,v1), max(v2,v3), max(v4,v5), max(v6,v7)]
+# For pool_size=4:  [max(v0..v3), max(v4..v7)]
+# For pool_size=8:  [max(v0..v7)]
+# For pool_size=1:  identity (8 outputs, same as input)
+# ============================================================
+LABEL @max_pool_1d
+    CMP st[46] st[41]           ; pool_size == 1 ?
+    JE @maxpool_ps1
+    CMP st[46] st[42]           ; pool_size == 2 ?
+    JE @maxpool_ps2
+    NUM st[43] 4
+    CMP st[46] st[43]           ; pool_size == 4 ?
+    JE @maxpool_ps4
+    NUM st[43] 8
+    CMP st[46] st[43]           ; pool_size == 8 ?
+    JE @maxpool_ps8
+# Unsupported pool_size: default to pass-through
+    JMP @maxpool_ps1
+
+LABEL @maxpool_ps8
+# One group of 8 -> single max
+    REDUCE_MAX st[50] st[50] 8
+    NUM st[49] 1
+    RET
+
+LABEL @maxpool_ps4
+# Two groups of 4
+    REDUCE_MAX st[50] st[50] 4  ; max of st[50..53] -> st[50]
+    REDUCE_MAX st[51] st[54] 4  ; max of st[54..57] -> st[51]
+    NUM st[49] 2
+    RET
+
+LABEL @maxpool_ps2
+# Four groups of 2
+    REDUCE_MAX st[50] st[50] 2  ; max of st[50..51] -> st[50]
+    REDUCE_MAX st[51] st[52] 2  ; max of st[52..53] -> st[51]
+    REDUCE_MAX st[52] st[54] 2  ; max of st[54..55] -> st[52]
+    REDUCE_MAX st[53] st[56] 2  ; max of st[56..57] -> st[53]
+    NUM st[49] 4
+    RET
+
+LABEL @maxpool_ps1
+# Identity: each value is its own max
+    NUM st[49] 8
+    RET
