@@ -1,4 +1,4 @@
-/* transcript/atp.c -- ATP Energy Budget Management */
+/* 【transcript/atp.c -- ATP Energy Budget Management】 */
 #include "../include/dnaos.h"
 
 static long long atp_budget = 0;

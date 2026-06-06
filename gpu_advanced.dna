@@ -1,12 +1,12 @@
 ; ============================================================
-; DNAsm v3.1-GPU Advanced GPU Kernel Demo
-; 6 demos: triangle raster, Z-buffer, texture, FFT, transpose, stats
-; Register budget: st[0..63], no loops, fully unrolled
+; 【DNAsm v3.1-GPU Advanced GPU Kernel Demo】
+; 【6 demos: triangle raster, Z-缓冲区, texture, FFT, transpose, stats】
+; 【寄存器 budget: st[0..63], no loops, fully unrolled】
 ; ============================================================
 
 ; ============================================================
-; DEMO 1: 4x4 Matrix Transpose (st[0..15] -> st[16..31])
-; Input: 1..16 row-major; Output: transposed to st[16..31]
+; 【DEMO 1: 4x4 Matrix Transpose (st[0..15] -> st[16..31])】
+; 【输入: 1..16 row-major; 输出: transposed to st[16..31]】
 ; ============================================================
 
 NUM st[0] 1
@@ -26,29 +26,29 @@ NUM st[13] 14
 NUM st[14] 15
 NUM st[15] 16
 
-; Transpose B[row][col] = A[col][row]
-; Row 0 of B
+; 【Transpose B[row][col] = A[col][row]】
+; 【Row 0 of B】
 NUM st[16] 1      ; B[0][0]=A[0][0]=st[0]
 NUM st[17] 5      ; B[0][1]=A[1][0]=st[4]
 NUM st[18] 9      ; B[0][2]=A[2][0]=st[8]
 NUM st[19] 13     ; B[0][3]=A[3][0]=st[12]
-; Row 1 of B
+; 【Row 1 of B】
 NUM st[20] 2      ; B[1][0]=A[0][1]=st[1]
 NUM st[21] 6      ; B[1][1]=A[1][1]=st[5]
 NUM st[22] 10     ; B[1][2]=A[2][1]=st[9]
 NUM st[23] 14     ; B[1][3]=A[3][1]=st[13]
-; Row 2 of B
+; 【Row 2 of B】
 NUM st[24] 3      ; B[2][0]=A[0][2]=st[2]
 NUM st[25] 7      ; B[2][1]=A[1][2]=st[6]
 NUM st[26] 11     ; B[2][2]=A[2][2]=st[10]
 NUM st[27] 15     ; B[2][3]=A[3][2]=st[14]
-; Row 3 of B
+; 【Row 3 of B】
 NUM st[28] 4      ; B[3][0]=A[0][3]=st[3]
 NUM st[29] 8      ; B[3][1]=A[1][3]=st[7]
 NUM st[30] 12     ; B[3][2]=A[2][3]=st[11]
 NUM st[31] 16     ; B[3][3]=A[3][3]=st[15]
 
-; Verify diagonal elements (st[0]=st[16], st[5]=st[21], st[10]=st[26], st[15]=st[31])
+; 【Verify diagonal elements (st[0]=st[16], st[5]=st[21], st[10]=st[26], st[15]=st[31])】
 PRINT st[16]      ; [TRANSPOSE_DIAG_0] should be 1 (A[0][0])
 PRINT st[21]      ; [TRANSPOSE_DIAG_1] should be 6 (A[1][1])
 PRINT st[26]      ; [TRANSPOSE_DIAG_2] should be 11 (A[2][2])
@@ -56,13 +56,13 @@ PRINT st[31]      ; [TRANSPOSE_DIAG_3] should be 16 (A[3][3])
 
 
 ; ============================================================
-; DEMO 2: Triangle Rasterization — barycentric edge tests
+; 【DEMO 2: Triangle Rasterization — barycentric edge tests】
 ; v0=(10,10), v1=(50,10), v2=(30,40)
-; Tests: p_inside=(30,20), p_edge=(30,10), p_outside=(60,60)
-; Output: 1=inside/on-edge, 0=outside
+; 【Tests: p_inside=(30,20), p_edge=(30,10), p_outside=(60,60)】
+; 【输出: 1=inside/on-edge, 0=outside】
 ; ============================================================
 
-; --- Triangle vertices ---
+; 【--- Triangle vertices ---】
 NUM st[32] 10     ; v0x
 NUM st[33] 10     ; v0y
 NUM st[34] 50     ; v1x
@@ -70,7 +70,7 @@ NUM st[35] 10     ; v1y
 NUM st[36] 30     ; v2x
 NUM st[37] 40     ; v2y
 
-; --- Edge vectors ---
+; 【--- Edge vectors ---】
 ; e0 = v1-v0 = (40,0)
 SUB st[38] st[34] st[32]    ; e0x = 40
 SUB st[39] st[35] st[33]    ; e0y = 0
@@ -81,7 +81,7 @@ SUB st[41] st[37] st[35]    ; e1y = 30
 SUB st[42] st[32] st[36]    ; e2x = -20
 SUB st[43] st[33] st[37]    ; e2y = -30
 
-; --- Triangle area*2 = |cross(e0, v2-v0)| ---
+; 【--- Triangle area*2 = |cross(e0, v2-v0)| ---】
 SUB st[44] st[36] st[32]    ; v2x-v0x = 20
 SUB st[45] st[37] st[33]    ; v2y-v0y = 30
 MUL st[46] st[38] st[45]    ; e0x * (v2y-v0y) = 40*30 = 1200
@@ -89,121 +89,121 @@ MUL st[47] st[39] st[44]    ; e0y * (v2x-v0x) = 0*20 = 0
 SUB st[48] st[46] st[47]    ; area2 = 1200
 
 ; ========================================
-; Test point A: p_inside = (30,20) -> expect 1
+; 【测试 point A: p_inside = (30,20) -> expect 1】
 ; ========================================
 NUM st[49] 30
 NUM st[50] 20
 
-; cross(edge0, p-v0): (40,0)x(20,10) = 400
+; 【cross(edge0, p-v0): (40,0)x(20,10) = 400】
 SUB st[51] st[49] st[32]    ; px-v0x = 20
 SUB st[52] st[50] st[33]    ; py-v0y = 10
 MUL st[53] st[38] st[52]    ; e0x * (py-v0y) = 40*10 = 400
 MUL st[54] st[39] st[51]    ; e0y * (px-v0x) = 0*20 = 0
 SUB st[55] st[53] st[54]    ; cross0 = 400
 
-; cross(edge1, p-v1): (-20,30)x(-20,10) = 400
+; 【cross(edge1, p-v1): (-20,30)x(-20,10) = 400】
 SUB st[51] st[49] st[34]    ; px-v1x = -20
 SUB st[52] st[50] st[35]    ; py-v1y = 10
 MUL st[53] st[40] st[52]    ; e1x * (py-v1y) = -20*10 = -200
 MUL st[54] st[41] st[51]    ; e1y * (px-v1x) = 30*(-20) = -600
 SUB st[56] st[53] st[54]    ; cross1 = -200 - (-600) = 400
 
-; cross(edge2, p-v2): (-20,-30)x(0,-20) = 400
+; 【cross(edge2, p-v2): (-20,-30)x(0,-20) = 400】
 SUB st[51] st[49] st[36]    ; px-v2x = 0
 SUB st[52] st[50] st[37]    ; py-v2y = -20
 MUL st[53] st[42] st[52]    ; e2x * (py-v2y) = (-20)*(-20) = 400
 MUL st[54] st[43] st[51]    ; e2y * (px-v2x) = (-30)*0 = 0
 SUB st[57] st[53] st[54]    ; cross2 = 400
 
-; All three cross values positive => inside. Output 1.
+; 【All three cross values positive => inside. 输出 1.】
 NUM st[58] 1
 PRINT st[58]      ; [TRIANGLE_p_inside] expect 1
 
 ; ========================================
-; Test point B: p_edge = (30,10) -> expect 1 (on edge v0-v1)
+; 【测试 point B: p_edge = (30,10) -> expect 1 (on edge v0-v1)】
 ; ========================================
 NUM st[49] 30
 NUM st[50] 10
 
-; cross(edge0, p-v0): (40,0)x(20,0) = 0
+; 【cross(edge0, p-v0): (40,0)x(20,0) = 0】
 SUB st[51] st[49] st[32]    ; 20
 SUB st[52] st[50] st[33]    ; 0
 MUL st[53] st[38] st[52]    ; 40*0 = 0
 MUL st[54] st[39] st[51]    ; 0*20 = 0
 SUB st[55] st[53] st[54]    ; cross0 = 0
 
-; cross(edge1, p-v1): (-20,30)x(-20,0) = 600
+; 【cross(edge1, p-v1): (-20,30)x(-20,0) = 600】
 SUB st[51] st[49] st[34]    ; -20
 SUB st[52] st[50] st[35]    ; 0
 MUL st[53] st[40] st[52]    ; -20*0 = 0
 MUL st[54] st[41] st[51]    ; 30*(-20) = -600
 SUB st[56] st[53] st[54]    ; cross1 = 600
 
-; cross(edge2, p-v2): (-20,-30)x(0,-30) = 600
+; 【cross(edge2, p-v2): (-20,-30)x(0,-30) = 600】
 SUB st[51] st[49] st[36]    ; 0
 SUB st[52] st[50] st[37]    ; -30
 MUL st[53] st[42] st[52]    ; (-20)*(-30) = 600
 MUL st[54] st[43] st[51]    ; (-30)*0 = 0
 SUB st[57] st[53] st[54]    ; cross2 = 600
 
-; All >= 0 => on edge/inside. Output 1.
+; 【All >= 0 => on edge/inside. 输出 1.】
 NUM st[58] 1
 PRINT st[58]      ; [TRIANGLE_p_edge] expect 1
 
 ; ========================================
-; Test point C: p_outside = (60,60) -> expect 0
+; 【测试 point C: p_outside = (60,60) -> expect 0】
 ; ========================================
 NUM st[49] 60
 NUM st[50] 60
 
-; cross(edge0, p-v0): (40,0)x(50,50) = 2000
+; 【cross(edge0, p-v0): (40,0)x(50,50) = 2000】
 SUB st[51] st[49] st[32]    ; 50
 SUB st[52] st[50] st[33]    ; 50
 MUL st[53] st[38] st[52]    ; 40*50 = 2000
 MUL st[54] st[39] st[51]    ; 0*50 = 0
 SUB st[55] st[53] st[54]    ; cross0 = 2000
 
-; cross(edge1, p-v1): (-20,30)x(10,50) = -1300
+; 【cross(edge1, p-v1): (-20,30)x(10,50) = -1300】
 SUB st[51] st[49] st[34]    ; 10
 SUB st[52] st[50] st[35]    ; 50
 MUL st[53] st[40] st[52]    ; (-20)*50 = -1000
 MUL st[54] st[41] st[51]    ; 30*10 = 300
 SUB st[56] st[53] st[54]    ; cross1 = -1300
 
-; cross(edge2, p-v2): (-20,-30)x(30,20) = 500
+; 【cross(edge2, p-v2): (-20,-30)x(30,20) = 500】
 SUB st[51] st[49] st[36]    ; 30
 SUB st[52] st[50] st[37]    ; 20
 MUL st[53] st[42] st[52]    ; (-20)*20 = -400
 MUL st[54] st[43] st[51]    ; (-30)*30 = -900
 SUB st[57] st[53] st[54]    ; cross2 = -400 - (-900) = 500
 
-; Mixed signs => outside. Output 0.
+; 【Mixed signs => outside. 输出 0.】
 NUM st[58] 0
 PRINT st[58]      ; [TRIANGLE_p_outside] expect 0
 
 
 ; ============================================================
-; DEMO 3: Z-Buffer Depth Competition
-; tri1_z=100, tri2_z=50 (smaller=nearer)
-; Pixel (30,20): write tri1 then tri2, final Z should be 50
+; 【DEMO 3: Z-缓冲区 Depth Competition】
+; 【tri1_z=100, tri2_z=50 (smaller=nearer)】
+; 【Pixel (30,20): 写入 tri1 then tri2, final Z should be 50】
 ; ============================================================
 
 NUM st[32] 255    ; z_buffer init (clear to far value)
 NUM st[33] 100    ; tri1 depth
 NUM st[34] 50     ; tri2 depth (nearer)
 
-; Depth test simulation: tri1 writes first
+; 【Depth 测试 simulation: tri1 writes first】
 SUB st[35] st[33] st[34]    ; diff = 100-50 = 50 (positive => tri2 nearer)
-; In a real GPU the pixel shader would conditionally update;
-; here we demonstrate the overwrite semantic with known data.
+; 【In a real GPU the pixel shader would conditionally 更新;】
+; 【here we demonstrate the overwrite semantic with known data.】
 NUM st[36] 50     ; z_final = tri2_z (overwrites tri1 because 50 < 100)
 PRINT st[36]      ; [ZBUFFER_final] expect 50 (tri2 wins)
 
 
 ; ============================================================
-; DEMO 4: Texture Mapping — Bilinear Filter at UV=(0.5,0.5)
-; tex[0]=0, tex[1]=255, tex[2]=128, tex[3]=64 (2x2 texture)
-; LERP t=500 corresponds to 0.5
+; 【DEMO 4: Texture Mapping — Bilinear Filter at UV=(0.5,0.5)】
+; 【tex[0]=0, tex[1]=255, tex[2]=128, tex[3]=64 (2x2 texture)】
+; 【线性插值 t=500 corresponds to 0.5】
 ; ============================================================
 
 NUM st[32] 0      ; tex[0] top-left
@@ -211,21 +211,21 @@ NUM st[33] 255    ; tex[1] top-right
 NUM st[34] 128    ; tex[2] bottom-left
 NUM st[35] 64     ; tex[3] bottom-right
 
-; Horizontal lerp on top row: lerp(0, 255, 0.5)
+; 【Horizontal 线性插值 on top row: 线性插值(0, 255, 0.5)】
 LERP st[36] st[32] st[33] 500    ; top_mid ~ 127
-; Horizontal lerp on bottom row: lerp(128, 64, 0.5)
+; 【Horizontal 线性插值 on bottom row: 线性插值(128, 64, 0.5)】
 LERP st[37] st[34] st[35] 500    ; bot_mid = 96
-; Vertical lerp between rows: lerp(top_mid, bot_mid, 0.5)
+; 【Vertical 线性插值 between rows: 线性插值(top_mid, bot_mid, 0.5)】
 LERP st[38] st[36] st[37] 500    ; final bilinear ~ 111
 PRINT st[38]      ; [TEXTURE_bilinear] expect ~111 (UV 0.5,0.5)
 
 
 ; ============================================================
-; DEMO 5: 4-Point FFT Butterfly
-; x0=1000, x1=500, x2=250, x3=125
-; W = cos(pi/2) - i*sin(pi/2) = 0 - i (twiddle factor)
-; X0=x0+x1+x2+x3, X1=(x0-x2)+(x1-x3)*W, X2=x0-x1+x2-x3
-; Real and imaginary parts stored separately
+; 【DEMO 5: 4-Point FFT Butterfly】
+; 【x0=1000, x1=500, x2=250, x3=125】
+; 【W = 余弦(pi/2) - i*正弦(pi/2) = 0 - i (twiddle factor)】
+; 【X0=x0+x1+x2+x3, X1=(x0-x2)+(x1-x3)*W, X2=x0-x1+x2-x3】
+; 【Real and imaginary parts stored separately】
 ; ============================================================
 
 NUM st[32] 1000   ; x0
@@ -233,33 +233,33 @@ NUM st[33] 500    ; x1
 NUM st[34] 250    ; x2
 NUM st[35] 125    ; x3
 
-; --- X0 = x0+x1+x2+x3 (purely real) ---
+; 【--- X0 = x0+x1+x2+x3 (purely real) ---】
 ADD st[36] st[32] st[33]    ; x0+x1 = 1500
 ADD st[36] st[36] st[34]    ; +x2 = 1750
 ADD st[36] st[36] st[35]    ; +x3 = 1875 -> X0_real
 NUM st[37] 0                ; X0_imag = 0
 
-; --- X2 = x0-x1+x2-x3 (purely real) ---
+; 【--- X2 = x0-x1+x2-x3 (purely real) ---】
 SUB st[38] st[32] st[33]    ; x0-x1 = 500
 ADD st[38] st[38] st[34]    ; +x2 = 750
 SUB st[38] st[38] st[35]    ; -x3 = 625 -> X2_real
 NUM st[39] 0                ; X2_imag = 0
 
-; --- X1 = (x0-x2) + (x1-x3)*W, W = -i ---
-; X1_real = x0-x2 = 750
+; 【--- X1 = (x0-x2) + (x1-x3)*W, W = -i ---】
+; 【X1_real = x0-x2 = 750】
 SUB st[40] st[32] st[34]    ; X1_real = 750
-; (x1-x3)*(-i) => real part becomes imag, imag part gets negated
-; imag = -(x1-x3) = -375
+; 【(x1-x3)*(-i) => real part becomes imag, imag part gets negated】
+; 【imag = -(x1-x3) = -375】
 SUB st[41] st[33] st[35]    ; x1-x3 = 375
 SUB st[41] st[35] st[33]    ; x3-x1 = -375 -> X1_imag (reuse st[41])
 
-; --- X3 = (x0-x2) - (x1-x3)*W (conjugate butterfly) ---
-; X3_real = x0-x2 = 750
+; 【--- X3 = (x0-x2) - (x1-x3)*W (conjugate butterfly) ---】
+; 【X3_real = x0-x2 = 750】
 SUB st[42] st[32] st[34]    ; X3_real = 750
-; X3_imag = +(x1-x3) = 375
+; 【X3_imag = +(x1-x3) = 375】
 SUB st[43] st[33] st[35]    ; x1-x3 = 375 -> X3_imag
 
-; --- Print FFT results ---
+; 【--- 打印 FFT results ---】
 PRINT st[36]      ; [FFT_X0_real] expect 1875
 PRINT st[37]      ; [FFT_X0_imag] expect 0
 PRINT st[40]      ; [FFT_X1_real] expect 750
@@ -271,12 +271,12 @@ PRINT st[43]      ; [FFT_X3_imag] expect 375
 
 
 ; ============================================================
-; DEMO 6: Statistics — output demo count
+; 【DEMO 6: Statistics — 输出 demo 计数】
 ; ============================================================
 
 NUM st[60] 6
 PRINT st[60]      ; [STATS_demo_count] expect 6
 
 ; ============================================================
-; End of gpu_advanced.dna
+; 【结束 of gpu_advanced.dna】
 ; ============================================================

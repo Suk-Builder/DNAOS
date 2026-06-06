@@ -1,47 +1,47 @@
 ; =============================================================================
-; linear_algebra.dna - Linear Algebra Module for DNAsm v3.3
+; 【linear_algebra.dna - Linear Algebra Module 循环 DNAsm v3.3】
 ; =============================================================================
-; Pure DNAsm subroutines with zero external dependencies.
-; All tube indices are compile-time constants (no indirect addressing).
+; 【Pure DNAsm subroutines with 零 external dependencies.】
+; 【All 试管 indices are 编译-时间 constants (no indirect addressing).】
 ;
-; TUBE ALLOCATION (per ISA_REFERENCE.md):
-;   st[40]:    CONST 0
-;   st[41]:    CONST 1
-;   st[42]:    CONST 2
-;   st[43-45]: temp
-;   st[46]:    input parameter N (vector size, 1-8)
-;   st[47]:    input parameter scalar
-;   st[48]:    loop counter (reused across subroutines)
-;   st[49]:    return value
-;   st[50-63]: vector/matrix workspace
+; 【试管 ALLOCATION (per ISA_REFERENCE.md):】
+; st[40]:    常量 0
+; st[41]:    常量 1
+; st[42]:    常量 2
+; st[43-45]: 温度
+; 【st[46]:    输入 参数 N (vector 大小, 1-8)】
+; 【st[47]:    输入 参数 scalar】
+; 【st[48]:    loop counter (reused across subroutines)】
+; st[49]:    返回 值
+; 【st[50-63]: vector/matrix workspace】
 ;
-; VECTOR LAYOUT:
-;   Vector A: st[50..50+N-1]  (max 8 elements: st[50-57])
-;   Vector B: st[55..55+N-1]  (max 8 elements: st[55-62])
-;   Result C: st[50..]        (overwrites A)
+; 【VECTOR LAYOUT:】
+; 【Vector A: st[50..50+N-1]  (最大 8 elements: st[50-57])】
+; 【Vector B: st[55..55+N-1]  (最大 8 elements: st[55-62])】
+; 【结果 C: st[50..]        (overwrites A)】
 ;
-; MATRIX LAYOUT (3x3):
-;   Matrix M: st[50-58] row-major  [M00 M01 M02 M10 M11 M12 M20 M21 M22]
-;   Vector x: st[59-61]
-;   Result y: st[59-61]          (overwrites x)
+; 【MATRIX LAYOUT (3x3):】
+; 【Matrix M: st[50-58] row-major  [M00 M01 M02 M10 M11 M12 M20 M21 M22]】
+; 【Vector x: st[59-61]】
+; 【结果 y: st[59-61]          (overwrites x)】
 ;
-; MATRIX LAYOUT (2x2):
-;   Matrix A: st[50-53]          [A00 A01 A10 A11]
-;   Matrix B: st[54-57]          [B00 B01 B10 B11]
-;   Matrix C: st[58-61]          [C00 C01 C10 C11]
+; 【MATRIX LAYOUT (2x2):】
+; 【Matrix A: st[50-53]          [A00 A01 A10 A11]】
+; 【Matrix B: st[54-57]          [B00 B01 B10 B11]】
+; 【Matrix C: st[58-61]          [C00 C01 C10 C11]】
 ; =============================================================================
 
 
 ; ---------------------------------------------------------------------------
-; SUBROUTINE: vec_add
-; Element-wise vector addition: C = A + B (result stored in A)
-; Input:  st[50..57]=A, st[55..62]=B, st[46]=N (size 1-8)
-; Output: st[50..50+N-1]=C
+; 【SUBROUTINE: vec_add】
+; 【Element-wise vector addition: C = A + B (结果 stored in A)】
+; 【输入:  st[50..57]=A, st[55..62]=B, st[46]=N (大小 1-8)】
+; 【输出: st[50..50+N-1]=C】
 ;
-; The ADD ordering is carefully chosen to handle A/B overlap at st[55-57]:
-; B[0-2] reside at st[55-57] which are also A[5-7]. By processing A[0-4]
-; first, B[0-2] are read before their tubes become write destinations.
-; Uses st[48] as loop counter.
+; 【The 加法 ordering is carefully chosen to 处理 A/B overlap at st[55-57]:】
+; 【B[0-2] reside at st[55-57] which are also A[5-7]. By processing A[0-4]】
+; 【first, B[0-2] are 读取 before their tubes become 写入 destinations.】
+; 【Uses st[48] as loop counter.】
 ; ---------------------------------------------------------------------------
 LABEL @vec_add
     ADD st[50] st[55]           # A[0] += B[0]  (always executed)
@@ -86,11 +86,11 @@ LABEL @vec_add_done
 
 
 ; ---------------------------------------------------------------------------
-; SUBROUTINE: vec_scale
-; Vector scalar multiply: A = A * scalar
-; Input:  st[50..57]=A, st[46]=N (size 1-8), st[47]=scalar
-; Output: st[50..50+N-1]=A scaled in-place
-; Uses st[48] as loop counter (scalar at st[47] preserved).
+; 【SUBROUTINE: vec_scale】
+; 【Vector scalar 乘法: A = A * scalar】
+; 【输入:  st[50..57]=A, st[46]=N (大小 1-8), st[47]=scalar】
+; 【输出: st[50..50+N-1]=A scaled in-place】
+; 【Uses st[48] as loop counter (scalar at st[47] preserved).】
 ; ---------------------------------------------------------------------------
 LABEL @vec_scale
     MUL st[50] st[47]           # A[0] *= scalar  (always executed)
@@ -135,14 +135,14 @@ LABEL @vec_scale_done
 
 
 ; ---------------------------------------------------------------------------
-; SUBROUTINE: vec_dot
-; Vector dot product: result = sum(A[i] * B[i])
-; Input:  st[50..57]=A, st[55..62]=B, st[46]=N (size 1-8)
-; Output: st[49]=dot product
+; 【SUBROUTINE: vec_dot】
+; 【Vector 点积: 结果 = 求和(A[i] * B[i])】
+; 【输入:  st[50..57]=A, st[55..62]=B, st[46]=N (大小 1-8)】
+; 输出: st[49]=点积
 ;
-; Uses sequential MAD accumulation for correctness with all N values.
-; (DOT instruction could be used if caller guarantees zero-padding to 8.)
-; Uses st[48] as loop counter.
+; 【Uses sequential 乘加 accumulation 循环 correctness with all N values.】
+; 【(点积 指令 could be used 如果 caller guarantees 零-padding to 8.)】
+; 【Uses st[48] as loop counter.】
 ; ---------------------------------------------------------------------------
 LABEL @vec_dot
     NUM st[49] 0                # result = 0
@@ -188,13 +188,13 @@ LABEL @vec_dot_done
 
 
 ; ---------------------------------------------------------------------------
-; SUBROUTINE: vec_l2norm
-; Vector L2 norm squared: result = sum(A[i]^2)
-; Input:  st[50..57]=A, st[46]=N (size 1-8)
-; Output: st[49]=norm squared
+; 【SUBROUTINE: vec_l2norm】
+; 【Vector L2 norm squared: 结果 = 求和(A[i]^2)】
+; 【输入:  st[50..57]=A, st[46]=N (大小 1-8)】
+; 【输出: st[49]=norm squared】
 ;
-; Self dot-product using MAD accumulation.
-; Uses st[48] as loop counter.
+; 【Self 点积-product using 乘加 accumulation.】
+; 【Uses st[48] as loop counter.】
 ; ---------------------------------------------------------------------------
 LABEL @vec_l2norm
     NUM st[49] 0                # result = 0
@@ -240,19 +240,19 @@ LABEL @vec_l2norm_done
 
 
 ; ---------------------------------------------------------------------------
-; SUBROUTINE: mat_vec_mul_3x3
-; 3x3 Matrix-Vector multiplication: y = M * x
-; Input:  st[50-58]=M (3x3 row-major), st[59-61]=x
-; Output: st[59-61]=y=Mx  (overwrites x)
+; 【SUBROUTINE: mat_vec_mul_3x3】
+; 【3x3 Matrix-Vector multiplication: y = M * x】
+; 【输入:  st[50-58]=M (3x3 row-major), st[59-61]=x】
+; 【输出: st[59-61]=y=Mx  (overwrites x)】
 ;
-; Strategy: save x components in progressively freed matrix rows,
-; then use MAD chains for each output element.
-;   st[50]=M00 st[51]=M01 st[52]=M02
-;   st[53]=M10 st[54]=M11 st[55]=M12
-;   st[56]=M20 st[57]=M21 st[58]=M22
-;   st[59]=x0  st[60]=x1  st[61]=x2
-; Uses st[62] for temp storage (x0) and st[50]/st[53] for saving x1/x2.
-; Note: matrix M is corrupted during computation.
+; 【Strategy: 保存 x components in progressively freed matrix rows,】
+; 【then use 乘加 chains 循环 each 输出 element.】
+; 【st[50]=M00 st[51]=M01 st[52]=M02】
+; 【st[53]=M10 st[54]=M11 st[55]=M12】
+; 【st[56]=M20 st[57]=M21 st[58]=M22】
+; 【st[59]=x0  st[60]=x1  st[61]=x2】
+; 【Uses st[62] 循环 温度 storage (x0) and st[50]/st[53] 循环 saving x1/x2.】
+; 【Note: matrix M is corrupted during computation.】
 ; ---------------------------------------------------------------------------
 LABEL @mat_vec_mul_3x3
     # ---- Save x0 and compute y0 = M00*x0 + M01*x1 + M02*x2 ----
@@ -287,18 +287,18 @@ LABEL @mat_vec_mul_3x3
 
 
 ; ---------------------------------------------------------------------------
-; SUBROUTINE: mat_mul_2x2
-; 2x2 Matrix multiplication: C = A * B
-; Input:  st[50-53]=A, st[54-57]=B
-;         A = [A00 A01 A10 A11], B = [B00 B01 B10 B11]
-; Output: st[58-61]=C
-;         C = [C00 C01 C10 C11]
+; 【SUBROUTINE: mat_mul_2x2】
+; 【2x2 Matrix multiplication: C = A * B】
+; 【输入:  st[50-53]=A, st[54-57]=B】
+; 【A = [A00 A01 A10 A11], B = [B00 B01 B10 B11]】
+; 输出: st[58-61]=C
+; 【C = [C00 C01 C10 C11]】
 ;
-; Uses direct MAD accumulation. No overlap between A, B, C.
-; C00 = A00*B00 + A01*B10
-; C01 = A00*B01 + A01*B11
-; C10 = A10*B00 + A11*B10
-; C11 = A10*B01 + A11*B11
+; 【Uses direct 乘加 accumulation. No overlap between A, B, C.】
+; 【C00 = A00*B00 + A01*B10】
+; 【C01 = A00*B01 + A01*B11】
+; 【C10 = A10*B00 + A11*B10】
+; 【C11 = A10*B01 + A11*B11】
 ; ---------------------------------------------------------------------------
 LABEL @mat_mul_2x2
     # ---- C00 = A00*B00 + A01*B10 ----
@@ -325,18 +325,18 @@ LABEL @mat_mul_2x2
 
 
 ; ---------------------------------------------------------------------------
-; SUBROUTINE: mat_transpose_3x3
-; In-place transpose of a 3x3 matrix
-; Input/Output: st[50-58] = 3x3 matrix (row-major)
+; 【SUBROUTINE: mat_transpose_3x3】
+; 【In-place transpose of a 3x3 matrix】
+; 【输入/输出: st[50-58] = 3x3 matrix (row-major)】
 ;
-; Before:  M00 M01 M02   After:  M00 M10 M20
-;          M10 M11 M12           M01 M11 M21
-;          M20 M21 M22           M02 M12 M22
+; 【Before:  M00 M01 M02   After:  M00 M10 M20】
+; 【M10 M11 M12           M01 M11 M21】
+; 【M20 M21 M22           M02 M12 M22】
 ;
-; Swaps 3 off-diagonal pairs using st[62] as temp:
-;   M01(st[51]) <-> M10(st[53])
-;   M02(st[52]) <-> M20(st[56])
-;   M12(st[55]) <-> M21(st[57])
+; 【Swaps 3 off-diagonal pairs using st[62] as 温度:】
+; 【M01(st[51]) <-> M10(st[53])】
+; 【M02(st[52]) <-> M20(st[56])】
+; 【M12(st[55]) <-> M21(st[57])】
 ; ---------------------------------------------------------------------------
 LABEL @mat_transpose_3x3
     # ---- Swap M01(st[51]) with M10(st[53]) ----

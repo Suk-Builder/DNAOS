@@ -152,10 +152,10 @@ int dna_write(int tube_id, int value)
 
     switch (value) {
     case DNA_TRISTATE_NEG:  /* T-Hg2+-T 配位 */
-        hg_mg = 0.01f;      /* ~0.01mg Hg²⁺ */
+        hg_mg = 0.01f;      /* 【~0.01mg Hg²⁺】 */
         break;
     case DNA_TRISTATE_POS:  /* C-Ag+-C 配位 */
-        ag_mg = 0.008f;     /* ~0.008mg Ag⁺ */
+        ag_mg = 0.008f;     /* 【~0.008mg Ag⁺】 */
         break;
     case DNA_TRISTATE_ZERO: /* 中性态，EDTA预洗 */
         edta_ml = 0.05f;

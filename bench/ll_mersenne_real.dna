@@ -12,7 +12,7 @@ NUM st[21] 0        ; passed
 # Output: st[0] = 1 if prime, 0 if composite
 # Uses: st[1],st[2],st[6],st[7], st[10] scratch
 LABEL @ll
-    ; check p==2: st[10] = p-2, JZ if zero
+    ; 【check p==2: st[10] = p-2, JZ 如果 零】
     NUM st[10] 0
     ADD st[10] st[1]
     SUB st[10] st[4]
@@ -32,7 +32,7 @@ LABEL @ll_pw
 LABEL @ll_pwd
     SUB st[2] st[5]   ; m=2^p-1
 
-    ; s=4, iter=p-2
+    ; 【s=4, iter=p-2】
     NUM st[7] 4
     NUM st[6] 0       ; i=0
     SUB st[1] st[4]   ; st[1]=p-2 (= iter count)

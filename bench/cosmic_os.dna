@@ -37,10 +37,10 @@
 ;   st[59] = D4 Loop：宇宙递砖循环
 ;
 ; 常数区：
-;   st[60] = 1
+; st[60] = 1
 ;   st[61] = 1000（缩放因子）
 ;   st[62] = 宇宙tick上限
-;   st[63] = 0
+; st[63] = 0
 ; ============================================================================
 
 ; === GENOME层：宇宙常量初始化 ===
@@ -82,7 +82,7 @@ LABEL cosmic_loop
 CMP st[0] st[62]
 JGE cosmic_end
 
-; tick++
+; 【tick++】
 ADD st[0] st[60]
 
 ; === TRANSCRIPT层：物理定律引擎 ===
@@ -102,8 +102,8 @@ MUL st[11] st[51]    ; st[11] = y²
 ADD st[10] st[11]    ; st[10] = x²+y²
 
 ; 近似sqrt：用牛顿迭代法一步
-; r_approx = (r_guess + N/r_guess)/2
-; r_guess = max(|x|,|y|)
+; 【r_approx = (r_guess + N/r_guess)/2】
+; 【r_guess = 最大(|x|,|y|)】
 NUM st[12] 0
 ADD st[12] st[50]
 CMP st[12] st[63]    ; x < 0?
@@ -119,15 +119,15 @@ NUM st[13] 0
 SUB st[13] st[51]    ; |y|
 LABEL r_pos_y
 
-; r_guess = max(|x|,|y|)
+; 【r_guess = 最大(|x|,|y|)】
 CMP st[12] st[13]
 JGE r_max_xy
 NUM st[12] 0
 ADD st[12] st[13]    ; r_guess = |y|
 LABEL r_max_xy
-; st[12] = r_guess
+; 【st[12] = r_guess】
 
-; N/r_guess
+; 【N/r_guess】
 NUM st[13] 0
 ADD st[13] st[10]    ; st[13] = x²+y²
 DIV st[13] st[12]    ; st[13] = (x²+y²)/r_guess
@@ -138,7 +138,7 @@ DIV st[12] st[13]    ; st[12] = r_approx
 ; st[12] = r (距离中心)
 
 ; --- 引力计算（简化版）---
-; F = G*M*m/r² → a = G*M/r²
+; 【F = G*M*m/r² → a = G*M/r²】
 ; 假设中心有个大质量M=1000
 NUM st[13] 1000      ; M=1000
 MUL st[13] st[3]     ; G*M
@@ -149,7 +149,7 @@ NUM st[15] 0
 ADD st[15] st[13]
 DIV st[15] st[14]    ; a = G*M/r²（缩放后）
 
-; ax = -a * x/r
+; 【ax = -a * x/r】
 NUM st[16] 0
 ADD st[16] st[50]
 MUL st[16] st[15]
@@ -168,15 +168,15 @@ SUB st[18] st[16]    ; -ax
 NUM st[19] 0
 SUB st[19] st[17]    ; -ay
 
-; vx += -ax
+; 【vx += -ax】
 ADD st[52] st[18]
-; vy += -ay
+; 【vy += -ay】
 ADD st[53] st[19]
 
 ; --- 位置更新 ---
-; x += vx*dt
+; 【x += vx*dt】
 ADD st[50] st[52]
-; y += vy*dt
+; 【y += vy*dt】
 ADD st[51] st[53]
 
 ; --- 热力学：能量守恒检查 ---

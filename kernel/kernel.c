@@ -1,4 +1,4 @@
-/* kernel/kernel.c -- DNAOS Microkernel */
+/* 【kernel/kernel.c -- DNAOS Microkernel】 */
 #include "../include/dnaos.h"
 
 static struct { int used, owner; AVal val; char label[32]; } tubes[MAX_TUBES];

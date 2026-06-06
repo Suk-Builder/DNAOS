@@ -322,7 +322,7 @@ LABEL p6_not_closed
 PRINT st[31]
 RET
 
-; === P7: P vs NP ===
+; 【=== P7: P vs NP ===】
 LABEL brick_p7
 ; P vs NP需要特殊处理——用SAT约简框架
 NUM st[40] 0

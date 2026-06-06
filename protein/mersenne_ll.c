@@ -1,4 +1,4 @@
-/* protein/mersenne_ll.c -- Lucas-Lehmer with IBDWT */
+/* 【protein/mersenne_ll.c -- Lucas-Lehmer with IBDWT】 */
 #include "../include/dnaos.h"
 
 int lucas_lehmer(long long p) {

@@ -34,7 +34,7 @@
 #define CALL_STACK  64
 #define N_REAGENTS  5
 
-/* ---- ISA Opcode Table ---- */
+/* 【---- ISA 操作码 Table ----】 */
 enum {
     OP_UNZIP=0, OP_HYB,  OP_DISPL, OP_CLEAVE,
     OP_LIGATE,  OP_POLY, OP_MELT,  OP_ANNEAL,
@@ -65,23 +65,23 @@ char d2b(int d){return"ATCG"[d&3];}
 void enc_op(int op,char o[4]){o[0]=d2b(op/16);o[1]=d2b((op/4)%4);o[2]=d2b(op%4);o[3]=0;}
 int dec_op(const char c[3]){int cd=b2d(c[0])*16+b2d(c[1])*4+b2d(c[2]);return(cd<N_OPS)?cd:OP_NOP;}
 
-/* ---- Tube: strands (molecular) + float nsm_val (neural) ---- */
+/* 【---- 试管: strands (molecular) + float nsm_val (neural) ----】 */
 typedef struct{char seq[MAX_LEN];int len;}Strand;
 typedef struct{Strand*s;int n,cap;float nsm_val;}Tube;
 Tube st[NTUBES],dt[NTUBES];
 double temp=37.0;
 
-/* ---- NSM Runtime ---- */
+/* 【---- NSM Runtime ----】 */
 static MemristorArray crossbar;
 static int nsm_initialized=0;
 
-/* ---- Control Flow ---- */
+/* 【---- Control Flow ----】 */
 typedef struct{char name[32];int addr;}Label;
 static Label labels[MAX_LABELS];static int n_labels=0;
 static int call_stack[CALL_STACK];static int call_sp=0;
 static int flag_z=0,flag_e=0,flag_g=0,flag_l=0;
 
-/* ---- Reagent tracking ---- */
+/* 【---- 试剂 tracking ----】 */
 static const char*reagent_name[N_REAGENTS]={"Hg2+","Ag+","EDTA","DNA_chain","Buffer"};
 static const char*reagent_unit[N_REAGENTS]={"mg","mg","ml","pmol","ml"};
 static double reagent_total[N_REAGENTS]={0};
@@ -90,7 +90,7 @@ static int reagent_count[N_REAGENTS]={0};
 static int warp_start=0,warp_end=0;
 
 /* ======================================================================== */
-/*                     TUBE HELPERS (molecular layer)                       */
+/* 【试管 HELPERS (molecular 层)】 */
 /* ======================================================================== */
 void init_tubes(){
     for(int i=0;i<NTUBES;i++){
@@ -140,7 +140,7 @@ void do_burn(int idx){clear_t(&st[idx]);clear_t(&dt[idx]);}
 void do_copy(int idx,int cycles){Tube*t=&st[idx];for(int c=0;c<cycles&&t->n<t->cap/2;c++){int cur=t->n;for(int i=0;i<cur&&t->n<t->cap;i++){char rc[MAX_LEN];revcomp(t->s[i].seq,rc);add_s(t,rc);}}if(t->nsm_val>0){t->nsm_val*=(1<<cycles);}}
 
 /* ======================================================================== */
-/*                    NSM CORE OPERATIONS (with imm flags)                  */
+/* 【NSM CORE OPERATIONS (with imm flags)】 */
 /* ======================================================================== */
 
 /* Parser: returns tube index. For plain integers N, sets *is_imm=1 and
@@ -162,7 +162,7 @@ static int parse_tube(char*tk,int*is_imm){
 
 #define GETV(idx,imm) ((imm)?(idx):(int)st[(idx)].nsm_val)
 
-/* DAC st[krow] st[kcol] voltage_mv -- write voltage to crossbar.V[row] */
+/* 【DAC st[krow] st[kcol] voltage_mv -- 写入 voltage to crossbar.V[row]】 */
 void do_dac(int row_idx,int col_idx,float voltage,int imm0,int imm1){
     (void)col_idx;(void)imm1;
     int row=GETV(row_idx,imm0);
@@ -183,7 +183,7 @@ void do_set(int row_idx,int col_idx,int pw_idx,int imm0,int imm1,int imm2,float 
     printf("  [SET] G[%d][%d] += LTP (pw=%.1f ns)\n",row,col,pw);
 }
 
-/* RST st[row] st[col] st[pw] -- depression pulse (LTD) */
+/* 【RST st[row] st[col] st[pw] -- depression pulse (LTD)】 */
 void do_rst(int row_idx,int col_idx,int pw_idx,int imm0,int imm1,int imm2,float fval_pw){
     int row=GETV(row_idx,imm0);
     int col=GETV(col_idx,imm1);
@@ -194,13 +194,13 @@ void do_rst(int row_idx,int col_idx,int pw_idx,int imm0,int imm1,int imm2,float 
     printf("  [RST] G[%d][%d] -= LTD (pw=%.1f ns)\n",row,col,pw);
 }
 
-/* VMM -- vector-matrix multiply */
+/* 【VMM -- vector-matrix 乘法】 */
 void do_vmm(void){
     nsm_vmm(&crossbar);
     printf("  [VMM] I = G^T * V done\n");
 }
 
-/* READ st[dst] st[row] st[col] -- read conductance */
+/* 【读取 st[dst] st[row] st[col] -- 读取 conductance】 */
 void do_read_cond(int dst_idx,int row_idx,int col_idx,int imm1,int imm2){
     int row=GETV(row_idx,imm1);
     int col=GETV(col_idx,imm2);
@@ -211,7 +211,7 @@ void do_read_cond(int dst_idx,int row_idx,int col_idx,int imm1,int imm2){
     printf("  [READ] G[%d][%d] = %.6f S -> st[%d]\n",row,col,g,dst_idx);
 }
 
-/* STDP st[pre] st[post] st[dt] -- spike-timing dependent plasticity */
+/* 【STDP st[pre] st[post] st[dt] -- spike-timing dependent plasticity】 */
 void do_stdp(int pre_idx,int post_idx,int dt_idx,int imm0,int imm1,int imm2,float fval_dt){
     int pre=GETV(pre_idx,imm0);
     int post=GETV(post_idx,imm1);
@@ -224,7 +224,7 @@ void do_stdp(int pre_idx,int post_idx,int dt_idx,int imm0,int imm1,int imm2,floa
     printf("  [STDP] pre=%d post=%d dt=%.2f ms (%s)\n",pre,post,dt,(dt>0)?"LTP":"LTD");
 }
 
-/* CHEM st[type] st[intensity] -- chemical neuromodulation */
+/* 【CHEM st[类型] st[intensity] -- chemical neuromodulation】 */
 void do_chem(int type_idx,int intensity_idx,int imm0,int imm1,float fval_intensity){
     int type=GETV(type_idx,imm0);
     float intensity=imm1?fval_intensity:st[intensity_idx].nsm_val;
@@ -234,7 +234,7 @@ void do_chem(int type_idx,int intensity_idx,int imm0,int imm1,float fval_intensi
 }
 
 /* ======================================================================== */
-/*                         GPU PARALLEL PRIMITIVES                          */
+/* 【GPU 并行 PRIMITIVES】 */
 /* ======================================================================== */
 
 void do_para(int start,int end){warp_start=start&63;warp_end=(end>63?63:end)&63;}
@@ -265,7 +265,7 @@ void do_fma(int dst,int a,int b){int d=dst&63,A=a&63,B=b&63;st[d].nsm_val=st[A].
 void do_sync(void){}
 
 /* ======================================================================== */
-/*                         CONTROL FLOW                                      */
+/* 【CONTROL FLOW】 */
 /* ======================================================================== */
 
 void do_cmp(int a,int b){
@@ -278,7 +278,7 @@ int find_label(const char*name){
 }
 
 /* ======================================================================== */
-/*                         TIMING & REAGENT                                  */
+/* 【TIMING & 试剂】 */
 /* ======================================================================== */
 
 void do_sleep(int ms){
@@ -304,7 +304,7 @@ void print_reagent_summary(){
 }
 
 /* ======================================================================== */
-/*                         PROGRAM & PARSER                                  */
+/* 【程序 & PARSER】 */
 /* ======================================================================== */
 
 typedef struct{int op;int tube[3];int imm[3];float fval[3];double val;char str[64];}Inst;
@@ -329,7 +329,7 @@ void parse_line(const char*line,Inst*I){
     else if((I->op==OP_JMP||I->op==OP_JZ||I->op==OP_JNZ||I->op==OP_JE||I->op==OP_JNE||I->op==OP_CALL)&&nt>=2){
         strncpy(I->str,tok[1],63);I->str[63]=0;
     }
-    else if(I->op==OP_RET){/* nothing */}
+    else if(I->op==OP_RET){/* 【nothing】 */}
     else if(I->op==OP_CMP&&nt>=3){
         I->tube[0]=parse_tube(tok[1],&ti[0]);I->imm[0]=ti[0];I->fval[0]=st[I->tube[0]].nsm_val;
         I->tube[1]=parse_tube(tok[2],&ti[1]);I->imm[1]=ti[1];I->fval[1]=st[I->tube[1]].nsm_val;
@@ -378,7 +378,7 @@ void parse_line(const char*line,Inst*I){
         I->tube[0]=parse_tube(tok[1],&ti[0]);I->imm[0]=ti[0];I->fval[0]=st[I->tube[0]].nsm_val;
         I->tube[1]=parse_tube(tok[2],&ti[1]);I->imm[1]=ti[1];I->fval[1]=st[I->tube[1]].nsm_val;
     }
-    else if(I->op==OP_VMM){/* no params */}
+    else if(I->op==OP_VMM){/* 【no params】 */}
     else if(I->op==OP_PARA&&nt>=3){for(int i=1;i<nt&&i<=2;i++)I->tube[i-1]=parse_tube(tok[i],&ti[0]);}
     else if((I->op==OP_REDUCE_SUM||I->op==OP_REDUCE_MAX)&&nt>=4){
         for(int i=1;i<nt&&i<=3;i++)I->tube[i-1]=parse_tube(tok[i],&ti[0]);
@@ -419,7 +419,7 @@ void parse_line(const char*line,Inst*I){
     else if(I->op==OP_LOAD&&nt>=3)strncpy(I->str,tok[2],63);
 }
 
-/* Two-pass load */
+/* 【Two-pass 加载】 */
 void collect_labels(char lines[][512],int n_lines){
     n_labels=0;prog_len=0;
     Inst tmp;
@@ -453,7 +453,7 @@ void resolve_jumps(){
 }
 
 /* ======================================================================== */
-/*                         EXECUTION ENGINE                                  */
+/* 【EXECUTION ENGINE】 */
 /* ======================================================================== */
 
 void exec(){
@@ -536,7 +536,7 @@ void compile_dna(const char*outfile){
 }
 
 /* ======================================================================== */
-/*                         MAIN ENTRY                                        */
+/* 主函数 入口 */
 /* ======================================================================== */
 
 int main(int argc,char**argv){

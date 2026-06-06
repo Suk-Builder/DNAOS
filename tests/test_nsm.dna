@@ -41,7 +41,7 @@ SET st[60] st[61] st[63]
 READ st[0] st[60] st[61]
 PRINT st[0]
 
-; STDP: pre=row5, post=col10
+; 【STDP: pre=row5, post=col10】
 STDP st[60] st[61] st[50] st[51]
 READ st[0] st[60] st[61]
 PRINT st[0]

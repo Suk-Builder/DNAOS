@@ -38,4 +38,4 @@ void  reagent_refill(void);              /* 换液/补充试剂 */
 int dna_get_cycles(int tube_id);         /* 查询tube擦写次数（mmDNA寿命48次） */
 int dna_get_state(int tube_id);          /* 查询tube三态: -1/0/+1, -2=未初始化 */
 
-#endif /* DNA_HAL_H */
+#endif /* 【DNA_HAL_H】 */

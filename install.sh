@@ -1,7 +1,7 @@
-#!/bin/bash
-# DNAOS v2.0 Genesis -- One-Click Installer
-# Usage: ./install.sh
-# After install, type 'dnaos' to start
+# 【!/bin/bash】
+# 【DNAOS v2.0 Genesis -- One-Click Installer】
+# 【Usage: ./install.sh】
+# 【After install, 类型 'dnaos' to 启动】
 
 set -e
 
@@ -14,7 +14,7 @@ echo ""
 INSTALL_DIR="${HOME}/.dnaos"
 BIN_DIR="${HOME}/.local/bin"
 
-# ---- Check OS ----
+# 【---- Check OS ----】
 OS="unknown"
 if [ -f /etc/os-release ]; then
     . /etc/os-release
@@ -24,7 +24,7 @@ elif [ "$(uname)" = "Darwin" ]; then
 fi
 echo "[1/5] OS: $OS"
 
-# ---- Check deps ----
+# 【---- Check deps ----】
 echo "[2/5] Checking dependencies..."
 MISSING=""
 
@@ -65,29 +65,29 @@ if [ -n "$MISSING" ]; then
 fi
 echo "      All OK (gcc, make, gmp)"
 
-# ---- Install ----
+# 【---- Install ----】
 echo "[3/5] Installing to $INSTALL_DIR..."
 mkdir -p "$INSTALL_DIR" "$BIN_DIR"
 
-# Copy all files
+# 【复制 all files】
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cp -r "$SCRIPT_DIR"/* "$SCRIPT_DIR"/Makefile "$INSTALL_DIR/" 2>/dev/null || true
 
-# Build
+# 构建
 echo "[4/5] Compiling DNAOS..."
 cd "$INSTALL_DIR"
 make clean >/dev/null 2>&1
 make 2>&1 | tail -5
 
-# Create launcher
+# 【创建 launcher】
 echo "[5/5] Creating launcher..."
 cat > "$BIN_DIR/dnaos" << 'LAUNCHER'
-#!/bin/bash
+# 【!/bin/bash】
 exec "$HOME/.dnaos/dnaos2" "$@"
 LAUNCHER
 chmod +x "$BIN_DIR/dnaos"
 
-# Add to PATH
+# 【加法 to PATH】
 if ! echo "$PATH" | grep -q "$BIN_DIR"; then
     SHELL_RC=""
     if [ -f "$HOME/.bashrc" ]; then SHELL_RC="$HOME/.bashrc"
@@ -101,7 +101,7 @@ if ! echo "$PATH" | grep -q "$BIN_DIR"; then
     fi
 fi
 
-# Done
+# 完成
 echo ""
 echo "============================================================"
 echo "     DNAOS v2.0 Installed!"
@@ -115,7 +115,7 @@ echo "The United Nations Charter of All Universes"
 echo "is now hardcoded in your system."
 echo ""
 
-# Ask to run
+# 【Ask to 运行】
 printf "Start DNAOS now? [Y/n] "
 read -r answer
 if [ -z "$answer" ] || echo "$answer" | grep -qi "^y"; then

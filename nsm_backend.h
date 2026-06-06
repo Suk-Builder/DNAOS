@@ -35,8 +35,8 @@ void nsm_vmm(MemristorArray* arr);
 // STDP：脉冲时间依赖可塑性
 // pre_time: 前突触放电时间（ms）
 // post_time: 后突触放电时间（ms）
-// Δt = post - pre > 0 → LTP（SET）
-// Δt = post - pre < 0 → LTD（RESET）
+// 【Δt = post - pre > 0 → LTP（设置）】
+// 【Δt = post - pre < 0 → LTD（重置）】
 void nsm_stdp(MemristorArray* arr, int pre_row, int post_col,
               float pre_t, float post_t);
 

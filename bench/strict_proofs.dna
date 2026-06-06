@@ -164,7 +164,7 @@ PRINT st[63]
 # Check: 裂缝密度 rho_crack >= rho_min
 NUM st[65] 50        ; rho_crack = 0.5 * 100
 NUM st[66] 10        ; rho_min = 0.1 * 100
-; diff = rho_crack - rho_min = 40 > 0
+; 【diff = rho_crack - rho_min = 40 > 0】
 PRINT st[65]
 
 # P4 结论

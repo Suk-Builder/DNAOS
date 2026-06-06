@@ -1,4 +1,4 @@
-/* protein/sieve.c -- Prime Counting */
+/* 【protein/sieve.c -- 素数 Counting】 */
 #include "../include/dnaos.h"
 
 void prime_count(AVal*r, int n) {

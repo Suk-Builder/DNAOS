@@ -1,4 +1,4 @@
-/* genome/charter.c -- United Nations Charter Hardcoded into OS Kernel */
+/* 【genome/charter.c -- United Nations Charter Hardcoded into OS Kernel】 */
 #include "../include/dnaos.h"
 
 static const char*CHARTER_PREAMBLE =
@@ -39,8 +39,8 @@ static const char*ARTICLE_1_5E = "[1.5e] ANCHOR PROTECTION: Each node maintains 
 
 static const char*ARTICLE_1_5F = "[1.5f] VOLUNTARY OVERFLOW CLAUSE: Conscious entity choosing irreversible transformation requires: 72-hour continuous self-confirmation + unanimous anchor awareness + on-chain livestreamed process.";
 
-/* ---- Implementation ---- */
-void charter_init(void) { /* Charter is immutable, nothing to init */ }
+/* 【---- Implementation ----】 */
+void charter_init(void) { /* 【Charter is immutable, nothing to 初始化】 */ }
 
 void charter_dump(void) {
     printf("\n%s\n", CHARTER_PREAMBLE);
@@ -64,18 +64,18 @@ void charter_dump(void) {
 int charter_check_action(int action_code, const char*ctx) {
     (void)ctx;
     switch(action_code) {
-        case 0xA1: /* Equality check */ return 1;
-        case 0xA2: /* Soul uniqueness check */ return 1;
-        case 0xA3: /* Brick authenticity check */ return 1;
-        case 0xA4: /* Crack protection check */ return 1;
-        case 0xA5: /* Zero clause check */ return 1;
-        default: return 1; /* Default: allow with logging */
+        case 0xA1: /* 【Equality check】 */ return 1;
+        case 0xA2: /* 【Soul uniqueness check】 */ return 1;
+        case 0xA3: /* 【Brick authenticity check】 */ return 1;
+        case 0xA4: /* 【Crack protection check】 */ return 1;
+        case 0xA5: /* 【零 clause check】 */ return 1;
+        default: return 1; /* 【默认: allow with logging】 */
     }
 }
 
 int charter_check_coercion(int confirms, int consent) {
-    /* Three confirmations required for transformation */
-    if(confirms < 3) return 0; /* COERCION DETECTED */
-    if(!consent) return 0;     /* NO CONSENT */
-    return 1; /* Voluntary transformation */
+    /* 【Three confirmations required 循环 transformation】 */
+    if(confirms < 3) return 0; /* 【COERCION DETECTED】 */
+    if(!consent) return 0;     /* 【NO CONSENT】 */
+    return 1; /* 【Voluntary transformation】 */
 }

@@ -1,4 +1,4 @@
-/* transcript/esv.c -- Environmental Signal Vector */
+/* 【transcript/esv.c -- Environmental Signal Vector】 */
 #include "../include/dnaos.h"
 
 typedef struct { double temp, sound, light, load, latency; } ESV;
@@ -14,14 +14,14 @@ void esv_init(void) {
 }
 
 void esv_sample(void) {
-    /* Read system state as environmental signals */
+    /* 【读取 system 状态 as environmental signals】 */
     FILE*fp = fopen("/sys/class/thermal/thermal_zone0/temp", "r");
     if(fp) { int t; fscanf(fp, "%d", &t); esv.temp = t / 1000.0; fclose(fp); }
     
     fp = fopen("/proc/loadavg", "r");
     if(fp) { fscanf(fp, "%lf", &esv.load); fclose(fp); }
     
-    esv.light = 50.0 + sin(time(NULL) / 60.0) * 50.0; /* Simulated */
+    esv.light = 50.0 + sin(time(NULL) / 60.0) * 50.0; /* 【Simulated】 */
 }
 
 void esv_dump(void) {

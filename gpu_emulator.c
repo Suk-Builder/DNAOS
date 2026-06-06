@@ -28,7 +28,7 @@ typedef struct { long long i64; mpz_t gmp; int has_gmp; } AVal;
 /* GPU线程参数：每个线程处理一个试管 */
 typedef struct {
     int tid;                    /* 线程ID */
-    int wid;                    /* warp ID */
+    int wid;                    /* 线程束 ID */
     AVal* tubes;               /* 试管数组（本warp的） */
     int num_tubes;             /* 本warp试管数 */
     int opcode;                /* 当前执行的DNA指令 */
@@ -53,15 +53,15 @@ static GPUState gpu;
 void dna_op(AVal* tube, int opcode, long long operand) {
     switch(opcode) {
         case 0: /* NUM */ tube->i64 = operand; break;
-        case 1: /* COPY */ tube->i64 <<= operand; break; /* *2^operand */
-        case 2: /* ADD */ tube->i64 += operand; break;
-        case 3: /* SUB */ tube->i64 -= operand; break;
-        case 4: /* MUL */ tube->i64 *= operand; break;
-        case 5: /* DIV */ if(operand) tube->i64 /= operand; break;
-        case 6: /* SIN */ tube->i64 = (long long)(sin(tube->i64 * 0.01) * 1000); break;
-        case 7: /* COS */ tube->i64 = (long long)(cos(tube->i64 * 0.01) * 1000); break;
-        case 8: /* SQRT */ tube->i64 = (long long)sqrt((double)tube->i64); break;
-        case 9: /* FMA */ tube->i64 = tube->i64 * operand + operand; break; /* 乘加融合 */
+        case 1: /* 复制 */ tube->i64 <<= operand; break; /* *2^operand */
+        case 2: /* 加法 */ tube->i64 += operand; break;
+        case 3: /* 减法 */ tube->i64 -= operand; break;
+        case 4: /* 乘法 */ tube->i64 *= operand; break;
+        case 5: /* 除法 */ if(operand) tube->i64 /= operand; break;
+        case 6: /* 正弦 */ tube->i64 = (long long)(sin(tube->i64 * 0.01) * 1000); break;
+        case 7: /* 余弦 */ tube->i64 = (long long)(cos(tube->i64 * 0.01) * 1000); break;
+        case 8: /* 平方根 */ tube->i64 = (long long)sqrt((double)tube->i64); break;
+        case 9: /* 【 fused multiply-add】 */ tube->i64 = tube->i64 * operand + operand; break; /* 乘加融合 */
     }
 }
 
@@ -198,7 +198,7 @@ void demo_texture_mapping(void) {
     
     /* GPU并行：纹理放大（每个像素一个线程） */
     printf("\n  启动GPU核函数: FMA (纹理过滤)...\n");
-    gpu_launch_kernel(9, 3, out, TEX_SIZE); /* out = out * 3 + 3 */
+    gpu_launch_kernel(9, 3, out, TEX_SIZE); /* 【out = out * 3 + 3】 */
     gpu_visualize(out, TEX_SIZE, "filtered");
     
     printf("\n  执行时间: %.3f ms\n", gpu.kernel_time * 1000.0 / CLOCKS_PER_SEC);

@@ -1,4 +1,4 @@
-/* protein/protein.c -- Protein Execution Layer */
+/* 【protein/protein.c -- Protein Execution 层】 */
 #include "../include/dnaos.h"
 
 typedef struct { int id, active; char name[32]; } protein_t;
