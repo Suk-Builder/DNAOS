@@ -1,12 +1,12 @@
-/* DNAsm v3.3 -- DNA Native ISA + GPU Parallel + Control Flow + Timing/Reagent
+/* DNAsm v3.3 -- DNA原生指令集 + GPU并行 + 控制流 + 定时/试剂
  *
- * ISA: 53 opcodes
- *   v1: Molecular (UNZIP/HYB/DISPL/CLEAVE/LIGATE/POLY/MELT/ANNEAL/FIND/COUNT/SPLIT/MIX)
- *   v2: I/O (COPY/BURN/READ/LOAD/TEMP)
- *   v3: Numerical (NUM/ADD/PRINT/SUB/MUL/DIV/FIB/PRIME/FACT/POW/SQRT/GCD/LN)
- *   v3.1: GPU Parallel (PARA/REDUCE_SUM/REDUCE_MAX/DOT/MAD/LERP/CLAMP/SIN/COS/FMA/SYNC)
- *   v3.2: Control Flow (LABEL/JMP/JZ/JNZ/JE/JNE/CMP/CALL/RET)
- *   v3.3: Timing & Reagent (SLEEP/REAGENT)
+ * 指令集: 56条操作码
+ *   v1: 分子操作 (UNZIP/HYB/DISPL/CLEAVE/LIGATE/POLY/MELT/ANNEAL/FIND/COUNT/SPLIT/MIX)
+ *   v2: 输入输出 (COPY/BURN/READ/LOAD/TEMP)
+ *   v3: 数值运算 (NUM/ADD/PRINT/SUB/MUL/DIV/FIB/PRIME/FACT/POW/SQRT/GCD/LN)
+ *   v3.1: GPU并行原语 (PARA/REDUCE_SUM/REDUCE_MAX/DOT/MAD/LERP/CLAMP/SIN/COS/FMA/SYNC)
+ *   v3.2: 控制流 (LABEL/JMP/JZ/JNZ/JE/JNE/CMP/CALL/RET)
+ *   v3.3: 定时与试剂 (SLEEP/REAGENT)
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,7 +14,7 @@
 #include <math.h>
 #include <ctype.h>
 #include <time.h>
-#include <unistd.h>  /* usleep for SLEEP */
+#include <unistd.h>  /* usleep用于SLEEP指令 */
 
 #define MAX_STRANDS 10000
 #define MAX_LEN     256
@@ -35,25 +35,25 @@ enum {
     OP_ADD,     OP_PRINT,OP_SUB,   OP_MUL,
     OP_DIV,     OP_FIB,  OP_PRIME, OP_FACT,
     OP_POW,     OP_SQRT, OP_GCD,   OP_LN,
-    /* ---- GPU Parallel Primitives v3.1 ---- */
+    /* ---- GPU并行原语 v3.1 ---- */
     OP_PARA,    OP_REDUCE_SUM, OP_REDUCE_MAX,
     OP_DOT,     OP_MAD,  OP_LERP,  OP_CLAMP,
     OP_SIN,     OP_COS,  OP_FMA,   OP_SYNC,
-    /* ---- Control Flow v3.2 ---- */
+    /* ---- 控制流 v3.2 ---- */
     OP_LABEL,   /* LABEL name -- define label (no-op at runtime) */
-    OP_JMP,     /* JMP label -- unconditional jump */
-    OP_JZ,      /* JZ label -- jump if st[0] == 0 */
-    OP_JNZ,     /* JNZ label -- jump if st[0] != 0 */
-    OP_JE,      /* JE label -- jump if equal (after CMP) */
-    OP_JNE,     /* JNE label -- jump if not equal (after CMP) */
-    OP_JLT,     /* JLT label -- jump if less (after CMP) */
-    OP_JGE,     /* JGE label -- jump if greater or equal (after CMP) */
-    OP_JGT,     /* JGT label -- jump if greater (after CMP) */
-    OP_JLE,     /* JLE label -- jump if less or equal (after CMP) */
-    OP_CMP,     /* CMP st[a] st[b] -- compare, set flags */
-    OP_CALL,    /* CALL label -- call subroutine */
-    OP_RET,     /* RET -- return from subroutine */
-    /* ---- Timing & Reagent v3.3 ---- */
+    OP_JMP,     /* JMP 标签 -- 无条件跳转 */
+    OP_JZ,      /* JZ 标签 -- 如果st[0]==0则跳转 */
+    OP_JNZ,     /* JNZ 标签 -- 如果st[0]!=0则跳转 */
+    OP_JE,      /* JE 标签 -- 如果相等则跳转(CMP之后) */
+    OP_JNE,     /* JNE 标签 -- 如果不相等则跳转(CMP之后) */
+    OP_JLT,     /* JLT 标签 -- 如果小于则跳转(CMP之后) */
+    OP_JGE,     /* JGE 标签 -- 如果大于等于则跳转(CMP之后) */
+    OP_JGT,     /* JGT 标签 -- 如果大于则跳转(CMP之后) */
+    OP_JLE,     /* JLE 标签 -- 如果小于等于则跳转(CMP之后) */
+    OP_CMP,     /* CMP st[a] st[b] -- 比较并设置标志位 */
+    OP_CALL,    /* CALL 标签 -- 调用子程序 */
+    OP_RET,     /* RET -- 从子程序返回 */
+    /* ---- 定时与试剂 v3.3 ---- */
     OP_SLEEP,   /* SLEEP N/SLEEP st[k] -- pause N milliseconds */
     OP_REAGENT, /* REAGENT st[k] st[type] -- record reagent consumption */
     N_OPS
@@ -79,13 +79,13 @@ typedef struct{Strand*s;int n,cap;long long num_val;}Tube;
 Tube st[NTUBES],dt[NTUBES];
 double temp=37.0;
 
-/* ---- Control Flow v3.2 ---- */
+/* ---- 控制流 v3.2 ---- */
 typedef struct{char name[32];int addr;}Label;
 static Label labels[MAX_LABELS];static int n_labels=0;
 static int call_stack[CALL_STACK];static int call_sp=0;
-static int flag_z=0,flag_e=0,flag_g=0,flag_l=0; /* Z=zero E=equal G=greater L=less */
+static int flag_z=0,flag_e=0,flag_g=0,flag_l=0; /* Z=零 E=相等 G=大于 L=小于 */
 
-/* ---- Reagent tracking v3.3 ---- */
+/* ---- 试剂追踪 v3.3 ---- */
 static const char*reagent_name[N_REAGENTS]={
     "Hg2+","Ag+","EDTA","DNA_chain","Buffer"
 };
@@ -135,10 +135,10 @@ void do_ligate(int dst,int a,int b){Tube*ta=&st[a],*tb=&st[b],*D=&st[dst];clear_
 void do_melt(int idx,double t){temp=t;if(temp>65.0)do_unzip(idx);}
 void do_anneal(int idx,double t){temp=t;if(temp<55.0)do_hyb(idx);}
 int do_find(int idx,const char*pat){Tube*T=&st[idx];int f=0;for(int i=0;i<T->n;i++)if(strstr(T->s[i].seq,pat))f++;return f;}
-void do_read(int idx){Tube*t=&st[idx];printf("  READ st[%d]: %d strands [num=%lld]\n",idx,t->n,t->num_val);for(int i=0;i<t->n&&i<3;i++)printf("    [%d] %s (len=%d)\n",i,t->s[i].seq,t->s[i].len);if(t->n>3)printf("    ... (%d more)\n",t->n-3);}
+void do_read(int idx){Tube*t=&st[idx];printf("  [READ st[%d]] %d条链 [数值=%lld]\n",idx,t->n,t->num_val);for(int i=0;i<t->n&&i<3;i++)printf("    [%d] %s (长度=%d)\n",i,t->s[i].seq,t->s[i].len);if(t->n>3)printf("    ... (还有%d条)\n",t->n-3);}
 void do_burn(int idx){clear_t(&st[idx]);clear_t(&dt[idx]);}
 
-/* ---- Numerical Instructions v3 ---- */
+/* ---- 数值指令 v3 ---- */
 void do_num(int idx,long long N){clear_t(&st[idx]);add_n(&st[idx],N);}
 void do_add(int dst,int src){st[dst].num_val += st[src].num_val;}
 void do_sub(int dst,int src){st[dst].num_val -= st[src].num_val;if(st[dst].num_val<0)st[dst].num_val=0;}
@@ -154,7 +154,7 @@ void do_ln(int idx){long long v=st[idx].num_val;double r=0;for(int i=1;i<=100000
 void do_copy(int idx,int cycles){Tube*t=&st[idx];for(int c=0;c<cycles&&t->n<t->cap/2;c++){int cur=t->n;for(int i=0;i<cur&&t->n<t->cap;i++){char rc[MAX_LEN];revcomp(t->s[i].seq,rc);add_s(t,rc);}}if(t->num_val>0){int mult=1<<cycles;t->num_val*=mult;}}
 void do_print(int idx){printf("  [st[%d]] = %lld\n",idx,st[idx].num_val);}
 
-/* ---- GPU Parallel Primitives v3.1 ---- */
+/* ---- GPU并行原语 v3.1 ---- */
 static int warp_start=0,warp_end=0;
 void do_para(int start,int end){warp_start=start&63;warp_end=(end>63?63:end)&63;}
 void do_reduce_sum(int dst,int start,int end){
@@ -183,7 +183,7 @@ void do_cos(int dst,int src){double x=st[src&63].num_val*0.001;st[dst&63].num_va
 void do_fma(int dst,int a,int b){int d=dst&63,A=a&63,B=b&63;st[d].num_val=st[A].num_val*st[B].num_val+st[d].num_val;}
 void do_sync(void){}
 
-/* ---- Control Flow v3.2 ---- */
+/* ---- 控制流 v3.2 ---- */
 void do_cmp(int a,int b){
     long long va=st[a&63].num_val,vb=st[b&63].num_val;
     flag_z=(va==0);flag_e=(va==vb);flag_g=(va>vb);flag_l=(va<vb);
@@ -193,39 +193,39 @@ int find_label(const char*name){
     return -1;
 }
 
-/* ---- Timing & Reagent v3.3 ---- */
+/* ---- 定时与试剂 v3.3 ---- */
 void do_sleep(int ms){
     if(ms<0)ms=0;
-    if(ms>60000)ms=60000; /* cap at 60s */
-    printf("  [SLEEP %d ms]\n",ms);
+    if(ms>60000)ms=60000; /* 上限60秒 */
+    printf("  [休眠 %d 毫秒]\n",ms);
     usleep(ms*1000);
 }
 void do_reagent(int tube_qty,int tube_type){
     int type=(int)st[tube_type].num_val;
     double qty=(double)st[tube_qty].num_val;
-    if(type<0||type>=N_REAGENTS){printf("  [REAGENT ERR: invalid type %d]\n",type);return;}
+    if(type<0||type>=N_REAGENTS){printf("  [试剂错误: 无效类型 %d]\n",type);return;}
     reagent_total[type]+=qty;
     reagent_count[type]++;
-    printf("  [REAGENT %s %.2f %s]\n",reagent_name[type],qty,reagent_unit[type]);
+    printf("  [试剂 %s %.2f %s]\n",reagent_name[type],qty,reagent_unit[type]);
 }
 void do_reagent_imm(int tube_qty,int type){
     double qty=(double)st[tube_qty].num_val;
-    if(type<0||type>=N_REAGENTS){printf("  [REAGENT ERR: invalid type %d]\n",type);return;}
+    if(type<0||type>=N_REAGENTS){printf("  [试剂错误: 无效类型 %d]\n",type);return;}
     reagent_total[type]+=qty;
     reagent_count[type]++;
-    printf("  [REAGENT %s %.2f %s]\n",reagent_name[type],qty,reagent_unit[type]);
+    printf("  [试剂 %s %.2f %s]\n",reagent_name[type],qty,reagent_unit[type]);
 }
 void print_reagent_summary(){
     printf("\n=== Reagent Consumption Summary ===\n");
     for(int i=0;i<N_REAGENTS;i++){
         if(reagent_count[i]>0){
-            printf("  %s: total=%.2f %s, times=%d\n",
+            printf("  %s: 总计=%.2f %s, 次数=%d\n",
                    reagent_name[i],reagent_total[i],reagent_unit[i],reagent_count[i]);
         }
     }
 }
 
-/* ---- Program ---- */
+/* ---- 程序结构 ---- */
 typedef struct{int op;int tube[3];double val;char str[64];}Inst;
 Inst prog[MAX_PROG];int prog_len=0;
 
@@ -241,19 +241,19 @@ void parse_line(const char*line,Inst*I){
     if(strlen(tok[0])==3&&strspn(tok[0],"ATCGatcg")==3){I->op=dec_op(tok[0]);}
     else{for(int i=0;i<N_OPS;i++)if(strcasecmp(tok[0],op_name[i])==0){I->op=i;break;}}
 
-    /* LABEL name -- no params needed */
+    /* LABEL 标签名 -- 不需要参数 */
     if(I->op==OP_LABEL&&nt>=2){
         strncpy(I->str,tok[1],63);I->str[63]=0;
     }
-    /* JMP/JZ/JNZ/JE/JNE/JLT/JGE/JGT/JLE/CALL label -- store label name in str */
+    /* JMP/JZ/JNZ/JE/JNE/JLT/JGE/JGT/JLE/CALL 标签 -- 标签名存入str字段 */
     else if((I->op==OP_JMP||I->op==OP_JZ||I->op==OP_JNZ||I->op==OP_JE||I->op==OP_JNE||I->op==OP_JLT||I->op==OP_JGE||I->op==OP_JGT||I->op==OP_JLE||I->op==OP_CALL)&&nt>=2){
         strncpy(I->str,tok[1],63);I->str[63]=0;
     }
-    /* RET -- no params */
+    /* RET -- 不需要参数 */
     else if(I->op==OP_RET){
-        /* nothing */
+        /* 无参数 */
     }
-    /* CMP st[a] st[b] */
+    /* CMP st[a] st[b] -- 比较两个试管 */
     else if(I->op==OP_CMP&&nt>=3){
         char*tk=tok[1];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[0]=atoi(q)&63;}
@@ -262,42 +262,42 @@ void parse_line(const char*line,Inst*I){
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[1]=atoi(q)&63;}
         else I->tube[1]=atoi(tk)&63;
     }
-    /* SLEEP N (immediate) or SLEEP st[k] */
+    /* SLEEP N (立即数) 或 SLEEP st[k] (试管值) */
     else if(I->op==OP_SLEEP&&nt>=2){
         char*tk=tok[1];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){
             char*q=tk+2;if(*q=='[')q++;
             I->tube[0]=atoi(q)&63;
-            I->val=-1; /* val=-1 means read from tube */
+            I->val=-1; /* val=-1表示从试管读取 */
         }else{
             I->tube[0]=0;
-            I->val=atoll(tk); /* direct immediate value */
+            I->val=atoll(tk); /* 直接立即数 */
         }
     }
-    /* REAGENT st[k] st[type] or REAGENT st[k] N */
+    /* REAGENT st[k] st[type] 或 REAGENT st[k] N */
     else if(I->op==OP_REAGENT&&nt>=3){
-        /* parse quantity tube */
+        /* 解析数量试管 */
         char*tk=tok[1];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[0]=atoi(q)&63;}
         else I->tube[0]=atoi(tk)&63;
-        /* parse type: st[type] or immediate N */
+        /* 解析类型: st[type] 或立即数 N */
         tk=tok[2];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){
             char*q=tk+2;if(*q=='[')q++;
             I->tube[1]=atoi(q)&63;
-            I->val=-1; /* val=-1 means read type from tube[1] */
+            I->val=-1; /* val=-1表示从tube[1]读取类型 */
         }else{
-            I->val=atoll(tk); /* immediate type */
+            I->val=atoll(tk); /* 立即数类型 */
         }
     }
-    /* v3 numerical ops: OPCODE st[k] N */
+    /* v3数值操作: OPCODE st[k] N */
     else if((I->op==OP_NUM||I->op==OP_FIB||I->op==OP_PRIME||I->op==OP_FACT||I->op==OP_POW||I->op==OP_COPY)&&nt>=3){
         char*tk=tok[1];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[0]=atoi(q)&63;}
         else{I->tube[0]=atoi(tk)&63;}
         I->val=atoll(tok[2]);
     }
-    /* GPU parallel ops: PARA st[start] st[end] */
+    /* GPU并行操作: PARA st[start] st[end] */
     else if(I->op==OP_PARA&&nt>=3){
         for(int i=1;i<nt&&i<=2;i++){
             char*tk=tok[i];
@@ -305,7 +305,7 @@ void parse_line(const char*line,Inst*I){
             else I->tube[i-1]=atoi(tk)&63;
         }
     }
-    /* GPU reduce ops */
+    /* GPU归约操作 */
     else if((I->op==OP_REDUCE_SUM||I->op==OP_REDUCE_MAX)&&nt>=4){
         for(int i=1;i<nt&&i<=3;i++){
             char*tk=tok[i];
@@ -313,7 +313,7 @@ void parse_line(const char*line,Inst*I){
             else I->tube[i-1]=atoi(tk)&63;
         }
     }
-    /* GPU dot */
+    /* GPU点积 */
     else if(I->op==OP_DOT&&nt>=5){
         char*tk=tok[1];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[0]=atoi(q)&63;}
@@ -326,7 +326,7 @@ void parse_line(const char*line,Inst*I){
         else I->tube[2]=atoi(tk)&63;
         I->val=atoll(tok[4]);
     }
-    /* GPU MAD/FMA */
+    /* GPU乘加 */
     else if((I->op==OP_MAD||I->op==OP_FMA)&&nt>=4){
         for(int i=1;i<nt&&i<=3;i++){
             char*tk=tok[i];
@@ -334,7 +334,7 @@ void parse_line(const char*line,Inst*I){
             else I->tube[i-1]=atoi(tk)&63;
         }
     }
-    /* GPU LERP */
+    /* GPU线性插值 */
     else if(I->op==OP_LERP&&nt>=5){
         char*tk=tok[1];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[0]=atoi(q)&63;}
@@ -347,7 +347,7 @@ void parse_line(const char*line,Inst*I){
         else I->tube[2]=atoi(tk)&63;
         I->val=atoll(tok[4]);
     }
-    /* GPU CLAMP */
+    /* GPU钳制 */
     else if(I->op==OP_CLAMP&&nt>=4){
         char*tk=tok[1];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[0]=atoi(q)&63;}
@@ -355,7 +355,7 @@ void parse_line(const char*line,Inst*I){
         I->val=atoll(tok[2]);
         I->tube[1]=atoll(tok[3]);
     }
-    /* GPU SIN/COS */
+    /* GPU正弦/余弦 */
     else if((I->op==OP_SIN||I->op==OP_COS)&&nt>=3){
         char*tk=tok[1];
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[0]=atoi(q)&63;}
@@ -364,7 +364,7 @@ void parse_line(const char*line,Inst*I){
         if((tk[0]=='s'||tk[0]=='S')&&(tk[1]=='t'||tk[1]=='T')){char*q=tk+2;if(*q=='[')q++;I->tube[1]=atoi(q)&63;}
         else I->tube[1]=atoi(tk)&63;
     }
-    /* Generic */
+    /* 通用操作 */
     else{
         for(int i=1;i<nt&&i<=3;i++){
             char*tk=tok[i];
@@ -380,7 +380,7 @@ void parse_line(const char*line,Inst*I){
     else if(I->op==OP_LOAD&&nt>=3)strncpy(I->str,tok[2],63);
 }
 
-/* Two-pass load: pass 1 collects labels, pass 2 resolves jumps */
+/* 两遍加载: 第一遍收集标签, 第二遍解析跳转 */
 void collect_labels(char lines[][512],int n_lines){
     n_labels=0;prog_len=0;
     Inst tmp;
@@ -390,12 +390,12 @@ void collect_labels(char lines[][512],int n_lines){
         if(tmp.op==OP_LABEL&&tmp.str[0]){
             if(n_labels<MAX_LABELS){
                 strncpy(labels[n_labels].name,tmp.str,31);labels[n_labels].name[31]=0;
-                labels[n_labels].addr=prog_len; /* LABEL's own PC */
+                labels[n_labels].addr=prog_len; /* LABEL自身的程序计数器 */
                 n_labels++;
             }
         }
         if(tmp.op!=OP_NOP||(p&&*p&&*p!='\n'&&*p!='#'&&*p!=';'&&*p!='\r')){
-            prog_len++; /* ALL lines with content count toward PC */
+            prog_len++; /* 所有有内容的行都计入PC */
         }
     }
 }
@@ -409,7 +409,7 @@ void resolve_jumps(){
             if(prog[i].str[0]){
                 int addr=find_label(prog[i].str);
                 if(addr>=0)prog[i].val=addr;
-                else printf("[WARN] Undefined label: '%s' at PC=%d\n",prog[i].str,i);
+                else printf("[警告] 未定义标签: '%s' 在PC=%d\n",prog[i].str,i);
             }
         }
     }
@@ -447,7 +447,7 @@ void exec(){
             case OP_GCD:do_gcd(i->tube[0],i->tube[1]);break;
             case OP_LN:do_ln(i->tube[0]);break;
             case OP_PRINT:do_print(i->tube[0]);break;
-            /* GPU v3.1 */
+            /* GPU并行 v3.1 */
             case OP_PARA:do_para((int)i->tube[0],(int)i->tube[1]);break;
             case OP_REDUCE_SUM:do_reduce_sum(i->tube[0],(int)i->tube[1],(int)i->val);break;
             case OP_REDUCE_MAX:do_reduce_max(i->tube[0],(int)i->tube[1],(int)i->val);break;
@@ -459,7 +459,7 @@ void exec(){
             case OP_COS:do_cos(i->tube[0],i->tube[1]);break;
             case OP_FMA:do_fma(i->tube[0],i->tube[1],(int)i->val);break;
             case OP_SYNC:do_sync();break;
-            /* Control Flow v3.2 */
+            /* 控制流 v3.2 */
             case OP_LABEL:break; /* no-op at runtime */
             case OP_JMP:PC=(int)i->val-1;break; /* -1 because PC++ after switch */
             case OP_JZ:if(flag_z)PC=(int)i->val-1;break;
@@ -473,25 +473,26 @@ void exec(){
             case OP_CMP:do_cmp(i->tube[0],i->tube[1]);break;
             case OP_CALL:
                 if(call_sp<CALL_STACK){call_stack[call_sp++]=PC+1;PC=(int)i->val-1;}
+                else{printf("[警告] 调用栈溢出 PC=%d (深度=%d)，CALL被忽略\n",PC,CALL_STACK);}
                 break;
             case OP_RET:
                 if(call_sp>0)PC=call_stack[--call_sp]-1;
-                else PC=prog_len; /* return from main = halt */
+                else PC=prog_len; /* 从主程序返回 = 停机 */
                 break;
-            /* Timing & Reagent v3.3 */
+            /* 定时与试剂 v3.3 */
             case OP_SLEEP:
-                if(i->val<0)do_sleep((int)st[i->tube[0]].num_val); /* SLEEP st[k] */
-                else do_sleep((int)i->val); /* SLEEP N */
+                if(i->val<0)do_sleep((int)st[i->tube[0]].num_val); /* SLEEP st[k] 从试管读取休眠时间 */
+                else do_sleep((int)i->val); /* SLEEP N 立即数休眠 */
                 break;
             case OP_REAGENT:
-                if(i->val<0)do_reagent(i->tube[0],i->tube[1]); /* REAGENT st[k] st[type] */
-                else do_reagent_imm(i->tube[0],(int)i->val); /* REAGENT st[k] N */
+                if(i->val<0)do_reagent(i->tube[0],i->tube[1]); /* REAGENT st[k] st[type] 从试管读取 */
+                else do_reagent_imm(i->tube[0],(int)i->val); /* REAGENT st[k] N 立即数 */
                 break;
             case OP_NOP:break;
             case OP_HALT:return;
         }PC++;
     }
-    if(steps>=100000000)printf("[timeout]\n");
+    if(steps>=100000000)printf("[超时]\n");
 }
 
 void compile_dna(const char*outfile){
@@ -505,16 +506,16 @@ void compile_dna(const char*outfile){
 int main(int argc,char**argv){
     clock_t t0=clock();
     init_tubes();
-    printf("=== DNAsm v3.3 -- DNA Native ISA + GPU + Control Flow + Timing/Reagent ===\n");
-    printf("ISA: %d opcodes | Tubes: %d | Labels: %d max | Call depth: %d\n\n",N_OPS,NTUBES,MAX_LABELS,CALL_STACK);
+    printf("=== DNAsm v3.3 -- DNA原生指令集 + GPU并行 + 控制流 + 定时/试剂 ===\n");
+    printf("指令集: %d条操作码 | 试管: %d | 标签: %d个上限 | 调用深度: %d\n\n",N_OPS,NTUBES,MAX_LABELS,CALL_STACK);
     const char*fn=(argc>1)?argv[1]:"program.dna";
-    FILE*fp=fopen(fn,"r");if(!fp){printf("Usage: ./dnasm_v33 program.dna\n");return 1;}
+    FILE*fp=fopen(fn,"r");if(!fp){printf("用法: ./dnasm_v33 程序.dna\n");return 1;}
     char lines[1024][512];int n_lines=0;
     while(fgets(lines[n_lines],512,fp)&&n_lines<1024)n_lines++;
     fclose(fp);
-    /* Pass 1: collect labels */
+    /* 第一遍: 收集标签 */
     collect_labels(lines,n_lines);
-    /* Pass 2: parse instructions */
+    /* 第二遍: 解析指令 */
     prog_len=0;
     for(int i=0;i<n_lines&&prog_len<MAX_PROG;i++){
         parse_line(lines[i],&prog[prog_len]);
@@ -524,15 +525,15 @@ int main(int argc,char**argv){
             else{prog[prog_len].op=OP_NOP;prog_len++;} /* LABEL -> NOP, occupies slot */
         }
     }
-    /* Resolve label addresses */
+    /* 解析标签地址 */
     resolve_jumps();
-    printf("Loaded: %d instructions, %d labels\n",prog_len,n_labels);
+    printf("已加载: %d条指令, %d个标签\n",prog_len,n_labels);
     if(n_labels>0){
-        printf("Labels: ");
+        printf("标签: ");
         for(int i=0;i<n_labels&&i<10;i++)printf("%s@%d ",labels[i].name,labels[i].addr);
         if(n_labels>10)printf("...");printf("\n");
     }
-    printf("DNA: ");
+    printf("DNA序列: ");
     for(int i=0;i<prog_len&&i<20;i++){char cd[4];enc_op(prog[i].op,cd);printf("%s ",cd);}if(prog_len>20)printf("...");printf("\n\n=== EXECUTE ===\n");
     exec();
     compile_dna("output.dna");
