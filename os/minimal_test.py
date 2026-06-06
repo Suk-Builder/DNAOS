@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""
+最小验证测试：16位→32位→64位，每个阶段只输出一个字符
+目标是确认哪些阶段能工作
+"""
+import struct, os
+
+OUT = "/mnt/agents/output/dnaos2/os/out/minimal.img"
+
+def w16(b, p, v): b[p]=v&0xFF; b[p+1]=(v>>8)&0xFF; return p+2
+
+def build_mbr():
+    m = bytearray(512)
+    m[0]=0xEB; m[1]=0x3E; m[2]=0x90
+    BPB = (b"DNAOS   " + struct.pack('<H',512) + b'\x01' + struct.pack('<H',1) +
+           b'\x02' + struct.pack('<H',224) + struct.pack('<H',128) + b'\xF8' +
+           struct.pack('<H',1) + struct.pack('<H',32) + struct.pack('<H',64) +
+           struct.pack('<I',0) + struct.pack('<I',0) + b'\x80\x00\x29' +
+           b"DNAOS v3.4 " + b"FAT12   ")
+    for i,c in enumerate(BPB): m[0x03+i] = c
+    
+    # TEST1 string @ 0xC0
+    for i,c in enumerate(b"\r\nTEST1\r\n\x00"): m[0xC0+i] = c
+    
+    p = 0x40
+    def emit(*vals):
+        nonlocal p
+        for v in vals:
+            if isinstance(v,int): m[p]=v&0xFF; p+=1
+    
+    # Init segments
+    emit(0x31,0xC0, 0x8E,0xD8, 0x8E,0xD0, 0xBC,0x00,0x7C)
+    emit(0x88,0x16,0xF8,0x7D)
+    
+    # Print TEST1
+    emit(0xBE, 0xC0, 0x7C)  # si = string
+    emit(0xE8, 0x00, 0x00)  # call (patch)
+    c1 = p-2
+    
+    # INT13h read 128 sectors to 0x1000:0x0000
+    emit(0xB4,0x02, 0xB0,0x80, 0xB5,0x00, 0xB1,0x02, 0xB6,0x00)
+    emit(0x8A,0x16,0xF8,0x7D, 0xBB,0x00,0x10, 0x8E,0xC3, 0x31,0xDB, 0xCD,0x13)
+    emit(0x72,0x06)
+    # Far jmp to kernel
+    emit(0xEA, 0x00,0x00, 0x00,0x10)  # jmp 0x1000:0x0000
+    
+    # Error
+    emit(0xB0,0x45, 0xBA,0xF8,0x03, 0xEE, 0xEB,0xFE)  # 'E' + halt
+    
+    # print_serial (bl-save)
+    PS = p
+    emit(0x53)               # push bx
+    emit(0xAC)               # lodsb
+    LP = p-1
+    emit(0x84,0xC0)          # test al,al
+    JZ=p; emit(0x74,0)
+    emit(0x88,0xC3)          # mov bl,al
+    emit(0xBA,0xFD,0x03)     # dx=LSR
+    W1=p
+    emit(0xEC, 0xA8,0x20, 0x74,(W1-(p+2))&0xFF)
+    emit(0xBA,0xF8,0x03, 0x8A,0xC3, 0xEE)
+    emit(0xEB,(LP-(p+2))&0xFF)
+    m[JZ+1]=(p-(JZ+2))&0xFF
+    emit(0x5B,0xC3)
+    
+    m[c1:c1+2]=struct.pack('<h',(PS-(c1+2))&0xFFFF)
+    m[510]=0x55; m[511]=0xAA
+    return bytes(m)
+
+
+def build_kernel():
+    k = bytearray(64*1024)
+    def pq(addr,val):
+        for i in range(8): k[addr+i]=(val>>(i*8))&0xFF
+    
+    # 16-bit entry @ 0x0000: just output '1' then jmp to 32-bit
+    p = 0
+    emit = lambda *v: [k.__setitem__(p+i, c&0xFF) or None for i,c in enumerate(v)] or None
+    
+    # COM1 '1\r\n'
+    k[p:p+12] = bytes([0xB0,0x31, 0xBA,0xF8,0x03, 0xEE, 0xB0,0x0D,0xEE, 0xB0,0x0A,0xEE]); p+=12
+    
+    # Enable A20
+    k[p:p+7] = bytes([0xE4,0x92, 0x0C,0x02, 0xE6,0x92, 0xFA]); p+=7
+    
+    # GDT @ 0x80
+    GDT=0x80
+    k[p:p+5] = bytes([0x0F,0x01,0x16, GDT&0xFF, (GDT>>8)&0xFF]); p+=5
+    k[GDT]=23; k[GDT+1]=0
+    k[GDT+2]=(GDT+6)&0xFF; k[GDT+3]=(GDT+6)>>8; k[GDT+4]=0; k[GDT+5]=0
+    for i in range(8): k[GDT+6+i]=0
+    C=GDT+14; k[C:C+8]=bytes([0xFF,0xFF,0x00,0x00,0x00,0x9A,0xEF,0x00])  # L=1 64-bit code
+    D=GDT+22; k[D:D+8]=bytes([0xFF,0xFF,0x00,0x00,0x00,0x92,0xCF,0x00])  # data
+    
+    # Protected mode + far jmp 32-bit
+    k[p:p+11] = bytes([0x0F,0x20,0xC0, 0x0C,0x01, 0x0F,0x22,0xC0]); p+=8
+    # 66 EA imm32 sel16: jmp 0x08:0x200
+    k[p:p+7] = bytes([0x66,0xEA, 0x00,0x02,0x00,0x00, 0x08,0x00]); p+=7
+    
+    # ══ 32-bit @ 0x200 ══
+    p = 0x200
+    # 32-bit COM1 output: use 66 prefix for 16-bit mov dx
+    k[p:p+18] = bytes([
+        0x66,0xB8,0x10,0x00,       # mov ax, 0x10
+        0x8E,0xD8,                  # mov ds, ax
+        0x8E,0xC0,                  # mov es, ax
+        0x8E,0xD0,                  # mov ss, ax
+        0x66,0xBC,0x00,0xF0,       # mov sp, 0xF000 (16-bit stack)
+        # '2' output
+        0xB0,0x32,                  # mov al, '2'
+        0x66,0xBA,0xF8,0x03,       # mov dx, 0x3F8
+        0xEE,                       # out
+        0xB0,0x0D,0xEE,0xB0,0x0A,0xEE,  # \r\n
+        # Halt (NO 64-bit transition yet - just verify 32-bit works)
+        0xEB,0xFE,                  # jmp $
+    ]); 
+    
+    # Check how many bytes
+    code32 = bytes([
+        0x66,0xB8,0x10,0x00, 0x8E,0xD8, 0x8E,0xC0, 0x8E,0xD0,
+        0x66,0xBC,0x00,0xF0,
+        0xB0,0x32, 0x66,0xBA,0xF8,0x03, 0xEE,
+        0xB0,0x0D,0xEE, 0xB0,0x0A,0xEE,
+        0xEB,0xFE
+    ])
+    k[0x200:0x200+len(code32)] = code32
+    
+    return bytes(k)
+
+
+# Build
+mbr = build_mbr()
+kernel = build_kernel()
+disk = bytearray(64*1024*1024)
+disk[0:512] = mbr
+disk[512:512+len(kernel)] = kernel
+with open(OUT,'wb') as f: f.write(disk)
+
+print(f"Minimal test: {OUT}")
+print(f"Expected output: TEST1\\r\\n1\\r\\n2\\r\\n")

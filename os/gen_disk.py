@@ -1,0 +1,254 @@
+#!/usr/bin/env python3
+"""DNAOS v3.3 Disk Image Generator — Python直接构造可启动磁盘镜像"""
+import struct, os
+OUT = "/mnt/agents/output/dnaos2/os/out/dnaos.img"
+os.makedirs(os.path.dirname(OUT), exist_ok=True)
+
+def build_mbr():
+    """512字节MBR — 用固定大小bytearray, 直接索引写入(禁止扩展)"""
+    m = bytearray(512)
+    p = 0  # code position
+    
+    def b(*d):
+        """写入字节/bytes, 不扩展"""
+        nonlocal p
+        for x in d:
+            if isinstance(x, bytes):
+                for c in x:
+                    assert p < 510, f"MBR overflow at {p}"
+                    m[p] = c; p += 1
+            else:
+                assert p < 510, f"MBR overflow at {p}"
+                m[p] = x & 0xFF; p += 1
+    
+    def wb(idx, val):
+        """在指定索引写入字节(用于回填)"""
+        assert 0 <= idx < 512, f"idx {idx} out of range"
+        m[idx] = val & 0xFF
+    
+    def ww(idx, val):
+        """在指定索引写入16位小端"""
+        assert 0 <= idx < 511, f"idx {idx} out of range"
+        m[idx] = val & 0xFF
+        m[idx+1] = (val >> 8) & 0xFF
+    
+    # ═════ 0x00: jmp + BPB ═════
+    b(0xEB, 0x3E, 0x90)   # jmp 0x40
+    
+    # BPB @ 0x03-0x3F — 逐字节写入(避免bytearray切片缩小)
+    bpb = (b"DNAOS   " + struct.pack('<H',512) + b'\x01' + struct.pack('<H',1) +
+           b'\x02' + struct.pack('<H',224) + struct.pack('<H',128) + b'\xF8' +
+           struct.pack('<H',1) + struct.pack('<H',32) + struct.pack('<H',64) +
+           struct.pack('<I',0) + struct.pack('<I',0) + b'\x80\x00\x29' +
+           b"DNAOS v3.3 " + b"FAT12   ")
+    for i, c in enumerate(bpb): m[0x03 + i] = c
+    
+    # ═════ 0x40: Code ═════
+    p = 0x40
+    
+    # init segments + stack
+    b(0x31,0xC0, 0x8E,0xD8, 0x8E,0xC0, 0x8E,0xD0, 0xBC,0x00,0x7C)
+    # save boot drive
+    b(0x88,0x16); ww(p, 0x7DF8); p += 2  # mov [0x7DF8], dl
+    
+    # clear screen
+    b(0xB4,0x06, 0xB0,0x00, 0xB7,0x00, 0x31,0xC9, 0xB6,0x18,0xB2,0x4F, 0xCD,0x10)
+    
+    # print "DNAOS v3.3"
+    MSG = 0x80   # string at index 0x80 (abs 0x7C80)
+    b(0xBE); ww(p, 0x7C00 + MSG); p += 2  # mov si, msg
+    b(0xE8); c1 = p; b(0x00,0x00)          # call print
+    
+    # INT13 read 128 sectors to 0x1000:0x0000
+    b(0xB4,0x02, 0xB0,0x80, 0xB5,0x00, 0xB1,0x02, 0xB6,0x00)
+    b(0x8A,0x16); ww(p, 0x7DF8); p += 2   # mov dl, [bootdrv]
+    b(0xBB,0x00,0x10, 0x8E,0xC3, 0x31,0xDB, 0xCD,0x13)
+    b(0x72,0x08)                           # jc err
+    
+    # far jmp 0x1000:0x0000
+    b(0xEA, 0x00,0x00, 0x00,0x10)
+    
+    # disk_err
+    ERR = MSG + 0x18
+    b(0xBE); ww(p, 0x7C00 + ERR); p += 2  # mov si, err
+    b(0xE8); c2 = p; b(0x00,0x00)          # call print
+    b(0xEB,0xFE)                           # jmp $
+    
+    # print_string subroutine
+    PS = p
+    b(0x50, 0x53)                          # push ax, bx
+    LP = p
+    b(0xAC, 0x84,0xC0, 0x74,0x08,         # lodsb; test al; jz done
+      0xB4,0x0E, 0xB7,0x00, 0xB3,0x07, 0xCD,0x10,
+      0xEB, 0x100 - ((p - LP) + 2) & 0xFF)  # jmp LP
+    b(0x5B, 0x58, 0xC3)                    # pop bx, ax; ret
+    
+    # backfill call offsets
+    m[c1:c1+2] = struct.pack('<h', PS - (c1 + 2))
+    m[c2:c2+2] = struct.pack('<h', PS - (c2 + 2))
+    
+    # ═════ Strings @ 0x80 ═════
+    s1 = b"\r\nDNAOS v3.3 Boot\r\n\x00"
+    s2 = b"Disk error!\r\n\x00"
+    m[MSG:MSG+len(s1)] = s1
+    m[ERR:ERR+len(s2)] = s2
+    
+    # boot drive variable
+    m[0x1F8] = 0x80
+    
+    # padding + signature
+    for i in range(p, 510): m[i] = 0
+    m[510] = 0x55; m[511] = 0xAA
+    
+    assert len(m) == 512, f"MBR size {len(m)} != 512"
+    return bytes(m)
+
+def build_kernel():
+    """64KB内核: 16→32→64位切换 + DNAOS Shell"""
+    k = bytearray(64 * 1024)
+    p = 0
+    
+    def b(*d):
+        nonlocal p
+        for x in d:
+            if isinstance(x, bytes):
+                for c in x: k[p] = c; p += 1
+            else:
+                k[p] = x & 0xFF; p += 1
+    
+    def pack_q(val):
+        return struct.pack('<Q', val)
+    
+    def pack_i(val):
+        return struct.pack('<i', val)
+    
+    # ═════ 16-bit @ 0x0000 ═════
+    # Print '1', enable A20, load GDT, enter protected mode
+    b(0xB0,0x31, 0xB4,0x0E, 0xB7,0x00, 0xB3,0x02, 0xCD,0x10)
+    b(0xE4,0x92, 0x0C,0x02, 0xE6,0x92)
+    
+    # GDT @ 0x80
+    GB = 0x80
+    b(0x0F,0x01,0x16); gp = p; b(0x00,0x00)
+    k[gp:gp+2] = struct.pack('<H', GB)
+    k[GB:GB+6] = bytes([0x17,0x00, (GB+6)&0xFF,(GB+6)>>8, 0x00,0x00])
+    k[GB+6:GB+14] = bytes(8)
+    k[GB+14:GB+22] = bytes([0xFF,0xFF,0x00,0x00,0x00,0x9A,0xCF,0x00])
+    k[GB+22:GB+30] = bytes([0xFF,0xFF,0x00,0x00,0x00,0x92,0xCF,0x00])
+    
+    b(0x0F,0x20,0xC0, 0x0C,0x01, 0x0F,0x22,0xC0)
+    b(0x66,0xEA); pp = p; b(0x00,0x00,0x00,0x00, 0x08,0x00)
+    
+    # ═════ 32-bit @ 0x200 ═════
+    P32 = 0x200
+    k[pp:pp+4] = struct.pack('<I', P32)
+    p = P32
+    b(0x66,0xB8,0x10,0x00, 0x8E,0xD8, 0x8E,0xC0, 0x8E,0xD0)
+    b(0x66,0xBC, 0x00,0x00,0x09,0x00)
+    
+    # Page tables @ 0x4000
+    PTB = 0x4000
+    k[PTB:PTB+8] = pack_q((PTB+0x1000)|0x03)
+    k[PTB+0x1000:PTB+0x1000+8] = pack_q((PTB+0x2000)|0x03)
+    k[PTB+0x2000:PTB+0x2000+8] = pack_q((PTB+0x3000)|0x03)
+    for i in range(512):
+        k[PTB+0x3000+i*8:PTB+0x3000+i*8+8] = pack_q(i*0x1000|0x03)
+    
+    b(0xB8, PTB&0xFF,(PTB>>8)&0xFF,0x00,0x00, 0x0F,0x22,0xD8)
+    b(0x0F,0x20,0xE0, 0x0C,0x20, 0x0F,0x22,0xE0)
+    b(0xB9,0x80,0x00,0x00,0xC0, 0x0F,0x32, 0x0C,0x01, 0x0F,0x30)
+    b(0x0F,0x20,0xC0, 0x0D,0x00,0x00,0x00,0x80, 0x0F,0x22,0xC0)
+    b(0xEA, 0x00,0x10,0x00,0x00, 0x00,0x00, 0x08,0x00)
+    
+    # ═════ 64-bit @ 0x1000 ═════
+    p = 0x1000
+    b(0x66,0xB8,0x10,0x00, 0x8E,0xD8,0x8E,0xC0,0x8E,0xD0)
+    b(0x48,0xBC); b(pack_q(0x1F000))
+    
+    # clear screen
+    b(0x48,0xBF); b(pack_q(0xB8000))
+    b(0x48,0xC7,0xC1); b(pack_q(2000))
+    b(0x66,0xB8,0x20,0x07, 0x66,0xF3,0xAB)
+    
+    # Welcome msg @ 0x6000
+    WEL = 0x6000
+    welcome = (b"\n"
+        b"========================================================================\n"
+        b"  DNAOS v3.3 - Molecular Cognitive Operating System\n"
+        b"  Tsukuyomi 0 - Charter Town - Node 0\n"
+        b"  Target: AMD Ryzen 5 5500 + GA106 RTX 3060\n"
+        b"  Mode: x86-64 Long Mode | Pure Machine Code | Zero C\n"
+        b"========================================================================\n\n"
+        b" Commands: pci gpu info dna help reboot\n\n"
+        b" dnaos> _")
+    k[WEL:WEL+len(welcome)] = welcome
+    
+    # call print
+    b(0x48,0xBE); b(pack_q(0x10000+WEL))
+    b(0xE8); pc = p; b(0x00,0x00,0x00,0x00)
+    
+    # mainloop
+    ML = p
+    b(0xE4,0x64, 0xA8,0x01, 0x74,0xF9, 0xE4,0x60)
+    b(0x3C,0x81, 0x73,0xF2)
+    b(0x48,0x0F,0xB6,0xC0)
+    b(0x48,0x8D,0x15); tp = p; b(0x00,0x00,0x00,0x00)
+    b(0x8A,0x04,0x10, 0x84,0xC0, 0x74,0xE4)
+    b(0x66,0x89,0x04,0x25, 0x00,0x80,0x0B,0x00)
+    b(0x48,0xFF,0x04,0x25, 0x02,0x80,0x0B,0x00)
+    b(0xEB,0xD2)
+    
+    # print_string
+    PS = p
+    k[pc:pc+4] = pack_i(PS - (pc + 4))
+    b(0x50,0x56,0x57)
+    b(0x48,0xBF); b(pack_q(0xB8000+320))
+    LP = p
+    b(0xAC, 0x84,0xC0, 0x74,0x0C, 0x3C,0x0A, 0x75,0x04)
+    b(0x48,0x81,0xC7, 0xA0-2,0x00,0x00,0x00, 0xEB, 0x100 - (p - LP + 2) & 0xFF)
+    b(0xAA, 0xB0,0x07, 0xAA)
+    rel = LP - (p + 2)
+    b(0xEB, rel & 0xFF)
+    b(0x5F,0x5E,0x58,0xC3)
+    
+    # scancode table @ 0x7000
+    TBL = 0x7000
+    tbl = bytes([0,0, 0x31,0x32,0x33,0x34,0x35,0x36,0x37,0x38,0x39,0x30,
+        0x2D,0x3D,0,0, 0x71,0x77,0x65,0x72,0x74,0x79,0x75,0x69,0x6F,0x70,
+        0x5B,0x5D,0,0, 0x61,0x73,0x64,0x66,0x67,0x68,0x6A,0x6B,0x6C,
+        0x3B,0x27,0x60,0, 0x5C,0x7A,0x78,0x63,0x76,0x62,0x6E,0x6D,
+        0x2C,0x2E,0x2F,0,0,0,0x20])
+    k[TBL:TBL+len(tbl)] = tbl
+    k[tp:tp+4] = pack_i((0x10000+TBL) - (0x10000+tp+4))
+    
+    return bytes(k)
+
+# ═══════════════════════════════════════════════════════════════════════════
+print("="*72)
+print(" DNAOS v3.3 Disk Image Generator")
+print("="*72)
+print("\n[1/4] Building MBR...")
+mbr = build_mbr()
+print(f"  MBR: {len(mbr)}B (must be 512), sig=0x{mbr[510]:02X}{mbr[511]:02X}")
+assert len(mbr) == 512, f"FAIL: MBR={len(mbr)}B"
+print("  ✓ Size correct")
+
+print("[2/4] Building Kernel...")
+kernel = build_kernel()
+print(f"  Kernel: 64KB")
+
+print("[3/4] Assembling 64MB image...")
+disk = bytearray(64*1024*1024)
+disk[0:512] = mbr
+disk[512:512+len(kernel)] = kernel
+with open(OUT,'wb') as f: f.write(disk)
+sz = os.path.getsize(OUT)
+print(f"  Disk: {sz:,}B = {sz//1024//1024}MB")
+
+print("[4/4] Verify...")
+print(f"  Boot: 0x{disk[510]:02X}{disk[511]:02X}")
+print(f"  K[0]: {' '.join(f'{disk[512+i]:02X}' for i in range(16))}")
+print(f"  K64:  {' '.join(f'{disk[512+0x1000+i]:02X}' for i in range(16))}")
+print(f"\nDeploy:  sudo dd if={OUT} of=/dev/sdX bs=4M && sync")
+print(f"QEMU:    qemu-system-x86_64 -drive format=raw,file={OUT} -m 512 -nographic")
+print("="*72)

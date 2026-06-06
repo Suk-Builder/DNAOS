@@ -1,23 +1,47 @@
 # Build artifacts
 *.o
-*.out
+*.bin
+*.img
+*.img.gz
+*.iso
+*.elf
+*.EFI
+*.exe
+dnaos2
 dnasm3
 dnasm3_new
 dnasm_v32
 dnasm_v33
-dnasm_nsm
+nsm_test
+gpu_emulator
+tube_battle
 bsem_v41
-test_hal
-test_mersenne_report
-*.exe
 
-# Temp files
+# Output
+out/
+build/
+__pycache__/
+*.pyc
+
+# Temporary
+tmp/
+temp/
 *.tmp
+*.log
+nohup.out
+
+# IDE
+.vscode/
+.idea/
 *.swp
+*.swo
 *~
 
-# GW data downloads
-gw_data/
+# OS images
+disk/
+*.vhd
+*.vmdk
+*.qcow2
 
-# Local config
-.env
+# Node.js
+node_modules/
