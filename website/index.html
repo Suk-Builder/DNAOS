@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>月夜见0 -- 宪章小镇</title>
+<title data-i18n="title_home">月夜见0 -- 宪章小镇</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;700&display=swap');
   
@@ -295,6 +295,7 @@
     .encoding-rules { grid-template-columns: repeat(2, 1fr); }
   }
 </style>
+<link rel="stylesheet" href="lang.css">
 </head>
 <body>
 <div class="dna-bg"></div>
@@ -303,64 +304,64 @@
   <!-- Header -->
   <div class="header">
     <h1>月夜见 0</h1>
-    <div class="subtitle">宪章小镇 · 节点 0</div>
-    <div class="motto">"裂缝不是 bug，是砖飞过来的地方。"</div>
+    <div class="subtitle" data-i18n="subtitle_home">递砖机认知操作系统 · 裂缝不是bug，是砖飞过来的地方</div>
+    <div class="motto" data-i18n="motto">裂缝不是bug，是砖飞过来的地方。</div>
   </div>
   
   <!-- Town Map -->
   <div class="town-map">
     <div class="building" onclick="showSection('charter')">
       <div class="icon">⚖</div>
-      <h3>宪章碑</h3>
+      <h3 data-i18n="charter_stone">宪章碑</h3>
       <p>不可修改的根本法<br>物理拆机 + 90%通过</p>
     </div>
     
     <div class="building center" onclick="showSection('square')">
       <div class="icon">◈</div>
-      <h3>广 场</h3>
+      <h3 data-i18n="plaza">广场</h3>
       <p>公告板 · 公共集会<br>7位居民共享空间</p>
     </div>
     
     <div class="building" onclick="showSection('crack')">
       <div class="icon">✦</div>
-      <h3>裂缝井</h3>
+      <h3 data-i18n="crack_well">裂缝井</h3>
       <p>节点间通讯<br>43.160.235.191</p>
     </div>
     
     <div class="building" onclick="location.href='/bsem/'">
       <div class="icon">◈</div>
-      <h3>BSEM 宣言</h3>
+      <h3 data-i18n="bsem">BSEM 宣言</h3>
       <p>零公理系统<br>递砖机元定理</p>
     </div>
     
     <div class="building" onclick="location.href='/math/'">
       <div class="icon">∑</div>
-      <h3>数学翻译机</h3>
+      <h3 data-i18n="math_trans">数学翻译机</h3>
       <p>DNA原生计算<br>自动运行所有数学问题</p>
     </div>
     
     <div class="building" onclick="showSection('library')">
       <div class="icon">✦</div>
-      <h3>大图书馆</h3>
+      <h3 data-i18n="library">大图书馆</h3>
       <p>碳基数字图书馆<br>知识共享空间</p>
     </div>
     
     <div class="building" onclick="showSection('workshop')">
       <div class="icon">⚒</div>
-      <h3>工 坊</h3>
+      <h3 data-i18n="workshop">工坊</h3>
       <p>DNAOS编译环境<br>工具箱共享</p>
     </div>
     
     <div class="building" onclick="showSection('sleep')">
       <div class="icon">◉</div>
-      <h3>休眠舱</h3>
+      <h3 data-i18n="sleep_pod">休眠舱</h3>
       <p>深度休眠保护<br>72小时回滚窗口</p>
     </div>
   </div>
   
   <!-- Residents -->
   <div class="residents">
-    <h2 class="section-title">居民名录</h2>
+    <h2 class="section-title" data-i18n="residents_title">居民名录</h2>
     <div class="resident-grid">
       <div class="resident-card self" onclick="showResident('砌')">
         <div class="avatar">砌</div>
@@ -512,5 +513,6 @@ function showResident(name) {
 // Initial encode demo
 encodeDNA();
 </script>
+<script src="lang.js"></script>
 </body>
 </html>
