@@ -31,27 +31,27 @@ dnaos2/
 ├── install.sh                      # 安装脚本
 ├── .gitignore
 │
-├── boot.c                          # 引导入口
-├── dnasm_v33.c                     # DNAsm v3.3 解释器 (最终版)
-├── dna_hal.c / dna_hal.h           # DNA硬件抽象层
-├── nsm_backend.c / nsm_backend.h   # NSM后端
+├── [boot.c](boot.c)                          # 引导入口
+├── [dnasm_v33.c](dnasm_v33.c)               # DNAsm v3.3 解释器 (最终版)
+├── [dna_hal.c](dna_hal.c) / [dna_hal.h](dna_hal.h)           # DNA硬件抽象层
+├── [nsm_backend.c](nsm_backend.c) / [nsm_backend.h](nsm_backend.h)   # NSM后端
 │
-├── libbsem_math.dna                # BSEM数学库 (2053行, 28/28通过)
-├── gw_bsem_gamma.dna               # γ=0.16引力波计算DNA代码
+├── [libbsem_math.dna](libbsem_math.dna)     # BSEM数学库 (2053行, 28/28通过)
+├── [gw_bsem_gamma.dna](gw_bsem_gamma.dna)   # γ=0.16引力波计算DNA代码
 │
-├── docs/                           # 文档
-│   ├── SPEC.md                     # 架构规格
-│   ├── ISA_REFERENCE.md            # v3.3 ISA参考手册
-│   ├── TUTORIAL.md                 # 入门教程
-│   ├── BUG_REPORT.md               # 35个bug完整报告
-│   ├── dnasm_v33_audit.md          # 100轮审计报告
-│   ├── crack_genesis_theorem.md    # 裂缝起源定理v1.0
-│   ├── gamma_016_discovery.md      # γ=0.16发现文档
-│   ├── crack_geometry_position.md  # 缝隙几何定位
-│   ├── crack_sky_position_final.md # 天空位置最终报告
-│   ├── crack_everywhere.md         # 裂缝无处不在
-│   ├── unified_physics_model.md    # 高压锅宇宙模型
-│   └── astronomy_101_and_crack_position.md # 天文坐标速成
+├── [docs/](docs/)                 # 文档目录
+│   ├── [SPEC.md](docs/SPEC.md)                     # 架构规格
+│   ├── [ISA_REFERENCE.md](docs/ISA_REFERENCE.md)   # v3.3 ISA参考手册
+│   ├── [TUTORIAL.md](docs/TUTORIAL.md)             # 入门教程
+│   ├── [BUG_REPORT.md](docs/BUG_REPORT.md)         # 35个bug完整报告
+│   ├── [dnasm_v33_audit.md](docs/dnasm_v33_audit.md)  # 100轮审计报告
+│   ├── [crack_genesis_theorem.md](docs/crack_genesis_theorem.md)      # 裂缝起源定理v1.0
+│   ├── [gamma_016_discovery.md](docs/gamma_016_discovery.md)          # γ=0.16发现文档
+│   ├── [crack_geometry_position.md](docs/crack_geometry_position.md)  # 缝隙几何定位
+│   ├── [crack_sky_position_final.md](docs/crack_sky_position_final.md)# 天空位置最终报告
+│   ├── [crack_everywhere.md](docs/crack_everywhere.md)               # 裂缝无处不在
+│   ├── [unified_physics_model.md](docs/unified_physics_model.md)     # 高压锅宇宙模型
+│   └── [astronomy_101_and_crack_position.md](docs/astronomy_101_and_crack_position.md) # 天文坐标速成
 │
 ├── tests/                          # 测试套件
 │   ├── torture_r1-r7.dna          # 压力测试
@@ -133,7 +133,7 @@ make
 | #32 | FIND返回值丢弃 | 存入num_val |
 | #34 | REDUCE count>63被&63=0 | 存numVal |
 
-完整列表见 `docs/BUG_REPORT.md`
+完整列表见 [docs/BUG_REPORT.md](docs/BUG_REPORT.md)
 
 ## 裂缝起源定理 (Crack Genesis Theorem)
 
@@ -167,7 +167,7 @@ make
 定理1.3: lim c/N = γ = 0.16     (裂缝密度收敛)
 ```
 
-完整证明见 `docs/crack_genesis_theorem.md`
+完整证明见 [docs/crack_genesis_theorem.md](docs/crack_genesis_theorem.md)
 
 ### 缝隙几何定位
 
@@ -181,7 +181,7 @@ make
   没有优选方向
 ```
 
-见 `docs/crack_geometry_position.md` 和 `docs/crack_sky_position_final.md`
+见 [docs/crack_geometry_position.md](docs/crack_geometry_position.md) 和 [docs/crack_sky_position_final.md](docs/crack_sky_position_final.md)
 
 ## 高压锅宇宙模型
 
@@ -191,7 +191,7 @@ make
       └──────────────── 0协议保证永动 ← 虫洞不是洞是缝 ←────────────┘
 ```
 
-见 `docs/unified_physics_model.md`
+见 [docs/unified_physics_model.md](docs/unified_physics_model.md)
 
 ## libbsem_math.dna -- BSEM数学库
 
@@ -210,18 +210,18 @@ make
 
 | 文档 | 内容 |
 |------|------|
-| `docs/crack_genesis_theorem.md` | 裂缝起源定理v1.0 + 7引理证明 |
-| `docs/gamma_016_discovery.md` | γ=0.16发现过程: BSEM+引力波 |
-| `docs/crack_geometry_position.md` | 缝隙几何定位: η=0.0384, Δη=0.0012 |
-| `docs/crack_sky_position_final.md` | 天空位置最终报告: 5事件RA/DEC |
-| `docs/crack_everywhere.md` | 裂缝无处不在: 暗能量=裂缝能量 |
-| `docs/unified_physics_model.md` | 高压锅宇宙模型完整文档 |
-| `docs/astronomy_101_and_crack_position.md` | 天文坐标速成 + 缝的定位 |
-| `docs/BUG_REPORT.md` | 35个bug完整清单 |
-| `docs/ISA_REFERENCE.md` | v3.3 ISA参考手册 |
-| `docs/dnasm_v33_audit.md` | 100轮审计完整报告 |
-| `docs/SPEC.md` | 架构规格 |
-| `docs/TUTORIAL.md` | 入门教程 |
+| [docs/crack_genesis_theorem.md](docs/crack_genesis_theorem.md) | 裂缝起源定理v1.0 + 7引理证明 |
+| [docs/gamma_016_discovery.md](docs/gamma_016_discovery.md) | γ=0.16发现过程: BSEM+引力波 |
+| [docs/crack_geometry_position.md](docs/crack_geometry_position.md) | 缝隙几何定位: η=0.0384, Δη=0.0012 |
+| [docs/crack_sky_position_final.md](docs/crack_sky_position_final.md) | 天空位置最终报告: 5事件RA/DEC |
+| [docs/crack_everywhere.md](docs/crack_everywhere.md) | 裂缝无处不在: 暗能量=裂缝能量 |
+| [docs/unified_physics_model.md](docs/unified_physics_model.md) | 高压锅宇宙模型完整文档 |
+| [docs/astronomy_101_and_crack_position.md](docs/astronomy_101_and_crack_position.md) | 天文坐标速成 + 缝的定位 |
+| [docs/BUG_REPORT.md](docs/BUG_REPORT.md) | 35个bug完整清单 |
+| [docs/ISA_REFERENCE.md](docs/ISA_REFERENCE.md) | v3.3 ISA参考手册 |
+| [docs/dnasm_v33_audit.md](docs/dnasm_v33_audit.md) | 100轮审计完整报告 |
+| [docs/SPEC.md](docs/SPEC.md) | 架构规格 |
+| [docs/TUTORIAL.md](docs/TUTORIAL.md) | 入门教程 |
 
 ## 递砖继续。0。
 
