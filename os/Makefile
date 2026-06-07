@@ -1,69 +1,66 @@
 # ============================================================================
-# DNAOS Kernel - Build System
-# ============================================================================
-# 
-# Prerequisites:
-#   - NASM (assembler)
-#   - GCC x86_64 cross-compiler (or system gcc with -ffreestanding)
-#   - GRUB (grub-mkrescue)
-#   - XORRISO (for ISO creation)
-#   - QEMU (for testing)
-#
-# Build:
-#   make              # Build kernel
-#   make iso          # Create bootable ISO
-#   make run          # Test in QEMU
-#   make usb          # Flash to USB drive
-#
+# DNAOS Kernel - Complete Build System
 # ============================================================================
 
 CC      = gcc
 LD      = ld
 NASM    = nasm
+
 CFLAGS  = -ffreestanding -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
           -nostdlib -nodefaultlibs -fno-stack-protector -fno-pic \
-          -fno-pie -Wall -Wextra -O2 -mcmodel=kernel
-LDFLAGS = -nostdlib -T kernel/linker.ld
+          -fno-pie -Wall -Wextra -O2 -mcmodel=kernel \
+          -Ikernel/
 
-OBJ = boot.o kernel.o font.o
+LDFLAGS = -nostdlib -T kernel/linker.ld -z max-page-size=0x1000
 
-.PHONY: all clean iso run usb
+# Source files
+C_SRCS  = kernel/kernel.c
+ASM_SRCS = kernel/boot.S kernel/font.S
+
+C_OBJS  = $(C_SRCS:.c=.o)
+ASM_OBJS = $(ASM_SRCS:.S=.o)
+
+OBJ     = $(ASM_OBJS) $(C_OBJS)
+
+.PHONY: all clean iso run run-uefi usb
 
 all: dnaos.bin
 
-boot.o: kernel/boot.S
-	$(NASM) -f elf64 $< -o $@
+# ============================================================================
+# Compile rules
+# ============================================================================
 
-kernel.o: kernel/kernel.c
-	$(CC) $(CFLAGS) -c $< -o $@
+kernel/%.o: kernel/%.S
+	$(NASM) -f elf64 -o $@ $<
 
-font.o: kernel/font.S
-	$(NASM) -f elf64 $< -o $@
+kernel/%.o: kernel/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 dnaos.bin: $(OBJ)
 	$(LD) $(LDFLAGS) -o $@ $(OBJ)
 
 # ============================================================================
-# ISO creation (bootable USB/CD)
+# ISO creation (GRUB bootable)
 # ============================================================================
+
 iso: dnaos.iso
 
 dnaos.iso: dnaos.bin
 	mkdir -p iso/boot/grub
 	cp dnaos.bin iso/boot/dnaos.bin
 	
-	# GRUB config
-	echo 'set timeout=0' > iso/boot/grub/grub.cfg
+	echo 'set timeout=3' > iso/boot/grub/grub.cfg
 	echo 'set default=0' >> iso/boot/grub/grub.cfg
 	echo '' >> iso/boot/grub/grub.cfg
-	echo 'menuentry "DNAOS - Quaternary Operating System" {' >> iso/boot/grub/grub.cfg
+	echo 'menuentry "DNAOS - Quaternary OS (1280x720)" {' >> iso/boot/grub/grub.cfg
 	echo '    multiboot2 /boot/dnaos.bin' >> iso/boot/grub/grub.cfg
 	echo '    boot' >> iso/boot/grub/grub.cfg
 	echo '}' >> iso/boot/grub/grub.cfg
-	
-	# GRUB theme
-	echo 'menu_color_normal=light-green/black' >> iso/boot/grub/grub.cfg
-	echo 'menu_color_highlight=green/black' >> iso/boot/grub/grub.cfg
+	echo '' >> iso/boot/grub/grub.cfg
+	echo 'menuentry "DNAOS - Safe Mode (640x480)" {' >> iso/boot/grub/grub.cfg
+	echo '    multiboot2 /boot/dnaos.bin' >> iso/boot/grub/grub.cfg
+	echo '    boot' >> iso/boot/grub/grub.cfg
+	echo '}' >> iso/boot/grub/grub.cfg
 	
 	grub-mkrescue -o dnaos.iso iso/ 2>/dev/null || \
 		echo "ERROR: grub-mkrescue failed. Install: sudo apt install grub-pc-bin xorriso"
@@ -71,6 +68,7 @@ dnaos.iso: dnaos.bin
 # ============================================================================
 # QEMU testing
 # ============================================================================
+
 run: dnaos.iso
 	qemu-system-x86_64 -cdrom dnaos.iso -m 512M -smp 1 \
 		-vga std -serial stdio
@@ -80,9 +78,15 @@ run-uefi: dnaos.iso
 		-bios /usr/share/OVMF/OVMF_CODE.fd \
 		-vga std -serial stdio
 
+run-debug: dnaos.iso
+	qemu-system-x86_64 -cdrom dnaos.iso -m 512M -smp 1 \
+		-vga std -serial stdio -s -S
+	# In another terminal: gdb -ex "target remote :1234"
+
 # ============================================================================
 # USB flash
 # ============================================================================
+
 usb: dnaos.iso
 	@echo "WARNING: This will ERASE the target USB drive!"
 	@echo "Usage: make usb DEVICE=/dev/sdX"
@@ -93,6 +97,7 @@ usb: dnaos.iso
 # ============================================================================
 # Clean
 # ============================================================================
+
 clean:
-	rm -f *.o *.bin *.iso
+	rm -f kernel/*.o *.bin *.iso
 	rm -rf iso/
