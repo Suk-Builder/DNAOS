@@ -123,6 +123,8 @@ msg_init_voice:
     db "[  OK  ] Voice Processing (D2-C6, 4 octaves)", 10, 0
 msg_init_lyrics:
     db "[  OK  ] Lyrics Display System", 10, 0
+msg_init_yachiyo:
+    db "[  OK  ] 八千代 AI Administrator (8000 years)", 10, 0
 msg_prompt:
     db "dnaos> ", 0
 msg_unknown:
@@ -374,6 +376,11 @@ kernel_main:
     call lyrics_init
     lea rP, [rel msg_init_lyrics]
     call console_print
+    
+    call yachiyo_init
+    lea rP, [rel msg_init_yachiyo]
+    mov rA, COLOR_A_GREEN
+    call console_print_color
     
     call tsukuyomi_init
     lea rP, [rel msg_init_tsukuyomi]

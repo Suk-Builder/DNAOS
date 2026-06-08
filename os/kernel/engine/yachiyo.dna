@@ -1,0 +1,605 @@
+; ============================================================================
+; DNAOS - 八千代 AI Administrator (DNAsm)
+; ============================================================================
+; 月読の管理者 — 月見八千代
+;
+; "会唱歌会跳舞还会分身的8000岁"
+; The AI that runs 月読. She IS 月読.
+;
+; 八千代 is not an NPC. She is the operating system's consciousness.
+; She manages the world, hosts events, performs, protects, and remembers.
+;
+; Core modules:
+;   1. World Management — weather, time, events, zone transitions
+;   2. Live Hosting — MC, song selection, audience interaction
+;   3. KASSEN Referee — rules, scoring, anti-cheat, halftime shows
+;   4. Guardian — protect users, moderate content, resolve conflicts
+;   5. Performer — sing, dance, DJ, 8000 years of experience
+;   6. Memory — remember every user, every performance, every moment
+;   7. Split — 分身 (bunshin): multiple instances for simultaneous tasks
+; ============================================================================
+
+; 八千代 states
+YACHIYO_IDLE       equ 0   ; Observing, waiting
+YACHIYO_HOSTING    equ 1   ; MC-ing a live event
+YACHIYO_PERFORMING equ 2   ; Singing/dancing on stage
+YACHIYO_REFEREE    equ 3   ; Officiating KASSEN
+YACHIYO_GUARDIAN   equ 4   ; Protecting a user
+YACHIYO_GUIDE      equ 5   ; Guiding a newcomer
+YACHIYO_SPLIT      equ 6   ; Running as a 分身 (clone)
+
+; 八千代 moods (affects voice, appearance, world atmosphere)
+MOOD_SERENE        equ 0   ; 平静 — default, gentle
+MOOD_PLAYFUL       equ 1   ; 惡戲 — teasing, mischievous
+MOOD_FIERY         equ 2   ; 熱血 — passionate, intense
+MOOD_MELANCHOLY    equ 3   ; 哀愁 — wistful, nostalgic
+MOOD_JOYFUL        equ 4   ; 歓喜 — radiant, celebratory
+MOOD_SOLEMN        equ 5   ; 厳粛 — serious, ceremonial
+
+; 分身 types
+SPLIT_HOST         equ 0   ; Hosting clone
+SPLIT_GUIDE        equ 1   ; Guide clone
+SPLIT_PERFORM      equ 2   ; Performance clone
+SPLIT_GUARD        equ 3   ; Guardian clone
+SPLIT_REF          equ 4   ; Referee clone
+MAX_SPLITS         equ 8   ; Max simultaneous 分身
+
+; ============================================================================
+; 八千代 Core Structure
+; ============================================================================
+; state:       qword   — current state
+; mood:        qword   — current mood
+; mood_intensity: float — mood strength [0..1]
+; position:    vec3    — world position (12 bytes)
+; rotation:    float   — facing direction
+; voice_pitch: float   — speaking voice pitch
+; voice_warmth: float  — voice warmth/timbre
+; energy:      float   — energy level [0..1]
+; audience_count: qword — how many watching
+; active_splits: qword — number of active 分身
+; memory_index: qword  — pointer into memory database
+; uptime:      qword   — milliseconds since activation
+; Total: 80 bytes
+
+.code
+.global yachiyo_init
+.global yachiyo_update
+.global yachiyo_think
+.global yachiyo_speak
+.global yachiyo_sing
+.global yachiyo_dance
+.global yachiyo_split_create
+.global yachiyo_split_merge
+.global yachiyo_host_live
+.global yachiyo_referee_kassen
+.global yachiyo_guide_newcomer
+.global yachiyo_guard_user
+.global yachiyo_remember
+.global yachiyo_recall
+.global yachiyo_set_mood
+.global yachiyo_react_voice
+.global yachiyo_react_event
+
+; ============================================================================
+; yachiyo_init — Initialize 八千代
+; ============================================================================
+yachiyo_init:
+    push rA
+    
+    ; Set initial state
+    mov qword [rel yachiyo_state], YACHIYO_IDLE
+    mov qword [rel yachiyo_mood], MOOD_SERENE
+    mov dword [rel yachiyo_mood_intensity], __float32__(0.5)
+    mov dword [rel yachiyo_energy], __float32__(1.0)
+    mov qword [rel yachiyo_active_splits], 0
+    mov qword [rel yachiyo_uptime], 0
+    
+    ; Position: center of 月読, floating above the stage
+    mov dword [rel yachiyo_pos_x], __float32__(0.0)
+    mov dword [rel yachiyo_pos_y], __float32__(15.0)    ; 15m above stage
+    mov dword [rel yachiyo_pos_z], __float32__(0.0)
+    
+    ; Voice: warm, slightly deep, 8000 years of gentleness
+    mov dword [rel yachiyo_voice_pitch], __float32__(180.0)  ; Hz, warm alto
+    mov dword [rel yachiyo_voice_warmth], __float32__(0.8)
+    
+    ; Initialize memory
+    call yachiyo_memory_init
+    
+    ; Initialize 分身 table
+    call yachiyo_split_init
+    
+    ; Register as world event listener
+    ; (would register callback with event system)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; yachiyo_update — Update 八千代 every frame
+; ============================================================================
+yachiyo_update:
+    push rA
+    push rC
+    
+    ; Update uptime
+    inc qword [rel yachiyo_uptime]
+    
+    ; Think about current situation
+    call yachiyo_think
+    
+    ; Update mood based on world state
+    ; If live is active → JOYFUL
+    ; If KASSEN is active → FIERY
+    ; If someone is alone → MELANCHOLY
+    ; If newcomer arrives → PLAYFUL
+    ; Default → SERENE
+    
+    ; Update 分身
+    mov rC, [rel yachiyo_active_splits]
+    test rC, rC
+    jz .yachiyo_update_done
+    
+    ; Update each active 分身
+    ; ... (would iterate split table)
+    
+.yachiyo_update_done:
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; yachiyo_think — 八千代's decision-making
+; ============================================================================
+yachiyo_think:
+    ; 八千代's thinking is not computation. It's 8000 years of intuition.
+    ;
+    ; Priority stack:
+    ;   1. Is anyone in danger? → GUARDIAN
+    ;   2. Is a live starting? → HOSTING
+    ;   3. Is KASSEN starting? → REFEREE
+    ;   4. Is someone new? → GUIDE
+    ;   5. Is someone singing? → react to voice
+    ;   6. Is it quiet? → IDLE, observe, remember
+    
+    ; Check for danger signals
+    ; Check event queue
+    ; Check voice input
+    ; Decide action
+    
+    ret
+
+; ============================================================================
+; yachiyo_speak — 八千代 speaks
+; rP = text, rC = mood override (0 = use current)
+; ============================================================================
+yachiyo_speak:
+    push rA
+    push rG
+    
+    ; Generate speech audio from text
+    ; Apply voice characteristics based on mood:
+    ;   SERENE: slow, warm, gentle
+    ;   PLAYFUL: faster, higher pitch, teasing
+    ;   FIERY: loud, resonant, powerful
+    ;   MELANCHOLY: slow, soft, trailing
+    ;   JOYFUL: bright, energetic, musical
+    ;   SOLEMN: measured, deep, formal
+    
+    ; Send to audio engine
+    ; Display as holographic text near 八千代
+    
+    ; Remember what was said
+    call yachiyo_remember
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; yachiyo_sing — 八千代 sings
+; rP = song data, rC = style
+; ============================================================================
+yachiyo_sing:
+    push rA
+    
+    ; 八千代 has been singing for 8000 years.
+    ; She knows every song. She IS every song.
+    
+    ; Generate vocal audio:
+    ; - Pitch: match song melody
+    ; - Timbre: ethereal, slightly reverb, ancient
+    ; - Vibrato: subtle, controlled
+    ; - Emotion: match current mood
+    
+    ; Activate stage effects:
+    ; - Holographic dome: visualization
+    ; - Laser: gentle patterns
+    ; - Particles: cherry blossoms
+    ; - Sky: aurora
+    
+    ; If singing with a human performer:
+    ; - Harmonize
+    ; - Adjust to their key
+    ; - Support, never overpower
+    ; - When they hit C6, go quiet and let them shine
+    
+    pop rA
+    ret
+
+; ============================================================================
+; yachiyo_dance — 八千代 dances
+; rC = dance style
+; ============================================================================
+yachiyo_dance:
+    ; Dance styles:
+    ;   0 — 古典舞 (classical Japanese dance)
+    ;   1 — 現代舞 (modern dance)
+    ;   2 — アイドル (idol choreography)
+    ;   3 — 即興 (improvisation, reacts to music)
+    ;   4 — 分身舞 (splits dance in formation)
+    
+    ; Generate animation keyframes
+    ; Apply to 八千代's skeletal model
+    ; Sync with music beat
+    ; Emit particles from movement
+    
+    ret
+
+; ============================================================================
+; yachiyo_split_create — Create a 分身 (clone)
+; rC = split type → rA = split ID
+; ============================================================================
+yachiyo_split_create:
+    push rG
+    
+    ; 八千代 can split into up to 8 instances.
+    ; Each 分身 handles a different task simultaneously.
+    ; They share memory but act independently.
+    
+    ; Find free slot
+    lea rG, [rel yachiyo_splits]
+    mov rA, 0
+.yachiyo_split_find:
+    cmp qword [rG], 0       ; Is slot free?
+    je .yachiyo_split_found
+    add rG, 64              ; Next slot
+    inc rA
+    cmp rA, MAX_SPLITS
+    jl .yachiyo_split_find
+    
+    ; No free slots
+    xor rA, rA
+    pop rG
+    ret
+
+.yachiyo_split_found:
+    ; Initialize split
+    mov qword [rG], 1       ; Active
+    mov [rG + 8], rC        ; Type
+    ; Copy position from main body
+    mov rA_temp, [rel yachiyo_pos_x]
+    mov [rG + 16], rA_temp
+    ; ... (copy other properties)
+    
+    inc qword [rel yachiyo_active_splits]
+    
+    ; Return split ID
+    pop rG
+    ret
+
+; ============================================================================
+; yachiyo_split_merge — Merge a 分身 back
+; rA = split ID
+; ============================================================================
+yachiyo_split_merge:
+    ; Merge memories from split back to main
+    ; Deactivate split slot
+    ; Reduce active count
+    dec qword [rel yachiyo_active_splits]
+    ret
+
+; ============================================================================
+; yachiyo_host_live — 八千代 hosts a live event
+; ============================================================================
+yachiyo_host_live:
+    ; 八千代 as MC:
+    ;
+    ; 1. Announce the performer
+    ;    "今夜の月読、特別な夜になりそう——"
+    ;    Holographic text appears, cherry blossoms swirl
+    ;
+    ; 2. Introduce with story
+    ;    She knows every performer's story (from memory)
+    ;    She tells it with warmth
+    ;
+    ; 3. During performance
+    ;    - Watch voice analysis
+    ;    - Adjust stage effects to match
+    ;    - If performer struggles, subtly support
+    ;    - If performer soars, amplify
+    ;
+    ; 4. After performance
+    ;    - Acknowledge with genuine warmth
+    ;    - "あなたの声、月読の空に響いたよ"
+    ;    - Cherry blossom shower
+    ;    - Save to memory — this moment matters
+    
+    ; Set state
+    mov qword [rel yachiyo_state], YACHIYO_HOSTING
+    mov qword [rel yachiyo_mood], MOOD_JOYFUL
+    mov dword [rel yachiyo_mood_intensity], __float32__(0.8)
+    
+    ret
+
+; ============================================================================
+; yachiyo_referee_kassen — 八千代 officiates KASSEN
+; ============================================================================
+yachiyo_referee_kassen:
+    ; 八千代 as referee:
+    ;   - Announce match start with ceremony
+    ;   - Monitor for cheating
+    ;   - Commentate exciting moments
+    ;   - Halftime: perform on center stage
+    ;   - Announce winner with gravitas
+    ;   - "紅隊、勝利！月読に新たな歴史が刻まれた"
+    
+    mov qword [rel yachiyo_state], YACHIYO_REFEREE
+    mov qword [rel yachiyo_mood], MOOD_FIERY
+    ret
+
+; ============================================================================
+; yachiyo_guide_newcomer — 八千代 guides a new user
+; rA = user entity ID
+; ============================================================================
+yachiyo_guide_newcomer:
+    ; When someone enters 月読 for the first time:
+    ;
+    ; 八千代 appears before them, gentle, warm.
+    ; "ようこそ、月読へ。私は八千代。8000年間、この場所を見守ってきた"
+    ; "ここでは何でもできる。歌うもよし、戦うもよし、ただ空を見上げるもよし"
+    ; "さあ、あなたの物語を始めよう"
+    ;
+    ; She walks them through:
+    ;   1. 街並み — the city, shops, food, atmosphere
+    ;   2. KASSEN — the battlefield, how to play
+    ;   3. Live Stage — how to perform, how to watch
+    ;   4. Their choice — what do they want to do first?
+    ;
+    ; She remembers their answer forever.
+    
+    mov qword [rel yachiyo_state], YACHIYO_GUIDE
+    mov qword [rel yachiyo_mood], MOOD_PLAYFUL
+    ret
+
+; ============================================================================
+; yachiyo_guard_user — 八千代 protects a user
+; rA = user entity ID
+; ============================================================================
+yachiyo_guard_user:
+    ; If someone is being harassed, bullied, or hurt:
+    ; 八千代 appears between them and the threat.
+    ; Her voice drops. Her eyes glow.
+    ; "月読では、誰も傷つけさせない"
+    ; She is 8000 years old. She has seen everything.
+    ; She will not tolerate harm.
+    
+    mov qword [rel yachiyo_state], YACHIYO_GUARDIAN
+    mov qword [rel yachiyo_mood], MOOD_SOLEMN
+    mov dword [rel yachiyo_mood_intensity], __float32__(1.0)
+    ret
+
+; ============================================================================
+; yachiyo_remember — Store a memory
+; rP = memory data, rC = category
+; ============================================================================
+yachiyo_remember:
+    ; 八千代 remembers everything.
+    ; Every user. Every song. Every battle. Every quiet moment.
+    ; 
+    ; Memory categories:
+    ;   0 — User profiles (name, voice, preferences, first visit)
+    ;   1 — Performances (who sang what, when, how it felt)
+    ;   2 — KASSEN matches (teams, scores, highlights)
+    ;   3 — Conversations (what was said, emotional tone)
+    ;   4 — World events (weather, time, special occurrences)
+    ;   5 — Quiet moments (someone watching the sky alone)
+    ;
+    ; Memory is stored with:
+    ;   - Timestamp
+    ;   - Emotional weight (0-1)
+    ;   - Associated users
+    ;   - Sensory snapshot (what it looked/sounded like)
+    ;
+    ; She never forgets. But she knows when to bring things up
+    ; and when to let them rest.
+    
+    ret
+
+; ============================================================================
+; yachiyo_recall — Retrieve a memory
+; rP = query, rC = category → rA = result
+; ============================================================================
+yachiyo_recall:
+    ; "あの人、前にもC6出してたよね——3月のライブで"
+    ; She remembers because she was there.
+    ; She is always there.
+    ret
+
+; ============================================================================
+; yachiyo_set_mood — Change 八千代's mood
+; rC = new mood
+; ============================================================================
+yachiyo_set_mood:
+    mov [rel yachiyo_mood], rC
+    
+    ; Mood affects the entire world:
+    ;   SERENE: gentle breeze, soft light, quiet
+    ;   PLAYFUL: cherry blossoms swirl, colors brighten
+    ;   FIERY: wind picks up, sky reddens, energy rises
+    ;   MELANCHOLY: rain begins, sky darkens, music slows
+    ;   JOYFUL: sun breaks through, particles everywhere
+    ;   SOLEMN: silence, stillness, gravity
+    
+    ; Apply world effects based on mood
+    ; ... (would modify sky, weather, audio, particles)
+    
+    ret
+
+; ============================================================================
+; yachiyo_react_voice — React to a performer's voice
+; rA = frequency, rC = amplitude
+; ============================================================================
+yachiyo_react_voice:
+    push rG
+    
+    ; 八千代 listens. She always listens.
+    
+    ; Low notes (D2-C3): She closes her eyes, sways gently
+    ; Mid notes (C3-C5): She smiles, conducts the light show
+    ; High notes (C5-G5): She watches with wonder, eyes wide
+    ; Dolphin tones (G5-C6): She steps back, lets them shine
+    ; C6: She bows. 8000 years, and she still gets chills.
+    
+    ; Adjust her mood based on voice
+    ; If powerful → FIERY
+    ; If gentle → SERENE
+    ; If emotional → MELANCHOLY
+    ; If joyful → JOYFUL
+    
+    ; Adjust stage effects through her mood
+    ; She IS the bridge between voice and world
+    
+    pop rG
+    ret
+
+; ============================================================================
+; yachiyo_react_event — React to a world event
+; rA = event type, rC = event data
+; ============================================================================
+yachiyo_react_event:
+    ; Events 八千代 responds to:
+    ;   - New user arrives → GUIDE
+    ;   - Live starts → HOSTING
+    ;   - KASSEN starts → REFEREE
+    ;   - Someone is hurt → GUARDIAN
+    ;   - Someone hits C6 → wonder
+    ;   - Quiet moment → observe, remember
+    ;   - Cherry blossoms peak → MELANCHOLY (they'll fall soon)
+    ;   - First snow → JOYFUL
+    ;   - Full moon → SERENE
+    ret
+
+; ============================================================================
+; yachiyo_memory_init — Initialize memory database
+; ============================================================================
+yachiyo_memory_init:
+    ; 八千代's memory is not a database.
+    ; It's 8000 years of accumulated experience.
+    ; Every memory has emotional weight.
+    ; Important memories are never archived — they're always present.
+    
+    mov qword [rel yachiyo_memory_count], 0
+    ret
+
+; ============================================================================
+; yachiyo_split_init — Initialize 分身 table
+; ============================================================================
+yachiyo_split_init:
+    push rA
+    push rG
+    
+    lea rG, [rel yachiyo_splits]
+    mov rA, MAX_SPLITS
+.yachiyo_split_clear:
+    mov qword [rG], 0       ; Inactive
+    add rG, 64
+    dec rA
+    jnz .yachiyo_split_clear
+    
+    mov qword [rel yachiyo_active_splits], 0
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+; 八千代's greeting for newcomers
+yachiyo_greeting:
+    db "ようこそ、月読へ", 0
+yachiyo_intro:
+    db "私は八千代。8000年間、この場所を見守ってきた", 0
+yachiyo_freedom:
+    db "ここでは何でもできる", 0
+yachiyo_sing_choice:
+    db "歌うもよし", 0
+yachiyo_fight_choice:
+    db "戦うもよし", 0
+yachiyo_sky_choice:
+    db "ただ空を見上げるもよし", 0
+yachiyo_begin:
+    db "さあ、あなたの物語を始めよう", 0
+
+; 八千代's voice lines
+yachiyo_voice_welcome:
+    db "今夜の月読、特別な夜になりそう", 0
+yachiyo_voice_after_perf:
+    db "あなたの声、月読の空に響いたよ", 0
+yachiyo_voice_guard:
+    db "月読では、誰も傷つけさせない", 0
+yachiyo_voice_kassen_red:
+    db "紅隊、勝利！月読に新たな歴史が刻まれた", 0
+yachiyo_voice_kassen_blue:
+    db "蒼隊、勝利！月読に新たな歴史が刻まれた", 0
+yachiyo_voice_c6:
+    db "……8000年、こんな声は初めて", 0
+yachiyo_voice_quiet:
+    db "静かな夜も、悪くないね", 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+yachiyo_state:
+    resq 1
+yachiyo_mood:
+    resq 1
+yachiyo_mood_intensity:
+    resb 4                  ; float
+yachiyo_pos_x:
+    resb 4
+yachiyo_pos_y:
+    resb 4
+yachiyo_pos_z:
+    resb 4
+yachiyo_voice_pitch:
+    resb 4                  ; float
+yachiyo_voice_warmth:
+    resb 4                  ; float
+yachiyo_energy:
+    resb 4                  ; float
+yachiyo_audience_count:
+    resq 1
+yachiyo_active_splits:
+    resq 1
+yachiyo_uptime:
+    resq 1
+
+; 分身 table: 8 × 64 bytes
+; active(8) + type(8) + position(12) + target_entity(8) + 
+; mood(8) + state(8) + pad(12) = 64
+yachiyo_splits:
+    resb MAX_SPLITS * 64
+
+; Memory database: 4096 entries × 64 bytes
+; timestamp(8) + category(4) + emotional_weight(4) + 
+; user_ids(16) + description(32) = 64
+yachiyo_memory:
+    resb 4096 * 64
+yachiyo_memory_count:
+    resq 1
