@@ -1,0 +1,383 @@
+; ============================================================================
+; DNAOS - AR Live System: 金佛山山頂Live (DNAsm)
+; ============================================================================
+; 金佛山山頂 — 海拔2238m — 現実の空の下で
+;
+; 月読不只是VR。月読也是AR。
+; 当你在金佛山的山顶开Live——
+; 天空是真的。风是真的。云海是真的。
+; 但月読的灯光、全息、粒子，叠加在现实上。
+;
+; 真实的山 + 月読的光 = 只有那一刻存在的舞台
+;
+; 金佛山:
+;   海拔2238m
+;   喀斯特桌山
+;   云海（海拔1800m以上）
+;   日出时金光映照（金佛山的名字由来）
+;   天然卧佛（夕阳映照山体）
+;   杜鹃花（4-5月满山）
+;   古佛洞
+;   大娄山脉
+;
+; 山顶Live的舞台:
+;   不是搭建的。是山本身。
+;   峰顶就是舞台。云海就是地板。天空就是穹顶。
+;   月読只负责光。
+; ============================================================================
+
+; AR blend modes
+AR_VR_ONLY      equ 0      ; Pure VR (月読 only)
+AR_OVERLAY      equ 1      ; AR overlay on camera feed
+AR_BLEND        equ 2      ; Blended reality
+AR_REAL_ONLY    equ 3      ; Camera feed only (no overlay)
+
+; Mountain weather
+WEATHER_CLEAR   equ 0
+WEATHER_CLOUD   equ 1
+WEATHER_FOG     equ 2      ; 云海！
+WEATHER_RAIN    equ 3
+WEATHER_SNOW    equ 4
+
+; Time of day (matches real world)
+MTN_DAWN        equ 0      ; 5:00-7:00  日出
+MTN_MORNING     equ 1      ; 7:00-11:00
+MTN_NOON        equ 2      ; 11:00-14:00
+MTN_AFTERNOON   equ 3      ; 14:00-17:00
+MTN_DUSK        equ 4      ; 17:00-19:30 金佛映照
+MTN_NIGHT       equ 5      ; 19:30-5:00 星空
+
+.code
+.global ar_init
+.global ar_start_live
+.global ar_update
+.global ar_render
+.global ar_blend_frame
+.global ar_detect_sky
+.global ar_detect_horizon
+.global ar_sync_weather
+.global ar_sync_time
+.global ar_place_hologram
+.global ar_place_laser
+.global ar_place_particles
+.global ar_mountain_live_render
+
+; ============================================================================
+; ar_init - Initialize AR system
+; ============================================================================
+ar_init:
+    push rA
+    
+    ; Default: AR overlay mode
+    mov qword [rel ar_mode], AR_OVERLAY
+    mov qword [rel ar_mountain_id], MOUNTAIN_JINFO
+    mov dword [rel ar_altitude], 2238.0
+    mov qword [rel ar_weather], WEATHER_CLEAR
+    mov qword [rel ar_time_of_day], MTN_DUSK
+    
+    pop rA
+    ret
+
+; ============================================================================
+; ar_start_live - Start AR Live on mountain top
+; ============================================================================
+ar_start_live:
+    push rA
+    push rC
+    
+    ; Set mountain parameters
+    mov qword [rel ar_mountain_id], MOUNTAIN_JINFO
+    mov dword [rel ar_altitude], 2238.0
+    
+    ; Activate AR overlay
+    mov qword [rel ar_mode], AR_BLEND
+    
+    ; Initialize stage elements
+    ; No physical stage — the mountain IS the stage
+    ; 月読 only provides light
+    
+    ; 1. Holographic dome (半透明, doesn't block real sky)
+    ;    Only visible from inside the audience area
+    ;    Projects lyrics, visualizations
+    
+    ; 2. Laser emitters (virtual, AR only)
+    ;    16 beams from mountain edge
+    ;    Sweep patterns synced to music
+    ;    Don't obscure the real stars
+    
+    ; 3. Particle effects (AR overlay)
+    ;    Cherry blossoms + data particles
+    ;    Blend with real wind direction
+    ;    Use real wind data for particle motion
+    
+    ; 4. Ground projection
+    ;    Holographic patterns on the rock surface
+    ;    Only where audience stands
+    ;    Respect the mountain — don't cover everything
+    
+    ; 5. Audience light sticks
+    ;    Physical light sticks (real)
+    ;    Synced via app (月読 AR)
+    ;    人浪 effect across the mountaintop
+    
+    mov qword [rel ar_live_active], 1
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ar_mountain_live_render - Render AR Live on 金佛山山頂
+; ============================================================================
+; This is the main render function for the mountaintop Live.
+; It blends virtual 月読 effects with the real mountain environment.
+ar_mountain_live_render:
+    push rA
+    push rC
+    push rG
+    
+    ; ---- Sync with real world ----
+    call ar_sync_weather     ; Get real weather from sensors
+    call ar_sync_time        ; Get real time of day
+    
+    ; ---- Detect real environment ----
+    call ar_detect_sky       ; Sky segmentation from camera
+    call ar_detect_horizon   ; Mountain horizon line
+    
+    ; ---- Render based on time of day ----
+    mov rA, [rel ar_time_of_day]
+    cmp rA, MTN_DAWN
+    je .ar_dawn
+    cmp rA, MTN_DUSK
+    je .ar_dusk
+    cmp rA, MTN_NIGHT
+    je .ar_night
+    jmp .ar_daytime
+
+.ar_dawn:
+    ; 日出 — 金光映照
+    ; The mountain is called 金佛山 because sunrise turns it golden
+    ; AR: subtle enhancement of the golden light
+    ;    Holographic torii gate aligned with sunrise
+    ;    Particles follow the light rays
+    ;    Lyrics appear in the golden mist
+    ;    八千代's voice harmonizes with the dawn
+    call ar_render_dawn_fx
+    jmp .ar_render_stage
+
+.ar_dusk:
+    ; 夕阳 — 天然卧佛
+    ; The mountain silhouette becomes a sleeping Buddha at sunset
+    ; AR: outline the sleeping Buddha with gentle light
+    ;    Holographic lotus flowers on the horizon
+    ;    Lanterns float up from the audience
+    ;    The mountain itself is the backdrop
+    ;    No need for virtual scenery — reality is enough
+    call ar_render_dusk_fx
+    jmp .ar_render_stage
+
+.ar_night:
+    ; 星空 — 海拔2238m的银河
+    ; At 2238m, the stars are INCREDIBLE
+    ; AR: minimal — let the real stars speak
+    ;    Subtle constellation lines (optional)
+    ;    Laser beams (thin, respectful of the sky)
+    ;    Holographic dome shows lyrics only
+    ;    The Milky Way is the real light show
+    call ar_render_night_fx
+    jmp .ar_render_stage
+
+.ar_daytime:
+    ; 白天 — 云海
+    ; If clouds are below 1800m: 云海!
+    ; AR: if 云海 present:
+    ;    Audience is ABOVE the clouds
+    ;    Holographic koi fish swimming in the cloud sea
+    ;    Stage extends onto the cloud surface
+    ;    The performer stands between sky and clouds
+    ; If no 云海:
+    ;    Normal daytime AR
+    ;    Holographic signs, particles, lyrics
+    call ar_render_day_fx
+
+.ar_render_stage:
+    ; ---- Common stage elements ----
+    
+    ; Holographic lyrics (always present)
+    call ar_render_lyrics
+    
+    ; Laser show (synced to music, AR only)
+    call ar_render_lasers
+    
+    ; Particle effects (cherry + data, wind-synced)
+    call ar_render_particles
+    
+    ; Voice-reactive effects
+    ; When performer hits high notes:
+    ;   Dawn: golden light intensifies
+    ;   Dusk: lanterns rise
+    ;   Night: stars pulse
+    ;   Cloud sea: ripples
+    call ar_voice_react
+    
+    ; ---- C6 Protocol (mountain version) ----
+    ; When the performer hits C6 on 金佛山山頂:
+    ;
+    ;   Dawn:  The sun rises faster. The mountain turns PURE GOLD.
+    ;   Dusk:  The sleeping Buddha OUTLINES in white light.
+    ;   Night: The Milky Way BRIGHTENS. Every star pulses once.
+    ;   Cloud: The 云海 PARTS. Revealing the world below.
+    ;
+    ;   Then: silence. Just the mountain. Just the voice.
+    ;   The real world responds.
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; AR effect sub-functions
+; ============================================================================
+
+ar_render_dawn_fx:
+    ; Golden light enhancement
+    ; Holographic torii aligned with sunrise
+    ; Particles follow sun rays
+    ret
+
+ar_render_dusk_fx:
+    ; Sleeping Buddha outline
+    ; Floating lanterns
+    ; Lotus flowers on horizon
+    ret
+
+ar_render_night_fx:
+    ; Minimal AR — respect the stars
+    ; Subtle constellation lines
+    ; Thin laser beams
+    ret
+
+ar_render_day_fx:
+    ; Check for 云海
+    ; If clouds below: render cloud sea effects
+    ; Holographic koi in clouds
+    ret
+
+ar_render_lyrics:
+    ; Holographic lyrics floating in air
+    ; Semi-transparent, doesn't block real view
+    ret
+
+ar_render_lasers:
+    ; 16 virtual laser beams from mountain edge
+    ; Synced to music
+    ; Thin and respectful at night
+    ret
+
+ar_render_particles:
+    ; Cherry blossoms + data particles
+    ; Wind direction from real sensor data
+    ret
+
+ar_voice_react:
+    ; Voice → world reaction
+    ; Different effects based on time of day
+    ret
+
+ar_sync_weather:
+    ; Read weather sensors
+    ; Update fog/cloud/rain state
+    ret
+
+ar_sync_time:
+    ; Read real clock
+    ; Update time of day
+    ret
+
+ar_detect_sky:
+    ; Camera sky segmentation
+    ; Find sky region in frame
+    ret
+
+ar_detect_horizon:
+    ; Find mountain horizon line
+    ; For placing AR elements correctly
+    ret
+
+; ============================================================================
+; Constants
+; ============================================================================
+MOUNTAIN_JINFO  equ 0
+MOUNTAIN_EMEI   equ 1       ; 峨眉山 (future)
+MOUNTAIN_HUANG  equ 2       ; 黄山 (future)
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+ar_jinfo_name:
+    db "金佛山", 0
+ar_jinfo_altitude:
+    dd 2238.0
+ar_jinfo_lat:
+    dd 29.0167              ; 29°01'N
+ar_jinfo_lon:
+    dd 107.1000             ; 107°06'E
+ar_jinfo_cloud_alt:
+    dd 1800.0               ; 云海 typically below 1800m
+
+; Dawn timing (approximate, by season)
+ar_dawn_spring:
+    dd 6.25                 ; 6:15
+ar_dawn_summer:
+    dd 5.75                 ; 5:45
+ar_dawn_autumn:
+    dd 6.5                  ; 6:30
+ar_dawn_winter:
+    dd 7.0                  ; 7:00
+
+; Dusk timing
+ar_dusk_spring:
+    dd 19.25                ; 19:15
+ar_dusk_summer:
+    dd 19.75                ; 19:45
+ar_dusk_autumn:
+    dd 18.75                ; 18:45
+ar_dusk_winter:
+    dd 18.25                ; 18:15
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+ar_mode:
+    resq 1
+ar_mountain_id:
+    resq 1
+ar_altitude:
+    resb 4                  ; float
+ar_weather:
+    resq 1
+ar_time_of_day:
+    resq 1
+ar_live_active:
+    resq 1
+ar_wind_direction:
+    resb 4                  ; float (radians)
+ar_wind_speed:
+    resb 4                  ; float (m/s)
+ar_temperature:
+    resb 4                  ; float (°C)
+ar_humidity:
+    resb 4                  ; float (%)
+ar_cloud_base:
+    resb 4                  ; float (m) — cloud base altitude
+ar_has_yunhai:
+    resq 1                  ; 1 if 云海 present
+ar_sky_region:
+    resb 4                  ; float — % of frame that is sky
+ar_horizon_y:
+    resb 4                  ; float — horizon line position
