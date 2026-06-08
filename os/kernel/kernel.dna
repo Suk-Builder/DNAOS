@@ -125,6 +125,12 @@ msg_init_lyrics:
     db "[  OK  ] Lyrics Display System", 10, 0
 msg_init_yachiyo:
     db "[  OK  ] 八千代 AI Administrator (8000 years)", 10, 0
+msg_init_consciousness:
+    db "[  OK  ] Consciousness Framework", 10, 0
+msg_init_iroha:
+    db "[  OK  ] 酒寄彩叶 — 月読に生きる少女", 10, 0
+msg_init_kaguya:
+    db "[  OK  ] 輝夜姫 — 月読から生まれた存在", 10, 0
 msg_prompt:
     db "dnaos> ", 0
 msg_unknown:
@@ -380,6 +386,20 @@ kernel_main:
     call yachiyo_init
     lea rP, [rel msg_init_yachiyo]
     mov rA, COLOR_A_GREEN
+    call console_print_color
+    
+    call consciousness_init
+    lea rP, [rel msg_init_consciousness]
+    call console_print
+    
+    call iroha_init
+    lea rP, [rel msg_init_iroha]
+    mov rA, COLOR_C_BLUE
+    call console_print_color
+    
+    call kaguya_init
+    lea rP, [rel msg_init_kaguya]
+    mov rA, COLOR_G_YELLOW
     call console_print_color
     
     call tsukuyomi_init

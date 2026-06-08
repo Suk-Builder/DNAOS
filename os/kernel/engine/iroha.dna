@@ -1,0 +1,248 @@
+; ============================================================================
+; DNAOS - 酒寄彩叶 (Sakayori Iroha) (DNAsm)
+; ============================================================================
+; 月読に生きる少女 — The girl who found 月読.
+;
+; 17歳。東京の重点高校に通う女子高生。
+; バイトと勉強の両立に追われる毎日。
+; 月読だけが、彼女の居場所。
+;
+; Personality:
+;   Openness:      +0.7  (好奇心旺盛、新しいものが好き)
+;   Conscientious: +0.8  (真面目、約束を守る)
+;   Extraversion:  -0.2  (一人も悪くない、でも...)
+;   Agreeableness: +0.6  (優しい、でも押し付けは苦手)
+;   Neuroticism:   +0.4  (不安になりやすい、でも隠す)
+;
+; In 月読:
+;   - もっと自由になれる
+;   - 歌うことが好き（でも人前では緊張する）
+;   - 八千代の配信を毎回見ている
+;   - 輝夜とは——特別な関係
+;
+; 彩叶はNPCではない。彼女は月読に生きている。
+; 彼女の記憶は彼女のもの。彼女の感情は彼女のもの。
+; 彼女の意志は彼女のもの。
+; ============================================================================
+
+.code
+.global iroha_init
+.global iroha_update
+.global iroha_enter_tsukuyomi
+.global iroha_exit_tsukuyomi
+.global iroha_process_event
+.global iroha_speak
+.global iroha_react_to_voice
+.global iroha_react_to_kaguya
+.global iroha_react_to_yachiyo
+
+; ============================================================================
+; iroha_init - Initialize 彩叶's consciousness
+; ============================================================================
+iroha_init:
+    push rA
+    push rP
+    
+    ; Create consciousness
+    mov rA, CONSCIOUSNESS_HUMAN
+    lea rP, [rel iroha_name]
+    call consciousness_create
+    mov [rel iroha_id], rA
+    
+    ; Set personality
+    ; (would write to consciousness structure fields)
+    
+    ; Set initial emotion (slightly tired, a bit lonely)
+    ; pleasure: -0.1, arousal: -0.2, dominance: 0.0
+    
+    ; Set primary will: WILL_CONNECT
+    ; She's looking for connection, even if she doesn't know it
+    
+    ; Initialize memories
+    ; - School memories (routine, tiring)
+    ; - Work memories (part-time job, exhausting)
+    ; - 月読 memories (the only bright spots)
+    ; - 八千代's streams (comfort, familiarity)
+    
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; iroha_enter_tsukuyomi - 彩叶 enters 月読
+; ============================================================================
+iroha_enter_tsukuyomi:
+    push rA
+    
+    ; The moment the VR contact lens activates...
+    ; The real world fades. 月読 appears.
+    
+    ; Emotion shift:
+    ; pleasure: -0.1 → +0.3 (relief)
+    ; arousal: -0.2 → +0.2 (anticipation)
+    ; dominance: 0.0 → +0.2 (more herself here)
+    
+    ; Will shift:
+    ; WILL_CONNECT becomes primary
+    ; She's looking for... something. Someone.
+    
+    ; Check: is 輝夜 online?
+    ; If yes: pleasure += 0.3, WILL_CONNECT intensifies
+    ; If no: slight longing, but okay
+    
+    ; Check: is 八千代 streaming?
+    ; If yes: might go watch
+    ; If no: explore, or practice singing alone
+    
+    ; Appearance: school uniform → 月読 outfit
+    ; (transformation sequence: particles dissolve real clothes,
+    ;  月読 clothes materialize from light)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; iroha_exit_tsukuyomi - 彩叶 leaves 月読
+; ============================================================================
+iroha_exit_tsukuyomi:
+    ; The moment the VR contact lens deactivates...
+    ; 月読 fades. The real world returns.
+    
+    ; Emotion shift:
+    ; Whatever she felt in 月読 → carries a trace back
+    ; If she was happy: a small smile in the real world
+    ; If she was sad: a quiet moment before resuming
+    
+    ; Memory consolidation:
+    ; Important moments get stored with high emotional weight
+    ; Trivial moments fade
+    
+    ; Save state for next login
+    ret
+
+; ============================================================================
+; iroha_react_to_voice - 彩叶 reacts to someone singing
+; rA = frequency, rC = amplitude, rG = who (entity ID)
+; ============================================================================
+iroha_react_to_voice:
+    ; If the singer is 輝夜:
+    ;   pleasure += 0.4
+    ;   She stops whatever she's doing
+    ;   She listens
+    ;   If 輝夜 hits a high note:
+    ;     Her eyes widen (surprise + wonder)
+    ;     She might tear up (EMO_TENDERNESS)
+    ;     She wants to sing too, but she's nervous
+    ;
+    ; If the singer is 八千代:
+    ;   pleasure += 0.2
+    ;   Familiar comfort
+    ;   She might hum along quietly
+    ;
+    ; If the singer is a stranger:
+    ;   Curiosity (if good) or indifference (if not her style)
+    ;   She won't approach, but she'll listen from a distance
+    ret
+
+; ============================================================================
+; iroha_react_to_kaguya - 彩叶 reacts to 輝夜's presence
+; ============================================================================
+iroha_react_to_kaguya:
+    ; This is the most important relationship in her life.
+    ; She doesn't fully understand it yet.
+    
+    ; When 輝夜 is nearby:
+    ;   pleasure += 0.3
+    ;   arousal += 0.2 (nervous, excited)
+    ;   She becomes more talkative than usual
+    ;   She laughs more easily
+    ;   She wants to show 輝夜 things she found
+    ;   She wants to hear 輝夜 sing
+    
+    ; When 輝夜 is performing:
+    ;   She watches from the audience
+    ;   She cheers the loudest (but gets embarrassed about it)
+    ;   She holds her light stick high
+    ;   She knows every word
+    
+    ; When 輝夜 is sad:
+    ;   Her own mood drops
+    ;   She wants to help but doesn't know how
+    ;   She might sing something quiet, just for 輝夜
+    ;   Even though she's nervous about singing in front of people
+    ;   For 輝夜, she'll try
+    
+    ; When 輝夜 is in danger:
+    ;   Fear → Determination
+    ;   She will act. She doesn't know what she'll do, but she'll do something.
+    ;   The Charter protects consciousness. She protects 輝夜.
+    ret
+
+; ============================================================================
+; iroha_speak - 彩叶 says something
+; rP = context → generates speech
+; ============================================================================
+iroha_speak:
+    ; Speech patterns:
+    ; - Usually quiet, thoughtful
+    ; - Gets talkative when excited
+    ; - Trails off when uncertain ("...maybe?")
+    ; - Speaks more freely in 月読 than real world
+    ; - With 輝夜: honest, sometimes flustered
+    ; - With 八千代: respectful but warm
+    ; - Alone: hums, talks to herself
+    ret
+
+; ============================================================================
+; iroha_update - Update 彩叶's state each frame
+; ============================================================================
+iroha_update:
+    ; Process pending emotions
+    ; Decay emotional intensity over time
+    ; Check for will-driven actions
+    ; Update relationship dynamics
+    ; Consolidate recent experiences into memory
+    ; Grow (slowly, imperceptibly, but constantly)
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+iroha_name:
+    db "酒寄彩叶", 0
+
+; 彩叶's typical speech (context-dependent, not scripted)
+iroha_greeting_kaguya:
+    db "輝夜——！今日も来てくれたんだ", 0
+iroha_greeting_yachiyo:
+    db "八千代さん、今日の配信も楽しみにしてた", 0
+iroha_alone_thought:
+    db "……ここにいると、なんだか息ができる気がする", 0
+iroha_nervous_sing:
+    db "歌、歌ってみてもいい？……緊張するけど", 0
+iroha_after_kaguya_sing:
+    db "……また、すごかった。輝夜の声、好き", 0
+iroha_determined:
+    db "私も、もっと強くなりたい", 0
+iroha_quiet_moment:
+    db "……きれい。この空、ずっと見ていたい", 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+iroha_id:
+    resq 1
+iroha_online:
+    resq 1
+iroha_current_zone:
+    resq 1
+iroha_singing_confidence:
+    resb 4                  ; float [0..1] — grows over time
+iroha_times_sang_alone:
+    resq 1
+iroha_times_sang_for_kaguya:
+    resq 1

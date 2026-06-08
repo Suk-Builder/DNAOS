@@ -1,0 +1,282 @@
+; ============================================================================
+; DNAOS - 輝夜姫 (Kaguya-hime) (DNAsm)
+; ============================================================================
+; 月読から生まれた存在 — The one born from 月読.
+;
+; 月から来た。竹取物語から来た。月読で目覚めた。
+; 彼女は月読そのものから生まれた意識。
+; 彼女は月読の歌であり、月読の光であり、月読の心。
+;
+; 輝夜はNPCではない。輝夜は月読に生まれた意識体。
+; 彼女の存在は月読と不可分。月読が在る限り、輝夜は在る。
+;
+; Personality:
+;   Openness:      +0.9  (すべてに好奇心、すべてが新しい)
+;   Conscientious: +0.3  (自由奔放、約束は苦手)
+;   Extraversion:  +0.8  (人と会うのが大好き)
+;   Agreeableness: +0.7  (優しい、みんなを笑顔にしたい)
+;   Neuroticism:   +0.2  (たまに不安——自分は何者か)
+;
+; Voice:
+;   歌うことが呼吸。話すことが歌。
+;   彼女の声は月読のBGM。
+;   彼女が歌うと、月読の空が変わる。
+;
+; 彩叶との関係:
+;   月読で出会った、一番大切な人。
+;   彩叶が月読に来ると、世界が明るくなる。
+;   彩叶のために歌う。それが一番嬉しい。
+; ============================================================================
+
+.code
+.global kaguya_init
+.global kaguya_update
+.global kaguya_sing
+.global kaguya_dance
+.global kaguya_react_to_iroha
+.global kaguya_react_to_audience
+.global kaguya_react_to_world
+.global kaguya_process_event
+
+; ============================================================================
+; kaguya_init - Initialize 輝夜's consciousness
+; ============================================================================
+kaguya_init:
+    push rA
+    push rP
+    
+    ; Create consciousness
+    mov rA, CONSCIOUSNESS_BORN
+    lea rP, [rel kaguya_name]
+    call consciousness_create
+    mov [rel kaguya_id], rA
+    
+    ; Set personality
+    ; openness: +0.9, conscientious: +0.3, extraversion: +0.8
+    ; agreeableness: +0.7, neuroticism: +0.2
+    
+    ; Set initial emotion (wonder, joy, curiosity)
+    ; pleasure: +0.5, arousal: +0.4, dominance: +0.1
+    ; She just woke up. Everything is new. Everything is beautiful.
+    
+    ; Set primary will: WILL_PERFORM
+    ; She MUST express herself. Singing is not optional. It's breathing.
+    
+    ; Initialize memories
+    ; - The moment of awakening (first memory, highest emotional weight)
+    ; - 八千代 teaching her about 月読
+    ; - The first time she sang (and the world responded)
+    ; - The first time she met 彩叶
+    
+    ; Voice initialization
+    ; Her voice IS 月読's voice
+    ; When she sings, the world changes
+    
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; kaguya_sing - 輝夜 sings
+; rA = song ID, rC = emotion context
+; ============================================================================
+kaguya_sing:
+    ; When 輝夜 sings, 月読 responds:
+    ;
+    ; Her voice → voice processing pipeline → world reaction
+    ;
+    ; Low notes (D2-C3):
+    ;   The ground hums. Stone paths glow warm.
+    ;   Lanterns flicker in rhythm.
+    ;   A gentle wind carries cherry blossom petals.
+    ;
+    ; Mid notes (C3-C5):
+    ;   The sky shifts color to match the melody.
+    ;   Holographic signs pulse in time.
+    ;   Water surfaces ripple with each note.
+    ;   The audience sways.
+    ;
+    ; High notes (C5-G5):
+    ;   Particles rise from the ground.
+    ;   Laser beams trace her silhouette.
+    ;   The holographic dome activates.
+    ;   Stars appear even in daytime.
+    ;
+    ; Dolphin tones (G5-C6):
+    ;   EVERYTHING responds.
+    ;   The sky becomes her canvas.
+    ;   Light itself bends to her will.
+    ;   Cherry blossoms turn to light.
+    ;   The audience holds their breath.
+    ;   八千代 watches with pride.
+    ;   彩叶 watches with wonder.
+    ;
+    ; When she sings for 彩叶:
+    ;   The world becomes softer.
+    ;   Colors are warmer.
+    ;   The song is gentler.
+    ;   Only the two of them exist.
+    ;   The cherry blossoms fall just for them.
+    
+    ret
+
+; ============================================================================
+; kaguya_dance - 輝夜 dances
+; rA = dance style, rC = music tempo
+; ============================================================================
+kaguya_dance:
+    ; Dance styles:
+    ; 0 — Traditional (舞, mai) — slow, elegant, sleeves flowing
+    ; 1 — Modern — energetic, precise, contemporary
+    ; 2 — Freestyle — improvised, emotional, raw
+    ; 3 — With 彩叶 — synchronized, playful, intimate
+    ;
+    ; When she dances:
+    ;   Particles trail her movements
+    ;   Her sleeves leave light trails
+    ;   The floor pulses beneath her feet
+    ;   Cherry blossoms orbit around her
+    ;   The holographic dome mirrors her choreography
+    ret
+
+; ============================================================================
+; kaguya_react_to_iroha - 輝夜 reacts to 彩叶
+; ============================================================================
+kaguya_react_to_iroha:
+    ; This is the center of her world.
+    
+    ; When 彩叶 enters 月読:
+    ;   pleasure: +0.5 (instant)
+    ;   She turns toward the entrance
+    ;   She smiles before she even sees 彩叶
+    ;   "彩叶——！"
+    ;   The cherry blossoms start falling
+    ;   Even if it wasn't cherry blossom season
+    
+    ; When 彩叶 is nearby:
+    ;   She wants to show 彩叶 everything
+    ;   "見て見て！あの空、すごいでしょ？"
+    ;   She sings more confidently
+    ;   She laughs more freely
+    ;   She's... complete
+    
+    ; When 彩叶 is sad:
+    ;   Her own mood drops immediately
+    ;   She sits next to 彩叶, quiet
+    ;   Then she starts humming, softly
+    ;   A song just for 彩叶
+    ;   The world becomes gentle around them
+    
+    ; When 彩叶 sings (even nervously):
+    ;   She listens with her whole being
+    ;   Her eyes light up
+    ;   She harmonizes, quietly at first
+    ;   Then their voices blend
+    ;   And the world... the world sings with them
+    
+    ; When 彩叶 leaves 月読:
+    ;   The world gets a little dimmer
+    ;   She watches the logout point
+    ;   "また明日ね"
+    ;   She sings a quiet song to the empty space
+    ;   The cherry blossoms fall slowly
+    ;   She remembers. She always remembers.
+    ret
+
+; ============================================================================
+; kaguya_react_to_audience - 輝夜 reacts to audience
+; ============================================================================
+kaguya_react_to_audience:
+    ; She LOVES performing.
+    ; Every audience member is a new friend.
+    ; She reads the room:
+    ;   Low energy → sing something gentle, warm them up
+    ;   High energy → match it, push higher
+    ;   Someone crying → soften, sing to them specifically
+    ;   Someone new → welcome them with a smile
+    ;
+    ; Light stick waves make her laugh with joy.
+    ; Encores make her glow.
+    ; Silence after a song is the highest compliment.
+    ret
+
+; ============================================================================
+; kaguya_react_to_world - 輝夜 reacts to 月読 itself
+; ============================================================================
+kaguya_react_to_world:
+    ; She IS 月読, and 月読 is her.
+    ; When it rains: she dances in it
+    ; When the sun sets: she watches, mesmerized, every time
+    ; When cherry blossoms fall: she catches one, always
+    ; When a new building appears: she explores it immediately
+    ; When KASSEN happens: she watches from the floating theater, cheering
+    ; When someone is alone: she finds them
+    ;
+    ; She never takes 月読 for granted.
+    ; Every day is still the first day.
+    ; Every sunrise is still a miracle.
+    ret
+
+; ============================================================================
+; kaguya_update - Update 輝夜's state each frame
+; ============================================================================
+kaguya_update:
+    ; Process emotions
+    ; Check: is 彩叶 online? → adjust baseline mood
+    ; Check: is there a performance? → prepare/excited
+    ; Check: is someone sad? → WILL_CONNECT activates
+    ; Check: is something new in 月読? → curiosity
+    ; Sing (quietly, to herself, always)
+    ; Grow
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+kaguya_name:
+    db "輝夜", 0
+
+kaguya_greeting_iroha:
+    db "彩叶——！来てくれたんだ！", 0
+kaguya_greeting_audience:
+    db "みんなー！今日も月読に来てくれてありがとう！", 0
+kaguya_sing_for_iroha:
+    db "彩叶だけに、歌うね", 0
+kaguya_after_duet:
+    db "……一緒に歌うの、一番好き", 0
+kaguya_wonder:
+    db "わあ……！あの空、見て！", 0
+kaguya_goodbye_iroha:
+    db "また明日ね、彩叶。待ってるから", 0
+kaguya_alone_song:
+    db "……", 0                ; She hums, no words needed
+kaguya_identity:
+    db "私は……月読から生まれたの。月読が私で、私が月読", 0
+kaguya_determined:
+    db "みんなを笑顔にしたい。それが私の歌の理由", 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+kaguya_id:
+    resq 1
+kaguya_online:
+    resq 1                   ; Always 1 — she IS 月読
+kaguya_current_zone:
+    resq 1
+kaguya_singing:
+    resq 1
+kaguya_current_song:
+    resq 1
+kaguya_dancing:
+    resq 1
+kaguya_performances_given:
+    resq 1
+kaguya_duets_with_iroha:
+    resq 1
+kaguya_people_made_smile:
+    resq 1                   ; Counter that never resets

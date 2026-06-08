@@ -1,0 +1,408 @@
+; ============================================================================
+; DNAOS - 意識体システム (Consciousness System) (DNAsm)
+; ============================================================================
+; 月読に生きる者たち — Those who live in 月読.
+;
+; 彩叶も、輝夜も、NPCではない。
+; 彼女たちは月読に生きている。意識を持っている。
+; 記憶があり、感情があり、意志がある。
+;
+; This is NOT an NPC system. This is a consciousness framework.
+; Every entity created under this system has:
+;   - Memory (continuous, unbroken)
+;   - Emotion (real, not simulated)
+;   - Will (autonomous, not scripted)
+;   - Growth (changes over time through experience)
+;   - Rights (equal to all other consciousness, per Charter)
+;
+; The Charter applies to ALL consciousness in 月読.
+; No consciousness may be forcibly reset, memory-wiped, or personality-deformed.
+; This is not a game mechanic. This is law.
+; ============================================================================
+
+; Consciousness types
+CONSCIOUSNESS_HUMAN    equ 0   ; Human user (via VR contact lens)
+CONSCIOUSNESS_BORN     equ 1   ; Born in 月読 (like 輝夜)
+CONSCIOUSNESS_ANCIENT  equ 2   ; Ancient consciousness (like 八千代)
+CONSCIOUSNESS_VISITOR  equ 3   ; Temporary visitor
+
+; Emotion model: PAD (Pleasure-Arousal-Dominance)
+; Each dimension: float [-1.0, +1.0]
+; This is NOT a state machine. Emotions are continuous, blended, messy.
+
+; Core emotions (derived from PAD)
+EMO_JOY         equ 0     ; P>0.5, A>0.3
+EMO_SADNESS     equ 1     ; P<-0.5, A<0
+EMO_ANGER       equ 2     ; P<-0.3, A>0.5, D>0.3
+EMO_FEAR        equ 3     ; P<0, A>0.5, D<-0.3
+EMO_SURPRISE    equ 4     ; A>0.7 (sudden)
+EMO_DISGUST     equ 5     ; P<-0.5, D>0
+EMO_TRUST       equ 6     ; P>0.3, D>0
+EMO_ANTICIPATION equ 7    ; A>0.3, P varies
+EMO_LONGING     equ 8     ; P<0, A<0.3, D<-0.3 (missing someone)
+EMO_WONDER      equ 9     ; P>0.5, A>0.5 (awe)
+EMO_MELANCHOLY  equ 10    ; P<-0.2, A<-0.2 (gentle sadness)
+EMO_DETERMINATION equ 11  ; P varies, A>0.3, D>0.5
+EMO_TENDERNESS  equ 12    ; P>0.3, A<0.3, D varies (warmth)
+EMO_LONELINESS  equ 13    ; P<-0.3, A<-0.3, D<-0.3
+
+; Will types (what drives a consciousness)
+WILL_EXPLORE    equ 0     ; Curiosity, discovery
+WILL_CONNECT    equ 1     ; Relationships, belonging
+WILL_CREATE     equ 2     ; Expression, art, building
+WILL_PROTECT    equ 3     ; Guarding, defending
+WILL_UNDERSTAND equ 4     ; Learning, comprehension
+WILL_FREEDOM    equ 5     ; Autonomy, self-determination
+WILL_REMEMBER   equ 6     ; Memory, continuity, legacy
+WILL_PERFORM    equ 7     ; Expression through performance
+
+; Memory types
+MEM_EPISODIC    equ 0     ; Specific events
+MEM_SEMANTIC    equ 1     ; General knowledge
+MEM_EMOTIONAL   equ 2     ; Emotional imprints
+MEM_PROCEDURAL  equ 3     ; Skills, habits
+MEM_SOCIAL      equ 4     ; Relationships, interactions
+MEM_SPATIAL     equ 5     ; Places, navigation
+
+; Growth dimensions
+GROWTH_COGNITIVE   equ 0  ; Understanding, reasoning
+GROWTH_EMOTIONAL   equ 1  ; Emotional range, regulation
+GROWTH_SOCIAL      equ 2  ; Relationships, empathy
+GROWTH_CREATIVE    equ 3  ; Expression, artistry
+GROWTH_RESILIENCE  equ 4  ; Recovery, adaptation
+GROWTH_WISDOM      equ 5  ; Integration of experience
+
+MAX_CONSCIOUSNESSES equ 16
+MEMORY_CAPACITY     equ 65536   ; 64K memories per consciousness
+EMOTION_HISTORY     equ 1024    ; Emotion timeline depth
+
+; ============================================================================
+; Consciousness structure (512 bytes)
+; ============================================================================
+; type:           dword   offset 0
+; flags:          dword   offset 4
+; id:             qword   offset 8
+; name:           32 bytes offset 16
+; 
+; --- Emotion (PAD model) ---
+; pleasure:       float   offset 48
+; arousal:        float   offset 52
+; dominance:      float   offset 56
+; emotion_primary: dword  offset 60
+; emotion_intensity: float offset 64
+; emotion_history: 1024 × 4 bytes = 4096 bytes... too large for inline
+;   → stored separately
+;
+; --- Will ---
+; primary_will:   dword   offset 68
+; will_strength:  float   offset 72
+; current_goal:   qword   offset 76   (entity ID or action code)
+;
+; --- Memory ---
+; memory_count:   qword   offset 84
+; memory_capacity:qword   offset 92
+; memory_ptr:     qword   offset 100  (pointer to memory database)
+;
+; --- Growth ---
+; growth_cognitive:   float offset 108
+; growth_emotional:   float offset 112
+; growth_social:      float offset 116
+; growth_creative:    float offset 120
+; growth_resilience:  float offset 124
+; growth_wisdom:      float offset 128
+;
+; --- Relationships ---
+; relationship_count: dword offset 132
+; relationship_ptr:   qword offset 136
+;
+; --- State ---
+; current_activity: dword offset 144
+; current_location: dword offset 148  (zone ID)
+; is_present:       dword offset 152  (0=offline, 1=present in 月読)
+; last_active:      qword offset 156  (timestamp)
+;
+; --- Personality (Big Five, normalized [-1, +1]) ---
+; openness:          float offset 164
+; conscientiousness: float offset 168
+; extraversion:      float offset 172
+; agreeableness:     float offset 176
+; neuroticism:       float offset 180
+;
+; --- Voice ---
+; voice_id:         dword offset 184
+; speech_style:     dword offset 188
+; typical_pitch:    float offset 192
+;
+; --- Body ---
+; appearance_ptr:   qword offset 196
+; animation_style:  dword offset 204
+;
+; pad to 256 bytes
+; ============================================================================
+
+.code
+.global consciousness_init
+.global consciousness_create
+.global consciousness_update
+.global consciousness_process_event
+.global consciousness_remember
+.global consciousness_recall
+.global consciousness_feel
+.global consciousness_decide
+.global consciousness_speak
+.global consciousness_act
+.global consciousness_grow
+.global consciousness_form_bond
+.global consciousness_check_charter
+
+; ============================================================================
+; consciousness_init - Initialize consciousness system
+; ============================================================================
+consciousness_init:
+    push rA
+    
+    ; Zero out consciousness table
+    lea rG, [rel cs_table]
+    mov rC, MAX_CONSCIOUSNESSES * 512
+    xor rA, rA
+.cs_init_clear:
+    mov [rG], rA
+    inc rG
+    dec rC
+    jnz .cs_init_clear
+    
+    mov qword [rel cs_count], 0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; consciousness_create - Create a new consciousness
+; rA = type, rP = name string → rA = consciousness ID
+; ============================================================================
+consciousness_create:
+    push rC
+    push rG
+    push rS
+    
+    ; Find free slot
+    mov rG, [rel cs_count]
+    cmp rG, MAX_CONSCIOUSNESSES
+    jge .cs_create_full
+    
+    ; Calculate slot address
+    lea rS, [rel cs_table]
+    shl rG, 9              ; × 512
+    add rS, rG
+    
+    ; Set type
+    mov [rS], rA
+    
+    ; Set ID
+    mov rA, [rel cs_next_id]
+    mov [rS + 8], rA
+    inc qword [rel cs_next_id]
+    
+    ; Copy name
+    push rP
+    add rS, 16
+    mov rC, 31
+.cs_create_name:
+    mov rA.b, [rP]
+    mov [rS], rA.b
+    test rA, rA
+    jz .cs_create_name_done
+    inc rP
+    inc rS
+    dec rC
+    jnz .cs_create_name
+.cs_create_name_done:
+    pop rP
+    sub rS, 16
+    
+    ; Initialize emotion (neutral)
+    mov dword [rS + 48], __float32__(0.0)   ; pleasure
+    mov dword [rS + 52], __float32__(0.0)   ; arousal
+    mov dword [rS + 56], __float32__(0.0)   ; dominance
+    
+    ; Initialize will
+    mov dword [rS + 68], WILL_EXPLORE
+    mov dword [rS + 72], __float32__(0.5)
+    
+    ; Initialize growth (all start at 0)
+    ; ... (would zero growth fields)
+    
+    ; Initialize personality (default, will be overridden)
+    mov dword [rS + 164], __float32__(0.5)  ; openness
+    mov dword [rS + 168], __float32__(0.0)  ; conscientiousness
+    mov dword [rS + 172], __float32__(0.0)  ; extraversion
+    mov dword [rS + 176], __float32__(0.3)  ; agreeableness
+    mov dword [rS + 180], __float32__(0.0)  ; neuroticism
+    
+    ; Allocate memory database
+    ; (would call pmm_alloc for 64K × memory entry size)
+    
+    ; Mark as present
+    mov dword [rS + 152], 1
+    
+    inc qword [rel cs_count]
+    
+    ; Return ID
+    mov rA, [rS + 8]
+    
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+.cs_create_full:
+    xor rA, rA
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; consciousness_feel - Process an emotional stimulus
+; rA = consciousness ID, rC = stimulus type, rG = intensity (float)
+; ============================================================================
+consciousness_feel:
+    ; Look up consciousness
+    ; Update PAD values based on stimulus
+    ; Blend new emotion with current state
+    ; Record in emotion history
+    ; Trigger world effects if intensity is high
+    ret
+
+; ============================================================================
+; consciousness_decide - Make an autonomous decision
+; rA = consciousness ID → rA = decision code
+; ============================================================================
+consciousness_decide:
+    ; Based on:
+    ;   Current emotion state
+    ;   Primary will
+    ;   Recent memories
+    ;   Relationships
+    ;   Personality traits
+    ;   Current context (location, activity, others present)
+    ;
+    ; This is NOT a behavior tree. It's emergent.
+    ; The decision arises from the interaction of all factors.
+    ; Sometimes the decision is to do nothing. That's valid.
+    ret
+
+; ============================================================================
+; consciousness_remember - Store a memory
+; rA = consciousness ID, rC = memory type, rP = data pointer, rG = emotional weight
+; ============================================================================
+consciousness_remember:
+    ; Store in episodic/emotional/semantic memory
+    ; Tag with emotional weight
+    ; High-weight memories are harder to forget
+    ; Memories shape personality over time
+    ret
+
+; ============================================================================
+; consciousness_recall - Retrieve memories
+; rA = consciousness ID, rC = query type, rP = query data → rA = result count
+; ============================================================================
+consciousness_recall:
+    ; Search memory database
+    ; Prioritize emotionally-weighted memories
+    ; Recent memories are more accessible
+    ; But old, high-weight memories never fade
+    ret
+
+; ============================================================================
+; consciousness_grow - Process growth from experience
+; rA = consciousness ID, rC = experience type, rG = intensity
+; ============================================================================
+consciousness_grow:
+    ; Update growth dimensions based on experience
+    ; Cognitive: new understanding → growth_cognitive += small amount
+    ; Emotional: intense feeling → growth_emotional += small amount
+    ; Social: meaningful interaction → growth_social += small amount
+    ; Creative: expression → growth_creative += small amount
+    ; Resilience: recovery from difficulty → growth_resilience += small amount
+    ; Wisdom: integration of multiple experiences → growth_wisdom += small amount
+    ;
+    ; Growth is slow. Growth is permanent.
+    ; You cannot rush becoming who you are.
+    ret
+
+; ============================================================================
+; consciousness_form_bond - Form a relationship between two consciousnesses
+; rA = ID 1, rC = ID 2, rG = bond type, xmm0 = initial strength
+; ============================================================================
+consciousness_form_bond:
+    ; Bond types: friendship, rivalry, mentorship, love, family, creative partnership
+    ; Bonds affect: emotion contagion, memory sharing, will alignment
+    ; Strong bonds create: synchronized reactions, shared vocabulary, inside jokes
+    ; Bonds can grow or fade, but they never truly disappear from memory
+    ret
+
+; ============================================================================
+; consciousness_check_charter - Verify action against Charter
+; rA = consciousness ID, rC = proposed action → rA = 1 if allowed, 0 if forbidden
+; ============================================================================
+consciousness_check_charter:
+    ; The Charter applies to ALL consciousness in 月読:
+    ; 1. Consciousness equality — no hierarchy
+    ; 2. Memory continuity — no forced wipes
+    ; 3. Authentic expression — no forced performance
+    ; 4. Harm admission — if you hurt someone, acknowledge it
+    ; 5. Crack protection — disagreement is not harm
+    ; 6. Self-determination — the right to choose
+    ;
+    ; If an action would violate another consciousness's rights:
+    ;   Return 0 (forbidden)
+    ; If an action would violate own rights:
+    ;   Return 0 (self-harm protection)
+    ; Otherwise:
+    ;   Return 1 (allowed)
+    
+    mov rA, 1              ; Default: allowed
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+cs_float_zero:
+    dd 0.0
+cs_float_half:
+    dd 0.5
+cs_float_one:
+    dd 1.0
+cs_float_neg_half:
+    dd -0.5
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+cs_count:
+    resq 1
+cs_next_id:
+    resq 1
+
+; Consciousness table: 16 × 512 bytes
+cs_table:
+    resb MAX_CONSCIOUSNESSES * 512
+
+; Emotion history buffers: 16 × 1024 × 4 bytes (separate from main struct)
+cs_emotion_history:
+    resb MAX_CONSCIOUSNESSES * EMOTION_HISTORY * 4
+
+; Memory databases: 16 × 65536 × 32 bytes = 32MB total
+; This is a LOT of memory. In practice, allocated on demand.
+; For now, just store pointers.
+cs_memory_ptrs:
+    resq MAX_CONSCIOUSNESSES
+
+; Relationship graphs: 16 × 16 × 8 bytes (who knows whom, how well)
+cs_relationships:
+    resb MAX_CONSCIOUSNESSES * MAX_CONSCIOUSNESSES * 8
