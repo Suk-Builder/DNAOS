@@ -1,0 +1,464 @@
+; ============================================================================
+; DNAOS - Live Performance System (DNAsm)
+; ============================================================================
+; 超時空輝夜姫のLive — The super ultra mega live venue.
+;
+; Everyone can perform. Everyone can watch.
+; No boundary between stage and audience.
+; The stage transforms for each performer.
+; The audience IS the light show.
+; ============================================================================
+
+MAX_PERFORMERS   equ 8     ; Simultaneous performers
+MAX_AUDIENCE     equ 256   ; Audience members
+MAX_LIGHTSTICKS  equ 256   ; Audience light sticks
+MAX_LASERS       equ 32    ; Laser beams
+MAX_FIREWORKS    equ 64    ; Particle fireworks
+
+; Performance modes
+PERF_IDLE        equ 0     ; No performance
+PERF_SINGER      equ 1     ; Vocal performance
+PERF_DANCER      equ 2     ; Dance performance
+PERF_DJ          equ 3     ; DJ/mixing
+PERF_BAND        equ 4     ; Band performance
+PERF_FREESTYLE   equ 5     ; Anything goes
+
+.code
+.global live_init
+.global live_start_performance
+.global live_end_performance
+.global live_update
+.global live_render
+.global live_render_stage
+.global live_render_dome
+.global live_render_lasers
+.global live_render_fireworks
+.global live_render_audience
+.global live_render_lightsticks
+.global live_sync_music
+.global live_audience_react
+
+; ============================================================================
+; live_init - Initialize live performance system
+; ============================================================================
+live_init:
+    push rA
+    
+    mov qword [rel live_mode], PERF_IDLE
+    mov qword [rel live_performer_count], 0
+    mov qword [rel live_audience_count], 0
+    mov dword [rel live_energy], __float32__(0.0)
+    mov dword [rel live_bass_level], __float32__(0.0)
+    mov dword [rel live_melody_level], __float32__(0.0)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_start_performance - Start a performance
+; rA = performer entity ID, rC = performance mode
+; ============================================================================
+live_start_performance:
+    push rA
+    push rC
+    
+    ; Set mode
+    mov [rel live_mode], rC
+    mov [rel live_current_performer], rA
+    
+    ; Transform stage based on mode
+    cmp rC, PERF_SINGER
+    je .live_setup_singer
+    cmp rC, PERF_DANCER
+    je .live_setup_dancer
+    cmp rC, PERF_DJ
+    je .live_setup_dj
+    cmp rC, PERF_BAND
+    je .live_setup_band
+    jmp .live_setup_freestyle
+
+.live_setup_singer:
+    ; Spotlight on center
+    ; Microphone stand rises from floor
+    ; Particle effects: gentle sparkles
+    ; Dome: starfield projection
+    ; Floor: subtle pulse with vocals
+    jmp .live_setup_done
+
+.live_setup_dancer:
+    ; Open floor (no obstacles)
+    ; Light trails follow movement
+    ; Floor tiles light up under feet
+    ; Dome: abstract patterns
+    ; Lasers: follow dancer's hands
+    jmp .live_setup_done
+
+.live_setup_dj:
+    ; Console rises from floor
+    ; Laser grid activates
+    ; Bass-responsive floor
+    ; Dome: music visualization
+    ; Strobe lights
+    jmp .live_setup_done
+
+.live_setup_band:
+    ; Instruments materialize
+    ; Stage sections for each member
+    ; Speaker stacks appear
+    ; Dome: concert lighting
+    ; Fog machine effect
+    jmp .live_setup_done
+
+.live_setup_freestyle:
+    ; Everything available
+    ; Stage morphs freely
+    ; Maximum interactivity
+
+.live_setup_done:
+    mov dword [rel live_energy], __float32__(0.1)
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; live_update - Update live performance
+; ============================================================================
+live_update:
+    push rA
+    
+    ; Update energy level
+    ; Energy increases with audience reactions
+    ; Energy affects: laser intensity, firework frequency, dome brightness
+    
+    ; Update bass level (from audio engine)
+    ; Bass drives: floor pulse, laser intensity, particle burst
+    
+    ; Update melody level
+    ; Melody drives: dome visuals, light stick color, firework timing
+    
+    ; Update lasers
+    ; Rotation, color cycling, pattern changes
+    
+    ; Update fireworks
+    ; Launch timing based on music peaks
+    ; Explosion patterns: cherry blossom, star, kanji
+    
+    ; Update audience
+    ; Light stick sync
+    ; Dance animation
+    ; Reaction triggers (cheering, jumping)
+    
+    ; Update dome content
+    ; Sync visuals to music
+    ; Transition effects
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_render - Render entire live scene
+; ============================================================================
+live_render:
+    push rA
+    
+    ; 1. Render stage floor (ATCG pattern, pulsing)
+    call live_render_stage
+    
+    ; 2. Render holographic dome
+    call live_render_dome
+    
+    ; 3. Render performer(s)
+    ; With spotlight, particle effects
+    
+    ; 4. Render laser beams
+    call live_render_lasers
+    
+    ; 5. Render audience
+    call live_render_audience
+    
+    ; 6. Render light sticks
+    call live_render_lightsticks
+    
+    ; 7. Render fireworks
+    call live_render_fireworks
+    
+    ; 8. Render sound-reactive effects
+    ; Bass pulse on floor
+    ; Melody ripples on dome
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_render_stage - Render the performance stage
+; ============================================================================
+live_render_stage:
+    push rA
+    
+    ; Circular platform, radius 50m
+    ; Floor pattern: ATCG double helix
+    ;   A = green, T = red, C = blue, G = yellow
+    ;   Helix spirals from center to edge
+    ; Pattern pulses with bass:
+    ;   brightness = base + 0.3 * bass_level
+    
+    ; Central pedestal (for singer/DJ)
+    ; Rises when performer approaches
+    ; Glowing ring around base
+    
+    ; Stage edge: glowing ring
+    ; Color matches current performance mode
+    ; Intensity follows energy level
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_render_dome - Render holographic projection dome
+; ============================================================================
+live_render_dome:
+    push rA
+    
+    ; Half-sphere wireframe
+    ; When projecting content:
+    ;   - Content rendered on dome interior
+    ;   - Semi-transparent
+    ;   - Scan line overlay
+    ;   - Edge glow at frame intersections
+    
+    ; Content selection based on performance mode:
+    ; SINGER: Starfield (romantic, intimate)
+    ; DANCER: Abstract geometric (dynamic, flowing)
+    ; DJ: Music visualization (bass-reactive, intense)
+    ; BAND: Concert lighting (dramatic, powerful)
+    ; FREESTYLE: Mix of all
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_render_lasers - Render laser beams
+; ============================================================================
+live_render_lasers:
+    push rA
+    push rC
+    
+    ; 16 emitters around stage perimeter
+    ; 8 on dome frame
+    ; Each laser: origin, direction, color, width
+    
+    ; Laser rendering:
+    ; Core: 1px bright line
+    ; Glow: 8px wide, additive blend
+    ; Bloom: 20px wide, subtle
+    ; Fog scattering: visible beam in air
+    
+    ; Patterns:
+    ; 0 = Rotating fan (all from one point)
+    ; 1 = Cross (X pattern)
+    ; 2 = Cage (grid)
+    ; 3 = Helix (DNA spiral)
+    ; 4 = Random (chaotic)
+    ; 5 = Tracked (follow performer)
+    
+    ; Color cycling:
+    ; Slow hue rotation synced to music key
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; live_render_fireworks - Render particle fireworks
+; ============================================================================
+live_render_fireworks:
+    push rA
+    
+    ; Firework types:
+    ; 1. 花火 (Standard) — Spherical burst, trailing sparks
+    ; 2. 桜 (Cherry blossom) — Petals spread outward
+    ; 3. 漢字 (Kanji) — Forms a character then disperses
+    ; 4. DNA — Double helix spiral
+    ; 5. 星 (Star) — Star-shaped burst
+    
+    ; Launch from 8 points around outer ring
+    ; Rise to dome height
+    ; Explode with chosen pattern
+    ; Fade and fall with gravity
+    ; Trail particles
+    
+    ; Trigger timing:
+    ; - Music peak detection
+    ; - Audience reaction threshold
+    ; - Manual trigger by performer
+    ; - Automatic at climax
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_render_audience - Render audience members
+; ============================================================================
+live_render_audience:
+    push rA
+    
+    ; Audience on floating platforms at 8 levels
+    ; Each audience member:
+    ;   - Avatar (simplified, low-poly)
+    ;   - Light stick (color synced)
+    ;   - Animation: idle, dancing, jumping, waving
+    ;   - Position: on their platform, can fly freely
+    
+    ; Audience behavior:
+    ; - During quiet parts: gentle swaying, dim light sticks
+    ; - During intense parts: jumping, bright light sticks
+    ; - During drops: everyone jumps simultaneously
+    ; - During solos: light sticks point at performer
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_render_lightsticks - Render audience light sticks
+; ============================================================================
+live_render_lightsticks:
+    push rA
+    
+    ; Each light stick:
+    ;   - Color: synced to music (all same color, or gradient)
+    ;   - Brightness: follows energy level
+    ;   - Position: held by audience member
+    ;   - Motion: wave pattern (人浪)
+    
+    ; Wave effect:
+    ;   Light sticks sway in sequence around the arena
+    ;   Like a stadium wave, but with light
+    ;   Speed follows tempo
+    ;   Direction: clockwise or radial
+    
+    ; Color modes:
+    ; 0 = Unified (all same color)
+    ; 1 = Team split (red vs blue)
+    ; 2 = Rainbow (gradient around arena)
+    ; 3 = Reactive (changes with music)
+    ; 4 = ATCG (A=green, T=red, C=blue, G=yellow)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_sync_music - Sync visuals to music
+; ============================================================================
+live_sync_music:
+    push rA
+    
+    ; Get audio analysis from audio engine:
+    ; - Bass level (low frequency energy)
+    ; - Melody level (mid frequency energy)
+    ; - Beat detection (transient detection)
+    ; - Key detection (for color harmony)
+    
+    ; Apply to visuals:
+    ; Bass → floor pulse, laser intensity, firework launch
+    ; Melody → dome content, light stick color
+    ; Beat → strobe flash, particle burst
+    ; Key → color palette selection
+    
+    pop rA
+    ret
+
+; ============================================================================
+; live_audience_react - Process audience reaction
+; rA = reaction type, rC = intensity
+; ============================================================================
+live_audience_react:
+    push rA
+    
+    ; Reaction types:
+    ; 0 = Cheer (energy += 0.01 * intensity)
+    ; 1 = Jump (visual: audience bounces)
+    ; 2 = Wave (visual: light stick wave)
+    ; 3 = Applause (sound: clapping)
+    ; 4 = Encore (trigger: extended performance)
+    
+    ; Energy accumulation:
+    ; More reactions = higher energy
+    ; Higher energy = more spectacular effects
+    ; Peak energy = maximum visual spectacle
+    ; This creates a feedback loop between performer and audience
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+live_laser_width:
+    dd 1.0                  ; Core width (pixels)
+live_laser_glow:
+    dd 8.0                  ; Glow width
+live_laser_bloom:
+    dd 20.0                 ; Bloom width
+live_firework_speed:
+    dd 30.0                 ; Rise speed (m/s)
+live_firework_burst_count:
+    dd 128                  ; Particles per burst
+live_lightstick_length:
+    dd 0.3                  ; Meters
+live_wave_speed:
+    dd 2.0                  ; Radians per second
+
+; Performance mode colors (ARGB)
+live_color_singer:
+    dd 0xFFCC88FF           ; Soft purple
+live_color_dancer:
+    dd 0xFFFF88CC           ; Pink
+live_color_dj:
+    dd 0xFF00CCFF           ; Cyan
+live_color_band:
+    dd 0xFFFFCC33           ; Gold
+live_color_freestyle:
+    dd 0xFFCCFF00           ; Lime
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+live_mode:
+    resq 1
+live_current_performer:
+    resq 1
+live_performer_count:
+    resq 1
+live_audience_count:
+    resq 1
+live_energy:
+    resb 4                  ; float [0..1]
+live_bass_level:
+    resb 4                  ; float [0..1]
+live_melody_level:
+    resb 4                  ; float [0..1]
+live_beat:
+    resq 1                  ; Beat detected flag
+live_time:
+    resb 4                  ; float — performance time
+
+; Performer data: 8 × 64 bytes
+live_performers:
+    resb MAX_PERFORMERS * 64
+
+; Audience data: 256 × 32 bytes
+live_audience:
+    resb MAX_AUDIENCE * 32
+
+; Laser state: 32 × 32 bytes
+live_lasers:
+    resb MAX_LASERS * 32
+
+; Firework state: 64 × 16 bytes
+live_fireworks:
+    resb MAX_FIREWORKS * 16

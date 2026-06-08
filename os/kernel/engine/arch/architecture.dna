@@ -1,0 +1,583 @@
+; ============================================================================
+; DNAOS - 月読 World Architecture (DNAsm)
+; ============================================================================
+; 超時空輝夜姫の月読 — The virtual world where dreams meet.
+;
+; 月読 is NOT a generic fantasy world. It has a specific aesthetic:
+;
+;   BASE: 京都街景 — Traditional Japanese cityscape
+;   LAYER: サイバーパンク — Neon, holograms, digital overlays
+;   RESULT: 古風×未来 — Ancient meets future, 竹取物語×メタバース
+;
+; Three distinct zones, each with its own visual identity:
+;
+;   1. 街並み (Cityscape) — 京都古風街道 + 赛博朋克叠加
+;      Wooden machiya storefronts with holographic signs
+;      Stone-paved streets with glowing digital patterns
+;      Red lanterns + neon tubes
+;      Cherry blossom petals + data particles
+;
+;   2. KASSEN (神戦 Battlefield) — 浮遊建築 + 城楼 + 空中劇場
+;      Floating circular theater (半径20m, 10 rows of seats)
+;      Castle towers (天守閣) hovering in the sky
+;      Bridge walkways between floating platforms
+;      Siege warfare: attack the enemy castle
+;      Two stages: SENGOKU (戦国) and SETSUNA (刹那)
+;
+;   3. LIVE Stage — 超級無敵大Live場
+;      The heart of 月読. Everyone can perform here.
+;      Massive circular stage with 360° audience
+;      Holographic projection dome
+;      Laser effects, particle fireworks
+;      Dynamic stage that transforms per performer
+;      Audience can fly, dance, interact
+;      No boundary between performer and audience
+;
+; Architecture style: 和風デジタル (Japanese Digital)
+;   - Curved roofs (唐破風, 千鳥破風) with glowing edges
+;   - Wooden lattice (格子) with embedded LED patterns
+;   - Shoji screens that display holograms
+;   - Torii gates as portal waypoints
+;   - Pagodas as observation towers
+;   - Floating platforms with kanji inscriptions
+; ============================================================================
+
+; Zone types
+ZONE_CITYSCAPE   equ 0     ; 街並み — Kyoto + Cyberpunk
+ZONE_KASSEN      equ 1     ; 神戦 — Floating battlefield
+ZONE_LIVE        equ 2     ; Live — The grand stage
+ZONE_SHRINE      equ 3     ; 神社 — Sacred space
+ZONE_GARDEN      equ 4     ; 庭園 — Japanese garden (the park scenes)
+ZONE_SKY         equ 5     ; 空中 — Floating platforms
+
+; Building types (和風デジタル)
+BUILD_MACHIYA    equ 0     ; 町家 — Traditional townhouse
+BUILD_PAGODA     equ 1     ; 五重塔 — Five-story pagoda
+BUILD_CASTLE     equ 2     ; 天守閣 — Castle tower
+BUILD_TORII      equ 3     ; 鳥居 — Gate
+BUILD_SHRINE     equ 4     ; 神社 — Shrine building
+BUILD_BRIDGE     equ 5     ; 橋 — Bridge (floating or stone)
+BUILD_STAGE      equ 6     ; 舞台 — Performance stage
+BUILD_THEATER    equ 7     ; 劇場 — Circular theater (floating)
+BUILD_LANTERN    equ 8     ; 灯籠 — Stone lantern
+BUILD_GATE       equ 9     ; 門 — Gate structure
+BUILD_WALL       equ 10    ; 塀 — Wall/fence
+BUILD_TOWER      equ 11    ; 櫓 — Watchtower
+BUILD_PLATFORM   equ 12    ; 浮遊台 — Floating platform
+BUILD_DOCK       equ 13    ; ドック — Player docking station
+
+MAX_BUILDINGS    equ 512
+MAX_ZONES        equ 8
+MAX_PORTALS      equ 32
+
+.code
+.global arch_init
+.global arch_render
+.global arch_render_cityscape
+.global arch_render_kassen
+.global arch_render_live_stage
+.global arch_render_shrine
+.global arch_render_garden
+.global arch_generate_machiya
+.global arch_generate_pagoda
+.global arch_generate_castle
+.global arch_generate_torii
+.global arch_generate_theater
+.global arch_generate_floating_platform
+.global arch_generate_live_stage
+.global arch_update_neon
+.global arch_update_hologram
+
+; ============================================================================
+; arch_init - Initialize world architecture
+; ============================================================================
+arch_init:
+    push rA
+    
+    ; Set default zone
+    mov qword [rel arch_current_zone], ZONE_GARDEN
+    
+    ; Generate initial buildings
+    call arch_generate_cityscape
+    call arch_generate_kassen_arena
+    call arch_generate_live_arena
+    
+    ; Initialize neon flicker
+    mov qword [rel arch_neon_time], 0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; arch_render - Render current zone architecture
+; ============================================================================
+arch_render:
+    push rA
+    
+    mov rA, [rel arch_current_zone]
+    cmp rA, ZONE_CITYSCAPE
+    je .arch_render_city
+    cmp rA, ZONE_KASSEN
+    je .arch_render_kassen
+    cmp rA, ZONE_LIVE
+    je .arch_render_live
+    cmp rA, ZONE_SHRINE
+    je .arch_render_shrine
+    cmp rA, ZONE_GARDEN
+    je .arch_render_garden
+    jmp .arch_render_done
+
+.arch_render_city:
+    call arch_render_cityscape
+    jmp .arch_render_done
+
+.arch_render_kassen:
+    call arch_render_kassen
+    jmp .arch_render_done
+
+.arch_render_live:
+    call arch_render_live_stage
+    jmp .arch_render_done
+
+.arch_render_shrine:
+    call arch_render_shrine
+    jmp .arch_render_done
+
+.arch_render_garden:
+    call arch_render_garden
+    jmp .arch_render_done
+
+.arch_render_done:
+    pop rA
+    ret
+
+; ============================================================================
+; arch_render_cityscape — 京都街景 + サイバーパンク
+; ============================================================================
+; The streets of 月読. Ancient Kyoto with digital overlay.
+; Wooden machiya with holographic shop signs.
+; Stone paths with glowing kanji.
+; Red lanterns + neon tubes.
+; Cherry blossoms + data particles.
+; ============================================================================
+arch_render_cityscape:
+    push rA
+    push rC
+    push rG
+    
+    ; Render ground: stone path with digital pattern
+    ; Dark stone base color
+    ; Glowing kanji characters embedded in stone
+    ; Digital grid lines (subtle, like circuit traces)
+    
+    ; Render machiya buildings (both sides of street)
+    ; Wooden frame structure
+    ; Lattice windows (格子) with warm interior light
+    ; Holographic signs floating above doorways
+    ; Second floor with balcony
+    ; Curved roof (karahafu) with glowing edge
+    
+    ; Render neon elements
+    call arch_update_neon
+    
+    ; Render lanterns (stone + red paper)
+    ; Warm orange glow
+    ; Flickering effect
+    
+    ; Render cherry blossom particles
+    ; Mix with digital data particles
+    ; Pink petals + cyan data fragments
+    
+    ; Render torii gates at intersections
+    ; Red vermillion (朱色)
+    ; Glowing inscription on top beam
+    
+    ; Render sky reflection on wet stone
+    ; Puddles after rain
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; arch_render_kassen — 神戦 Battlefield
+; ============================================================================
+; Floating architecture in the sky. Two teams, two castles.
+; Circular theater hovering between them for spectators.
+; ============================================================================
+arch_render_kassen:
+    push rA
+    push rC
+    push rG
+    
+    ; ---- Sky background ----
+    ; Deep sunset gradient (orange → purple → dark blue)
+    ; Dramatic clouds
+    ; Stars beginning to appear
+    
+    ; ---- Team A Castle (left) ----
+    ; Floating island with 天守閣
+    ; Glowing team color (e.g., red/crimson)
+    ; Defensive walls with kanji inscriptions
+    ; Bridge connecting to central platform
+    
+    ; ---- Team B Castle (right) ----
+    ; Mirror of Team A but different color (e.g., blue/indigo)
+    ; Same structure, different team identity
+    
+    ; ---- Central Floating Theater ----
+    ; Radius ~20m circular platform
+    ; 10 rows of spectator seats
+    ; Open-air, no roof (sky is the ceiling)
+    ; Glowing ring around the edge
+    ; Holographic scoreboard
+    ; This is where spectators watch the battle
+    
+    ; ---- Bridge walkways ----
+    ; Connecting castles to center
+    ; Glowing pathway
+    ; Can be destroyed during battle
+    
+    ; ---- Floating debris ----
+    ; Broken platforms
+    ; Scattered roof tiles
+    ; Battle damage effects
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; arch_render_live_stage — 超級無敵大Live場
+; ============================================================================
+; THE heart of 月読. Where everyone can perform.
+; Massive circular stage. 360° audience. No boundary.
+; ============================================================================
+arch_render_live_stage:
+    push rA
+    push rC
+    push rG
+    
+    ; ---- The Stage ----
+    ; Massive circular platform, radius ~50m
+    ; Glowing floor with ATCG pattern
+    ; Central pedestal that rises for the performer
+    ; The stage transforms per performer:
+    ;   - Singer: spotlight, microphone stand, particle effects
+    ;   - Dancer: open floor, light trails follow movement
+    ;   - DJ: console rises from floor, laser grid activates
+    ;   - Band: instruments materialize
+    
+    ; ---- The Dome ----
+    ; Holographic projection dome (half-sphere)
+    ; Shows visuals synced to music
+    ; Can display: starfield, ocean, cherry blossoms, abstract art
+    ; Transparent when not projecting
+    ; Glowing frame structure (like a planetarium)
+    
+    ; ---- Audience Area ----
+    ; 360° around the stage
+    ; No fixed seats — floating platforms at different heights
+    ; Audience can fly freely
+    ; Audience can dance, wave light sticks
+    ; Light stick colors sync to music
+    ; The audience IS part of the show
+    
+    ; ---- Laser Effects ----
+    ; Beams from stage edge
+    ; Rotating patterns
+    ; Color-synced to music
+    ; Safe (it's virtual)
+    
+    ; ---- Particle Fireworks ----
+    ; Launch from stage perimeter
+    ; Explode into cherry blossoms / stars / kanji
+    ; Triggered by audience reactions
+    
+    ; ---- Sound Reactive Elements ----
+    ; Floor tiles pulse with bass
+    ; Dome ripples with melody
+    ; Light intensity follows volume
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; arch_render_shrine — 神社 Sacred Space
+; ============================================================================
+; Quiet. Traditional. No digital overlay here.
+; This is where you come to think.
+; ============================================================================
+arch_render_shrine:
+    push rA
+    
+    ; Stone path through trees
+    ; Moss-covered stone lanterns
+    ; Wooden torii gate (aged, not glowing)
+    ; Main hall (拝殿) with shimenawa
+    ; Sacred tree (神木) with paper streamers (紙垂)
+    ; Water purification (手水舎)
+    ; No neon. No holograms. Just wood, stone, and nature.
+    ; The only light: warm paper lanterns and moonlight.
+    
+    pop rA
+    ret
+
+; ============================================================================
+; arch_render_garden — 庭園 The Park
+; ============================================================================
+; This is the scene from the screenshots.
+; Quiet park. Trees. Paths. Sky.
+; ============================================================================
+arch_render_garden:
+    push rA
+    
+    ; Gravel paths (砂利道)
+    ; Manicured hedges (生垣)
+    ; Stone benches
+    ; Small pond with koi
+    ; Wooden fence (柵)
+    ; Cherry trees / maple trees
+    ; Dappled light through canopy
+    ; Wide open sky
+    ; This is where you just... walk.
+    
+    pop rA
+    ret
+
+; ============================================================================
+; arch_generate_cityscape — Generate 京都街景 buildings
+; ============================================================================
+arch_generate_cityscape:
+    push rA
+    push rC
+    push rG
+    
+    ; Generate machiya row (both sides of main street)
+    ; Each machiya: random width, height variation
+    ; Shop type determines holographic sign
+    ; Lattice pattern variation
+    
+    ; Generate side streets
+    ; Narrow alleys (路地)
+    ; Smaller buildings, more intimate
+    
+    ; Generate torii gates at key intersections
+    ; Red vermillion, facing specific directions
+    
+    ; Generate lanterns along streets
+    ; Stone lanterns at ground level
+    ; Paper lanterns hanging from eaves
+    
+    ; Generate bridge over river
+    ; Arched stone bridge
+    ; Glowing water reflection
+    
+    mov qword [rel arch_building_count], 0
+    
+    ; Main street: 20 machiya on each side
+    mov rC, 20
+    lea rG, [rel arch_buildings]
+    
+.arch_gen_machiya_loop:
+    ; Generate machiya
+    ; type = BUILD_MACHIYA
+    mov dword [rG], BUILD_MACHIYA
+    ; position = along street
+    ; rotation = facing street center
+    ; scale = random variation
+    ; neon_color = random from palette
+    
+    add rG, 64
+    inc qword [rel arch_building_count]
+    dec rC
+    jnz .arch_gen_machiya_loop
+    
+    ; Generate 2 pagodas (landmarks)
+    ; At street ends, tall pagodas visible from anywhere
+    
+    ; Generate central shrine
+    ; Small shrine at crossroads
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; arch_generate_kassen_arena — Generate KASSEN battlefield
+; ============================================================================
+arch_generate_kassen_arena:
+    push rA
+    
+    ; Team A castle (floating island, left side)
+    ; Position: (-100, 50, 0) — floating 50m above ground
+    ; Structure: 天守閣 (3-tier castle tower)
+    ; Walls, gates, watchtowers
+    
+    ; Team B castle (floating island, right side)
+    ; Position: (100, 50, 0)
+    ; Mirror structure, different color
+    
+    ; Central floating theater
+    ; Position: (0, 80, 0) — highest point
+    ; Radius: 20m
+    ; 10 rows of seats
+    ; Open top
+    
+    ; Bridge walkways
+    ; From each castle to center
+    ; 3 bridges per castle
+    
+    ; Floating platforms (scattered)
+    ; For players to jump between
+    ; Various sizes
+    
+    pop rA
+    ret
+
+; ============================================================================
+; arch_generate_live_arena — Generate the grand Live stage
+; ============================================================================
+arch_generate_live_arena:
+    push rA
+    
+    ; Central stage platform
+    ; Radius: 50m
+    ; Height: 10m above ground
+    ; ATCG pattern on floor
+    
+    ; Holographic dome
+    ; Radius: 60m
+    ; Height: 40m (half-sphere)
+    ; Frame structure visible
+    
+    ; Audience floating platforms
+    ; 8 levels, each a ring around the stage
+    ; Level 1: 5m above stage (closest)
+    ; Level 8: 35m above stage (highest)
+    ; Each level: 20 floating platforms
+    
+    ; Laser emitters
+    ; 16 around stage perimeter
+    ; 8 on dome frame
+    
+    ; Firework launch points
+    ; 8 around outer ring
+    
+    ; Backstage area (below stage)
+    ; Preparation rooms
+    ; Equipment storage
+    ; Teleport arrival point
+    
+    pop rA
+    ret
+
+; ============================================================================
+; arch_update_neon — Update neon sign animations
+; ============================================================================
+arch_update_neon:
+    push rA
+    
+    ; Increment time
+    inc qword [rel arch_neon_time]
+    
+    ; For each neon sign:
+    ;   Flicker probability based on time
+    ;   Color cycling (slow hue shift)
+    ;   Text scrolling (if sign has text)
+    ;   Brightness pulse (subtle)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; arch_update_hologram — Update holographic displays
+; ============================================================================
+arch_update_hologram:
+    push rA
+    
+    ; For each holographic display:
+    ;   Scan line effect (horizontal lines moving down)
+    ;   Transparency flicker
+    ;   Color shift at edges (chromatic aberration)
+    ;   Slight position jitter (hologram instability)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Neon color palette (和風サイバー)
+; ============================================================================
+.data
+
+; Neon colors (ARGB) — Japanese cyber aesthetic
+neon_scarlet:
+    dd 0xFFFF3333           ; 朱色 (vermillion) — torii, lanterns
+neon_cyan:
+    dd 0xFF00FFFF           ; シアン — digital accents
+neon_gold:
+    dd 0xFFFFCC33           ; 金色 — temple decorations
+neon_sakura:
+    dd 0xFFFF88AA           ; 桜色 — cherry blossom pink
+neon_indigo:
+    dd 0xFF3333AA           ; 紺色 — deep blue
+neon_emerald:
+    dd 0xFF33CC66           ; 翠色 — ATCG green
+neon_white_warm:
+    dd 0xFFFFF0E0           ; 暖白 — interior light
+
+; Building material colors
+wood_dark:
+    dd 0xFF3D2B1F           ; 檜皮色 (dark wood)
+wood_light:
+    dd 0xFF8B7355           ; 木色 (light wood)
+stone_gray:
+    dd 0xFF808080           ; 石色 (stone)
+plaster_white:
+    dd 0xFFF5F0E8           ; 白壁 (white plaster)
+roof_dark:
+    dd 0xFF2D2D2D           ; 瓦色 (roof tile)
+tatami:
+    dd 0xFF9B8B6B           ; 畳色 (tatami)
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+arch_current_zone:
+    resq 1
+arch_building_count:
+    resq 1
+arch_neon_time:
+    resq 1
+
+; Building instances: 512 × 64 bytes
+; type(4) + zone(4) + pos(12) + rotation(4) + scale(4) + 
+; color(4) + neon_color(4) + flags(4) + pad(24) = 64
+arch_buildings:
+    resb MAX_BUILDINGS * 64
+
+; Portal data: 32 × 32 bytes
+; position(12) + target_zone(4) + target_pos(12) + torii_color(4) = 32
+arch_portals:
+    resb MAX_PORTALS * 32
+arch_portal_count:
+    resq 1
+
+; Live stage state
+live_stage_active:
+    resq 1
+live_stage_performer:
+    resq 1                  ; Entity ID of current performer
+live_stage_mode:
+    resq 1                  ; 0=idle, 1=singer, 2=dancer, 3=DJ, 4=band
+live_stage_energy:
+    resb 4                  ; float — audience energy level [0..1]
+live_stage_time:
+    resb 4                  ; float — time since performance started

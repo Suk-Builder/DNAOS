@@ -1,0 +1,295 @@
+; ============================================================================
+; DNAOS - KASSEN Battle System (神戦) (DNAsm)
+; ============================================================================
+; 超時空輝夜姫の神戦 — The most popular game in 月読.
+;
+; Team-based siege warfare. Two castles. One battlefield.
+; Destroy the enemy castle to win.
+;
+; Two stages:
+;   SENGOKU (戦国) — Traditional siege, larger map, longer matches
+;   SETSUNA (刹那) — Fast-paced, smaller arena, quick matches
+;
+; Players can:
+;   - Attack (melee, ranged, special abilities)
+;   - Defend (build walls, set traps, heal)
+;   - Spectate (from the floating theater)
+;   - Perform (on the central stage during halftime)
+; ============================================================================
+
+MAX_KASSEN_PLAYERS equ 64   ; 32 per team
+KASSEN_TEAM_RED   equ 0     ; 紅隊 (Crimson)
+KASSEN_TEAM_BLUE  equ 1     ; 蒼隊 (Indigo)
+
+; Player classes
+CLASS_SAMURAI    equ 0      ; 近接 — Melee fighter
+CLASS_ARCHER     equ 1      ; 遠距離 — Ranged attacker
+CLASS_ONMYOJI    equ 2      ; 陰陽師 — Magic user
+CLASS_NINJA      equ 3      ; 忍者 — Stealth/speed
+CLASS_MONK       equ 4      ; 僧侶 — Healer/support
+
+; Game phases
+KASSEN_LOBBY     equ 0      ; Waiting for players
+KASSEN_COUNTDOWN equ 1      ; 3, 2, 1...
+KASSEN_BATTLE    equ 2      ; FIGHT!
+KASSEN_HALFTIME  equ 3      ; Live performance break
+KASSEN_RESULT    equ 4      ; Victory/defeat
+
+.code
+.global kassen_init
+.global kassen_start_match
+.global kassen_update
+.global kassen_render
+.global kassen_player_join
+.global kassen_player_leave
+.global kassen_attack
+.global kassen_defend
+.global kassen_use_ability
+.global kassen_spectate
+.global kassen_perform_halftime
+
+; ============================================================================
+; kassen_init - Initialize KASSEN system
+; ============================================================================
+kassen_init:
+    push rA
+    
+    ; Clear player slots
+    ; Reset scores
+    ; Set phase to LOBBY
+    
+    mov qword [rel kassen_phase], KASSEN_LOBBY
+    mov qword [rel kassen_red_count], 0
+    mov qword [rel kassen_blue_count], 0
+    mov qword [rel kassen_red_score], 0
+    mov qword [rel kassen_blue_score], 0
+    mov qword [rel kassen_match_time], 0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; kassen_start_match - Start a KASSEN match
+; ============================================================================
+kassen_start_match:
+    push rA
+    
+    ; Check minimum players (4 per team)
+    cmp qword [rel kassen_red_count], 4
+    jl .kassen_not_enough
+    cmp qword [rel kassen_blue_count], 4
+    jl .kassen_not_enough
+    
+    ; Generate battlefield
+    ; Place castles
+    ; Place floating platforms
+    ; Place bridges
+    ; Reset all player positions
+    
+    ; Start countdown
+    mov qword [rel kassen_phase], KASSEN_COUNTDOWN
+    mov qword [rel kassen_countdown], 3
+    
+.kassen_not_enough:
+    pop rA
+    ret
+
+; ============================================================================
+; kassen_update - Update KASSEN game state
+; ============================================================================
+kassen_update:
+    push rA
+    
+    mov rA, [rel kassen_phase]
+    
+    cmp rA, KASSEN_COUNTDOWN
+    je .kassen_update_countdown
+    cmp rA, KASSEN_BATTLE
+    je .kassen_update_battle
+    cmp rA, KASSEN_HALFTIME
+    je .kassen_update_halftime
+    jmp .kassen_update_done
+
+.kassen_update_countdown:
+    ; Decrement countdown
+    ; When 0: transition to BATTLE
+    dec qword [rel kassen_countdown]
+    jnz .kassen_update_done
+    mov qword [rel kassen_phase], KASSEN_BATTLE
+    jmp .kassen_update_done
+
+.kassen_update_battle:
+    ; Update all players
+    ; Process attacks
+    ; Check castle health
+    ; Update physics
+    ; Check win condition
+    
+    inc qword [rel kassen_match_time]
+    
+    ; Check if either castle is destroyed
+    cmp qword [rel kassen_red_castle_hp], 0
+    jle .kassen_blue_wins
+    cmp qword [rel kassen_blue_castle_hp], 0
+    jle .kassen_red_wins
+    
+    ; Check halftime (at 50% time)
+    ; ... (would check match time)
+    
+    jmp .kassen_update_done
+
+.kassen_red_wins:
+    mov qword [rel kassen_winner], KASSEN_TEAM_RED
+    mov qword [rel kassen_phase], KASSEN_RESULT
+    jmp .kassen_update_done
+
+.kassen_blue_wins:
+    mov qword [rel kassen_winner], KASSEN_TEAM_BLUE
+    mov qword [rel kassen_phase], KASSEN_RESULT
+    jmp .kassen_update_done
+
+.kassen_update_halftime:
+    ; Live performance on central stage
+    ; Players can perform, spectate, or chat
+    ; When performance ends: resume battle
+    
+.kassen_update_done:
+    pop rA
+    ret
+
+; ============================================================================
+; kassen_render - Render KASSEN scene
+; ============================================================================
+kassen_render:
+    push rA
+    
+    ; Render sky (dramatic sunset)
+    ; Render floating islands
+    ; Render castles (with team colors)
+    ; Render bridges
+    ; Render central theater
+    ; Render players (with team colors and class indicators)
+    ; Render abilities (particle effects)
+    ; Render HUD (castle HP, timer, score, minimap)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; kassen_player_join - Player joins a team
+; rA = player entity ID, rC = team (0=red, 1=blue, 2=auto)
+; ============================================================================
+kassen_player_join:
+    push rA
+    push rC
+    
+    ; Auto-assign to smaller team
+    cmp rC, 2
+    jne .kassen_join_manual
+    
+    mov rA, [rel kassen_red_count]
+    mov rC, [rel kassen_blue_count]
+    cmp rA, rC
+    jle .kassen_join_red
+    jmp .kassen_join_blue
+
+.kassen_join_manual:
+    cmp rC, KASSEN_TEAM_RED
+    je .kassen_join_red
+
+.kassen_join_blue:
+    ; Add to blue team
+    inc qword [rel kassen_blue_count]
+    jmp .kassen_join_done
+
+.kassen_join_red:
+    ; Add to red team
+    inc qword [rel kassen_red_count]
+
+.kassen_join_done:
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; kassen_perform_halftime - Halftime live performance
+; ============================================================================
+kassen_perform_halftime:
+    ; During halftime, the central theater becomes a live stage
+    ; Any player can perform
+    ; The battlefield transforms:
+    ;   - Castles dim
+    ;   - Central stage lights up
+    ;   - Holographic dome activates
+    ;   - Audience platforms appear
+    ;   - Battle damage is repaired (visual only)
+    ; This is 月読 — even war has art.
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+kassen_castle_max_hp:
+    dq 10000
+kassen_match_duration:
+    dq 600                  ; 10 minutes (in ticks)
+kassen_halftime_at:
+    dq 300                  ; Halfway point
+
+; Team colors (ARGB)
+kassen_red_color:
+    dd 0xFFCC3333           ; 紅 (crimson)
+kassen_red_glow:
+    dd 0xFFFF4444           ; Red glow
+kassen_blue_color:
+    dd 0xFF3333CC           ; 蒼 (indigo)
+kassen_blue_glow:
+    dd 0xFF4444FF           ; Blue glow
+
+; Class icons (simplified)
+class_samurai_icon:
+    db "刀", 0              ; Katana
+class_archer_icon:
+    db "弓", 0              ; Bow
+class_onmyoji_icon:
+    db "陰", 0              ; Yin-Yang
+class_ninja_icon:
+    db "忍", 0              ; Stealth
+class_monk_icon:
+    db "僧", 0              ; Monk
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+kassen_phase:
+    resq 1
+kassen_countdown:
+    resq 1
+kassen_match_time:
+    resq 1
+kassen_winner:
+    resq 1
+
+; Teams
+kassen_red_count:
+    resq 1
+kassen_blue_count:
+    resq 1
+kassen_red_score:
+    resq 1
+kassen_blue_score:
+    resq 1
+kassen_red_castle_hp:
+    resq 1
+kassen_blue_castle_hp:
+    resq 1
+
+; Players: 64 × 64 bytes
+; entity_id(8) + team(4) + class(4) + hp(4) + mp(4) + 
+; kills(4) + deaths(4) + ability_cooldown(4×5) + pad(16) = 64
+kassen_players:
+    resb MAX_KASSEN_PLAYERS * 64

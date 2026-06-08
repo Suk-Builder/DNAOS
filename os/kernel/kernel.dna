@@ -111,6 +111,14 @@ msg_init_veg:
     db "[  OK  ] Vegetation System", 10, 0
 msg_init_postfx:
     db "[  OK  ] Post-Processing Pipeline", 10, 0
+msg_init_arch:
+    db "[  OK  ] 月読 Architecture (京都×サイバーパンク)", 10, 0
+msg_init_holo:
+    db "[  OK  ] Hologram & Neon Effects", 10, 0
+msg_init_kassen:
+    db "[  OK  ] KASSEN Battle System (神戦)", 10, 0
+msg_init_live:
+    db "[  OK  ] Live Performance System", 10, 0
 msg_prompt:
     db "dnaos> ", 0
 msg_unknown:
@@ -337,6 +345,22 @@ kernel_main:
     
     call post_init
     lea rP, [rel msg_init_postfx]
+    call console_print
+    
+    call arch_init
+    lea rP, [rel msg_init_arch]
+    call console_print
+    
+    call holo_init
+    lea rP, [rel msg_init_holo]
+    call console_print
+    
+    call kassen_init
+    lea rP, [rel msg_init_kassen]
+    call console_print
+    
+    call live_init
+    lea rP, [rel msg_init_live]
     call console_print
     
     call tsukuyomi_init

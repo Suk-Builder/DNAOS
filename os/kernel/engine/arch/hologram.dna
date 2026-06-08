@@ -1,0 +1,212 @@
+; ============================================================================
+; DNAOS - Hologram & Neon Effects (DNAsm)
+; ============================================================================
+; 超時空輝夜姫の光 — The digital light of 月読.
+;
+; Holographic signs, neon tubes, digital overlays.
+; The cyberpunk layer on top of the ancient city.
+; ============================================================================
+
+.code
+.global holo_init
+.global holo_render_sign
+.global holo_render_dome
+.global holo_render_overlay
+.global neon_render_tube
+.global neon_render_lantern
+.global neon_flicker
+
+; ============================================================================
+; holo_render_sign — Render a holographic shop sign
+; rP = position (vec3), rC = color, rS = text string
+; ============================================================================
+holo_render_sign:
+    push rA
+    push rG
+    
+    ; Holographic sign characteristics:
+    ; 1. Semi-transparent (alpha ~0.7)
+    ; 2. Scan lines (horizontal lines scrolling down)
+    ; 3. Edge glow (brighter at borders)
+    ; 4. Chromatic aberration (RGB split at edges)
+    ; 5. Slight jitter (position wobbles ±1 pixel)
+    ; 6. Flicker (random brightness variation)
+    
+    ; Render as a quad facing camera
+    ; Apply scan line effect:
+    ;   if (y % 4 < 2) alpha *= 0.8
+    ; Apply edge glow:
+    ;   brightness = 1.0 + 0.3 * edge_distance
+    ; Apply chromatic aberration:
+    ;   R offset (+2px), B offset (-2px)
+    ; Apply jitter:
+    ;   x += (rand() & 3) - 1
+    ;   y += (rand() & 3) - 1
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; holo_render_dome — Render holographic projection dome
+; rP = center position, rA = radius, rC = content type
+; ============================================================================
+holo_render_dome:
+    push rA
+    push rG
+    
+    ; The dome is a half-sphere wireframe
+    ; When projecting: semi-transparent content on dome surface
+    ; When idle: just the frame, subtle glow
+    
+    ; Frame rendering:
+    ; - Latitude lines (8 horizontal rings)
+    ; - Longitude lines (16 vertical arcs)
+    ; - Glowing intersection points
+    ; - Material: dark metal with cyan edge glow
+    
+    ; Content rendering:
+    ; - Project texture onto dome interior
+    ; - Content types:
+    ;   0 = Starfield (twinkling stars)
+    ;   1 = Ocean (waves, horizon)
+    ;   2 = Cherry blossoms (falling petals)
+    ;   3 = Abstract (geometric patterns synced to music)
+    ;   4 = Fireworks (explosions)
+    ; - Scan line overlay
+    ; - Slight transparency variation
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; holo_render_overlay — Render digital overlay on architecture
+; rP = screen position, rC = overlay type
+; ============================================================================
+holo_render_overlay:
+    push rA
+    
+    ; Digital overlays on traditional buildings:
+    ; 1. Glowing kanji on stone paths
+    ; 2. Circuit-trace patterns on walls
+    ; 3. Floating data particles
+    ; 4. AR-style information tags
+    ; 5. Digital torii gate glow
+    
+    ; Render as additive blended quads
+    ; Very subtle — should enhance, not overpower
+    
+    pop rA
+    ret
+
+; ============================================================================
+; neon_render_tube — Render a neon tube light
+; rP = start position, rS = end position, rC = color
+; ============================================================================
+neon_render_tube:
+    push rA
+    push rG
+    
+    ; Neon tube rendering:
+    ; 1. Core: bright line (1px wide, full color)
+    ; 2. Inner glow: 4px wide, 50% alpha, same color
+    ; 3. Outer glow: 12px wide, 15% alpha, same color
+    ; 4. Bloom: 24px wide, 5% alpha, white tinted
+    
+    ; Flicker effect:
+    ;   brightness = base * (1.0 + 0.1 * sin(time * 7.3 + phase))
+    ;   Random off probability: 0.001 per frame
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; neon_render_lantern — Render a Japanese lantern (灯籠/行灯)
+; rP = position, rC = color (warm orange/red)
+; ============================================================================
+neon_render_lantern:
+    push rA
+    
+    ; Two types:
+    ; 1. 石灯籠 (stone lantern) — ground level, warm orange
+    ;    - Stone body (gray, rough texture)
+    ;    - Paper window (warm glow)
+    ;    - Light cone downward
+    ;    - Subtle flicker
+    
+    ; 2. 行灯 (paper lantern) — hanging, red/white
+    ;    - Paper body (translucent)
+    ;    - Internal glow
+    ;    - Slight sway animation
+    ;    - Warm light cast on surroundings
+    
+    ; Both cast soft light on nearby surfaces
+    ; Light radius: ~3m
+    ; Color: warm orange (0xFFFF9933)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; neon_flicker — Compute neon flicker value
+; rA = base brightness, rC = phase → rA = flickered brightness
+; ============================================================================
+neon_flicker:
+    push rG
+    
+    ; Flicker = base * (1.0 + 0.1 * sin(time * 7.3 + phase))
+    ; Random off: if (rand() & 0xFFF) < 2: brightness = 0.1
+    
+    ; Load time
+    ; Compute sin
+    ; Apply modulation
+    ; Random check
+    
+    pop rG
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+holo_scan_speed:
+    dd 0.5                  ; Scan lines per second
+holo_jitter_amount:
+    dd 1.0                  ; Pixels of jitter
+holo_alpha_base:
+    dd 0.7                  ; Base transparency
+holo_chromatic_offset:
+    dd 2.0                  ; Pixels of RGB split
+
+neon_glow_inner:
+    dd 4.0                  ; Inner glow radius (pixels)
+neon_glow_outer:
+    dd 12.0                 ; Outer glow radius
+neon_glow_bloom:
+    dd 24.0                 ; Bloom radius
+neon_flicker_speed:
+    dd 7.3                  ; Flicker frequency
+neon_flicker_amount:
+    dd 0.1                  ; Flicker amplitude
+neon_off_probability:
+    dd 0.001                ; Random off chance per frame
+
+lantern_light_radius:
+    dd 3.0                  ; Meters
+lantern_color_r:
+    dd 1.0
+lantern_color_g:
+    dd 0.6
+lantern_color_b:
+    dd 0.2
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+holo_time:
+    resq 1
