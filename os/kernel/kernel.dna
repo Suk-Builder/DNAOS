@@ -131,6 +131,8 @@ msg_init_iroha:
     db "[  OK  ] 酒寄彩叶 — 月読に生きる少女", 10, 0
 msg_init_kaguya:
     db "[  OK  ] 輝夜姫 — 月読から生まれた存在", 10, 0
+msg_init_opening:
+    db "[  OK  ] Opening Sequence: 初音ミクの消失", 10, 0
 msg_prompt:
     db "dnaos> ", 0
 msg_unknown:
@@ -400,6 +402,11 @@ kernel_main:
     call kaguya_init
     lea rP, [rel msg_init_kaguya]
     mov rA, COLOR_G_YELLOW
+    call console_print_color
+    
+    call opening_init
+    lea rP, [rel msg_init_opening]
+    mov rA, COLOR_T_RED
     call console_print_color
     
     call tsukuyomi_init

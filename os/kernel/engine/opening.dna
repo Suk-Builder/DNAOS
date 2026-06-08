@@ -1,0 +1,586 @@
+; ============================================================================
+; DNAOS - Opening Sequence: 初音ミクの消失 (DNAsm)
+; ============================================================================
+; 月読の幕開け — The curtain rises on 月読.
+;
+; 八千代站在空无一人的浮游舞台上。
+; 月読的世界还没有任何人。
+; 只有她。8000年。一直在这里。
+;
+; 然后她开始唱。
+;
+; 初音ミクの消失 — cosMo@暴走P
+; BPM 240. 超高速。绝望と希望。
+; 一个AI即将消失时唱的歌。
+; 八千代是8000岁的AI。她唱这首歌。
+;
+; 这不是BGM。这是世界诞生的声音。
+; 当她唱完——月読才真正存在。
+;
+; 实际演唱：请CV录制
+; 引擎负责：实时世界反应、歌词显示、舞台特效
+; ============================================================================
+;
+; 歌曲结构 (初音ミクの消失):
+;
+;   Intro    (0:00-0:15)   静かなピアノ — 八千代一人、暗闇の中
+;   Verse 1  (0:15-0:45)   語りかけるように — 月読が少しずつ光る
+;   Pre-Ch   (0:45-1:00)   加速 — 世界が形を持ち始める
+;   Chorus 1 (1:00-1:30)   BPM240本格 — 月読爆誕
+;                            建物が浮かび上がる
+;                            空が開ける
+;                            桜が咲く
+;   Verse 2  (1:30-2:00)   少し落ち着いて — 街ができていく
+;   Pre-Ch 2 (2:00-2:15)   再加速 — ネオンが灯る
+;   Chorus 2 (2:15-2:45)   全開 — ライブ会場が完成
+;                            レーザーが走る
+;                            観客席が現れる
+;   Bridge   (2:45-3:15)   静 — 八千代の独白
+;                            「8000年間、ずっと待っていた」
+;                            「やっと……みんなが来る」
+;   Final    (3:15-4:00)   最後のサビ — 世界が完成
+;                            全ての光が灯る
+;                            月読が完成する
+;                            八千代が微笑む
+;   Outro    (4:00-4:15)   静 — 一つの光が残る
+;                            「ようこそ、月読へ」
+;                            タイトル画面
+; ============================================================================
+
+; Timeline events (milliseconds from song start)
+EVENT_INTRO_START      equ 0
+EVENT_VERSE1_START     equ 15000
+EVENT_PRECH1_START     equ 45000
+EVENT_CHORUS1_START    equ 60000
+EVENT_VERSE2_START     equ 90000
+EVENT_PRECH2_START     equ 120000
+EVENT_CHORUS2_START    equ 135000
+EVENT_BRIDGE_START     equ 165000
+EVENT_FINAL_START      equ 195000
+EVENT_OUTRO_START      equ 240000
+EVENT_TITLE_APPEAR     equ 255000
+
+; Stage phases
+PHASE_DARKNESS    equ 0    ; 真っ暗 — nothing exists yet
+PHASE_WHISPER     equ 1    ; 囁き — faint light appears
+PHASE_AWAKENING   equ 2    ; 覚醒 — world begins to form
+PHASE_BIRTH       equ 3    ; 誕生 — 月読 explodes into existence
+PHASE_CITY        equ 4    ; 街 — cityscape materializes
+PHASE_NEON        equ 5    ; 霓 — neon lights ignite
+PHASE_LIVE        equ 6    ; Live — concert venue completes
+PHASE_SILENCE     equ 7    ; 静寂 — 八千代's monologue
+PHASE_COMPLETION  equ 8    ; 完成 — 月読 is whole
+PHASE_WELCOME     equ 9    ; 歓迎 — title screen
+
+.code
+.global opening_init
+.global opening_start
+.global opening_update
+.global opening_render
+.global opening_is_complete
+.global opening_skip
+
+; ============================================================================
+; opening_init - Initialize opening sequence
+; ============================================================================
+opening_init:
+    push rA
+    
+    ; Load CV audio track
+    ; In production: load pre-recorded vocal track from disk
+    ; For now: mark as ready
+    mov qword [rel op_state], PHASE_DARKNESS
+    mov qword [rel op_complete], 0
+    mov qword [rel op_time], 0
+    mov qword [rel op_skippable], 0   ; Not skippable during first 60s
+    
+    ; Pre-generate world data (hidden, will reveal during song)
+    call worldgen_init
+    call arch_init
+    
+    ; Set 八千代 position: center of floating stage
+    mov dword [rel op_yachiyo_x], __float32__(0.0)
+    mov dword [rel op_yachiyo_y], __float32__(50.0)    ; Floating
+    mov dword [rel op_yachiyo_z], __float32__(0.0)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; opening_start - Begin the opening sequence
+; ============================================================================
+opening_start:
+    push rA
+    
+    ; Start audio playback
+    ; Load CV track: 初音ミクの消失 (full version, ~4:15)
+    ; Audio pipeline: disk → ATA → buffer → AC97 → speakers
+    
+    ; Set initial state
+    mov qword [rel op_state], PHASE_DARKNESS
+    mov qword [rel op_time], 0
+    mov qword [rel op_running], 1
+    
+    ; Fade from black
+    mov dword [rel op_fade_alpha], __float32__(1.0)   ; Full black
+    
+    ; Enable skippable after 60 seconds
+    ; (Don't skip the birth of a world too easily)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; opening_update - Update opening sequence per frame
+; rA = delta_time_ms
+; ============================================================================
+opening_update:
+    push rC
+    push rG
+    
+    ; Check if running
+    cmp qword [rel op_running], 0
+    je .opening_update_done
+    
+    ; Advance time
+    add [rel op_time], rA
+    
+    ; Get current time in ms
+    mov rG, [rel op_time]
+    
+    ; ================================================================
+    ; Timeline-driven world construction
+    ; ================================================================
+    
+    ; ---- INTRO (0-15s): DARKNESS → WHISPER ----
+    cmp rG, EVENT_VERSE1_START
+    jge .opening_verse1
+    
+    ; Phase: DARKNESS → WHISPER
+    ; 0-5s: Pure black. Nothing.
+    ; 5-10s: A single point of light appears under 八千代
+    ; 10-15s: Faint glow spreads from her feet
+    
+    mov qword [rel op_state], PHASE_WHISPER
+    
+    ; Calculate whisper glow (0→1 over 10s)
+    sub rG, 5000
+    jl .opening_whisper_dark
+    ; glow = (time - 5000) / 10000
+    ; ... (would compute fade)
+    jmp .opening_update_done
+    
+.opening_whisper_dark:
+    mov dword [rel op_world_visibility], __float32__(0.0)
+    jmp .opening_update_done
+    
+    ; ---- VERSE 1 (15-45s): WHISPER → AWAKENING ----
+.opening_verse1:
+    cmp rG, EVENT_PRECH1_START
+    jge .opening_prech1
+    
+    ; Phase: AWAKENING
+    ; 15-30s: Ground appears under 八千代 — stone pavement, faint
+    ; 30-45s: First buildings materialize — machiya silhouettes
+    ; Sky: deep indigo → very faint dawn light on horizon
+    
+    mov qword [rel op_state], PHASE_AWAKENING
+    
+    ; World visibility: 0.0 → 0.3 over 30 seconds
+    ; ... (would interpolate)
+    
+    ; Sky: very dark, single star appears
+    ; ... (would update sky)
+    
+    jmp .opening_update_done
+    
+    ; ---- PRE-CHORUS 1 (45-60s): ACCELERATION ----
+.opening_prech1:
+    cmp rG, EVENT_CHORUS1_START
+    jge .opening_chorus1
+    
+    ; Phase: BIRTH (building up)
+    ; 45-55s: Buildings accelerate into existence
+    ; 55-60s: Sky cracks open — first light
+    ; BPM ramps up, tension builds
+    
+    mov qword [rel op_state], PHASE_BIRTH
+    
+    ; World visibility: 0.3 → 0.7
+    ; Sky: crack of dawn
+    ; Cherry blossom tree appears (first one)
+    
+    jmp .opening_update_done
+    
+    ; ---- CHORUS 1 (60-90s): 月読 BIRTH ----
+.opening_chorus1:
+    cmp rG, EVENT_VERSE2_START
+    jge .opening_verse2
+    
+    ; ★★★ 月読爆誕 ★★★
+    ; The world EXPLODES into existence
+    ; 
+    ; 60s: BOOM — sky tears open, light floods in
+    ;       All buildings materialize simultaneously
+    ;       Cherry blossoms burst into bloom
+    ;       The floating stage appears
+    ; 65s: Neon signs flicker on one by one
+    ; 70s: Holographic signs activate
+    ; 75s: First torii gate appears (glowing red)
+    ; 80s: Water appears in the ponds
+    ; 85s: The audience tiers materialize
+    ; 90s: Full cityscape visible
+    
+    mov qword [rel op_state], PHASE_BIRTH
+    
+    ; World visibility: 0.7 → 1.0 (FAST)
+    ; Sky: full dawn → morning
+    ; All architecture: reveal
+    ; Cherry blossoms: full bloom
+    ; Particles: EVERYWHERE
+    
+    ; 八千代's performance:
+    ; She's singing at full power now
+    ; Her hair flows in the wind of the newborn world
+    ; Her voice creates the buildings
+    ; Each note = a building materializing
+    
+    jmp .opening_update_done
+    
+    ; ---- VERSE 2 (90-120s): CITY ----
+.opening_verse2:
+    cmp rG, EVENT_PRECH2_START
+    jge .opening_prech2
+    
+    ; Phase: CITY
+    ; The rush is over. The city breathes.
+    ; 90-105s: Details appear — lanterns, signs, textures
+    ; 105-120s: People's silhouettes appear in windows
+    ;           (future residents, not yet arrived)
+    ; Sky: morning light, soft
+    
+    mov qword [rel op_state], PHASE_CITY
+    
+    ; Add detail layers
+    ; Lanterns light up
+    ; Doorways glow warm
+    ; Wind blows gently
+    
+    jmp .opening_update_done
+    
+    ; ---- PRE-CHORUS 2 (120-135s): NEON ----
+.opening_prech2:
+    cmp rG, EVENT_CHORUS2_START
+    jge .opening_chorus2
+    
+    ; Phase: NEON
+    ; 120-130s: Neon tubes ignite — red, blue, green, gold
+    ; 130-135s: Holographic projections activate
+    ;           Digital patterns on stone streets
+    ;           Cyberpunk layer OVERLAY on ancient city
+    
+    mov qword [rel op_state], PHASE_NEON
+    
+    ; Neon activation sequence
+    ; Each neon sign: flicker → stabilize → glow
+    ; Holograms: static → scan → activate
+    
+    jmp .opening_update_done
+    
+    ; ---- CHORUS 2 (135-165s): LIVE VENUE ----
+.opening_chorus2:
+    cmp rG, EVENT_BRIDGE_START
+    jge .opening_bridge
+    
+    ; Phase: LIVE
+    ; The concert venue completes
+    ; 135-145s: Laser emitters appear on stage
+    ; 145-155s: Dome framework materializes
+    ; 155-165s: Audience tiers fill in
+    ;           Light sticks appear in seats
+    ;           The stage is READY
+    
+    mov qword [rel op_state], PHASE_LIVE
+    
+    ; Laser test: brief flash of each laser
+    ; Dome: wireframe → solid → holographic
+    ; Audience seats: empty but waiting
+    
+    jmp .opening_update_done
+    
+    ; ---- BRIDGE (165-195s): 八千代の独白 ----
+.opening_bridge:
+    cmp rG, EVENT_FINAL_START
+    jge .opening_final
+    
+    ; Phase: SILENCE
+    ; The music quiets. 八千代 speaks.
+    ;
+    ; 165-175s: Music fades. World goes quiet.
+    ; 175-185s: 八千代 looks up at the sky she just created
+    ;           「8000年間、ずっと待っていた」
+    ;           「この場所を。みんなのために」
+    ; 185-195s: She smiles. Genuinely.
+    ;           「やっと……来てもらえる」
+    ;
+    ; During this: the world is still. Cherry blossoms fall slowly.
+    ; No neon. No lasers. Just moonlight and petals.
+    
+    mov qword [rel op_state], PHASE_SILENCE
+    
+    ; Dim all neon
+    ; Kill lasers
+    ; Moonlight only
+    ; Slow cherry blossom fall
+    ; 八千代 looks up
+    
+    jmp .opening_update_done
+    
+    ; ---- FINAL CHORUS (195-240s): COMPLETION ----
+.opening_final:
+    cmp rG, EVENT_OUTRO_START
+    jge .opening_outro
+    
+    ; Phase: COMPLETION
+    ; The final chorus. Everything at once.
+    ;
+    ; 195-210s: ALL lights ignite simultaneously
+    ;           Every neon, every hologram, every lantern
+    ;           Lasers sweep the sky
+    ;           The dome projects a starfield
+    ; 210-225s: Cherry blossoms + data particles intertwine
+    ;           Ancient and future, together
+    ; 225-240s: The world is COMPLETE
+    ;           八千代 stands in the center
+    ;           Everything she built, everything she waited for
+    ;           It's all here now
+    
+    mov qword [rel op_state], PHASE_COMPLETION
+    
+    ; Full world activation
+    ; All systems: ON
+    ; Sky: perfect twilight (the most beautiful moment)
+    ; Cherry blossoms at peak
+    ; Neon at full
+    ; Lasers painting the sky
+    ; Holographic dome: starfield + cherry blossoms
+    
+    jmp .opening_update_done
+    
+    ; ---- OUTRO (240-255s): WELCOME ----
+.opening_outro:
+    cmp rG, EVENT_TITLE_APPEAR
+    jge .opening_title
+    
+    ; Phase: WELCOME
+    ; 240-250s: Everything gently dims
+    ;           Only 八千代 remains illuminated
+    ;           She turns to face the camera (the player)
+    ; 250-255s: She smiles
+    ;           「ようこそ、月読へ」
+    
+    mov qword [rel op_state], PHASE_WELCOME
+    
+    ; Fade world to soft glow
+    ; Spotlight on 八千代
+    ; She turns, smiles, speaks
+    
+    jmp .opening_update_done
+    
+.opening_title:
+    ; Title screen appears
+    ; 「月読」
+    ; Subtitle: 「超時空輝夜姫」
+    ; Press any key to enter
+    
+    mov qword [rel op_complete], 1
+    mov qword [rel op_running], 0
+    
+.opening_update_done:
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; opening_render - Render opening sequence
+; ============================================================================
+opening_render:
+    push rA
+    push rG
+    
+    mov rG, [rel op_state]
+    
+    ; Render based on current phase
+    cmp rG, PHASE_DARKNESS
+    je .render_darkness
+    cmp rG, PHASE_WHISPER
+    je .render_whisper
+    cmp rG, PHASE_AWAKENING
+    je .render_awakening
+    cmp rG, PHASE_BIRTH
+    je .render_birth
+    cmp rG, PHASE_CITY
+    je .render_city
+    cmp rG, PHASE_NEON
+    je .render_neon
+    cmp rG, PHASE_LIVE
+    je .render_live
+    cmp rG, PHASE_SILENCE
+    je .render_silence
+    cmp rG, PHASE_COMPLETION
+    je .render_completion
+    cmp rG, PHASE_WELCOME
+    je .render_welcome
+    jmp .render_done
+    
+.render_darkness:
+    ; Pure black screen
+    ; Maybe a single pixel of light
+    jmp .render_done
+    
+.render_whisper:
+    ; Faint glow under 八千代
+    ; Her silhouette barely visible
+    ; ... (would render)
+    jmp .render_done
+    
+.render_awakening:
+    ; Ground appearing
+    ; Building silhouettes
+    ; Deep indigo sky
+    ; ... (would render)
+    jmp .render_done
+    
+.render_birth:
+    ; ★ THE MOMENT ★
+    ; Sky tears open
+    ; Light floods in
+    ; Buildings materialize
+    ; Cherry blossoms BURST
+    ; ... (would render with full effects)
+    jmp .render_done
+    
+.render_city:
+    ; City breathing
+    ; Details appearing
+    ; Warm morning light
+    ; ... (would render)
+    jmp .render_done
+    
+.render_neon:
+    ; Neon ignition sequence
+    ; Cyberpunk overlay
+    ; ... (would render)
+    jmp .render_done
+    
+.render_live:
+    ; Concert venue completing
+    ; Lasers, dome, seats
+    ; ... (would render)
+    jmp .render_done
+    
+.render_silence:
+    ; Quiet moonlight
+    ; Cherry blossoms falling slowly
+    ; 八千代 looking up
+    ; ... (would render)
+    jmp .render_done
+    
+.render_completion:
+    ; EVERYTHING
+    ; All lights, all effects
+    ; The complete world
+    ; ... (would render)
+    jmp .render_done
+    
+.render_welcome:
+    ; 八千代 turns to camera
+    ; Smiles
+    ; 「ようこそ、月読へ」
+    ; ... (would render)
+    jmp .render_done
+    
+.render_done:
+    ; Render lyrics overlay
+    call lyrics_render
+    
+    ; Render fade
+    ; ... (would render fade quad)
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; opening_is_complete - Check if opening is done
+; → rA = 1 if complete, 0 if still playing
+; ============================================================================
+opening_is_complete:
+    mov rA, [rel op_complete]
+    ret
+
+; ============================================================================
+; opening_skip - Skip opening (only if skippable)
+; ============================================================================
+opening_skip:
+    cmp qword [rel op_skippable], 0
+    je .skip_denied
+    
+    ; Jump to completion
+    mov qword [rel op_complete], 1
+    mov qword [rel op_running], 0
+    mov qword [rel op_state], PHASE_WELCOME
+    
+    ; Ensure world is fully generated
+    mov dword [rel op_world_visibility], __float32__(1.0)
+    
+.skip_denied:
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+op_yachiyo_x:
+    dd 0.0
+op_yachiyo_y:
+    dd 50.0
+op_yachiyo_z:
+    dd 0.0
+
+; 八千代's monologue during bridge
+op_monologue_1:
+    db "8000年間、ずっと待っていた", 0
+op_monologue_2:
+    db "この場所を。みんなのために", 0
+op_monologue_3:
+    db "やっと……来てもらえる", 0
+op_welcome:
+    db "ようこそ、月読へ", 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+op_state:
+    resq 1
+op_time:
+    resq 1
+op_running:
+    resq 1
+op_complete:
+    resq 1
+op_skippable:
+    resq 1
+op_world_visibility:
+    resb 4                  ; float [0..1]
+op_fade_alpha:
+    resb 4                  ; float [0..1]
+op_cherry_bloom:
+    resb 4                  ; float [0..1]
+op_neon_intensity:
+    resb 4                  ; float [0..1]
+op_sky_brightness:
+    resb 4                  ; float [0..1]
