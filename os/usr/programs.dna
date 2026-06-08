@@ -1,0 +1,256 @@
+; ============================================================================
+; DNAOS - User-Space Programs (DNAsm)
+; ============================================================================
+; Programs that run on DNAOS in user mode.
+; These are loaded by the shell via exec() syscall.
+; ============================================================================
+
+; ============================================================================
+; hello.dna - Hello World
+; ============================================================================
+.code
+.global _start
+
+_start:
+    ; Print hello message using write syscall
+    mov rA, 0x01           ; sys_write
+    mov rC, 1              ; fd = stdout
+    lea rP, [rel hello_msg]
+    mov rS, 14             ; length
+    int 0x80
+    
+    ; Exit
+    mov rA, 0x09           ; sys_exit
+    xor rC, rC             ; exit code 0
+    int 0x80
+
+hello_msg:
+    db "Hello, DNAOS!", 10
+
+; ============================================================================
+; atcg_encode.dna - ATCG Encoder Tool
+; ============================================================================
+.code
+.global _start
+
+_start:
+    ; Read input string from command line
+    ; Encode to ATCG
+    ; Print result
+    
+    mov rA, 0x01           ; sys_write
+    mov rC, 1
+    lea rP, [rel prompt]
+    mov rS, 28
+    int 0x80
+    
+    ; Read input
+    mov rA, 0x00           ; sys_read
+    mov rC, 0              ; fd = stdin
+    lea rP, [rel input_buf]
+    mov rS, 256
+    int 0x80
+    
+    ; Encode to ATCG
+    mov rA, 0x11           ; sys_encode_atcg
+    lea rP, [rel input_buf]
+    mov rS, rA             ; length from read
+    int 0x80
+    
+    ; Print result
+    mov rA, 0x01
+    mov rC, 1
+    lea rP, [rel atcg_result]
+    mov rS, 256
+    int 0x80
+    
+    ; Exit
+    mov rA, 0x09
+    xor rC, rC
+    int 0x80
+
+prompt:
+    db "Enter text to encode: ", 0
+
+.bss
+input_buf:
+    resb 256
+atcg_result:
+    resb 1024
+
+; ============================================================================
+; quat_calc.dna - Quaternary Calculator
+; ============================================================================
+.code
+.global _start
+
+_start:
+    ; Print menu
+    mov rA, 0x01
+    mov rC, 1
+    lea rP, [rel menu]
+    mov rS, 80
+    int 0x80
+    
+    ; Read choice
+    mov rA, 0x00
+    mov rC, 0
+    lea rP, [rel choice]
+    mov rS, 2
+    int 0x80
+    
+    ; Dispatch
+    cmp byte [rel choice], '1'
+    je .do_qand
+    cmp byte [rel choice], '2'
+    je .do_qor
+    cmp byte [rel choice], '3'
+    je .do_qnot
+    cmp byte [rel choice], '4'
+    je .do_qadd
+    jmp .exit
+    
+.do_qand:
+    mov rA, 0x0D           ; sys_quat_and
+    mov rC, [rel val_a]
+    mov rS, [rel val_b]
+    int 0x80
+    jmp .print_result
+    
+.do_qor:
+    mov rA, 0x0E           ; sys_quat_or
+    mov rC, [rel val_a]
+    mov rS, [rel val_b]
+    int 0x80
+    jmp .print_result
+    
+.do_qnot:
+    mov rA, 0x0F           ; sys_quat_not
+    mov rC, [rel val_a]
+    int 0x80
+    jmp .print_result
+    
+.do_qadd:
+    mov rA, 0x10           ; sys_quat_add
+    mov rC, [rel val_a]
+    mov rS, [rel val_b]
+    int 0x80
+    jmp .print_result
+    
+.print_result:
+    ; Print result
+    mov [rel result], rA
+    mov rA, 0x01
+    mov rC, 1
+    lea rP, [rel result_str]
+    mov rS, 16
+    int 0x80
+    
+.exit:
+    mov rA, 0x09
+    xor rC, rC
+    int 0x80
+
+menu:
+    db "Quaternary Calculator", 10
+    db "1. qand  2. qor  3. qnot  4. qadd", 10
+    db "Choice: ", 0
+
+.bss
+choice:
+    resb 2
+val_a:
+    resq 1
+val_b:
+    resq 1
+result:
+    resq 1
+result_str:
+    resb 32
+
+; ============================================================================
+; net_test.dna - Network Test Tool
+; ============================================================================
+.code
+.global _start
+
+_start:
+    ; Get our IP
+    mov rA, 0x0B           ; sys_atp_query (reuse for net info)
+    int 0x80
+    
+    ; Print IP
+    mov rA, 0x01
+    mov rC, 1
+    lea rP, [rel ip_msg]
+    mov rS, 10
+    int 0x80
+    
+    ; Ping gateway
+    ; mov rA, <gateway_ip>
+    ; call net_ping
+    
+    ; Exit
+    mov rA, 0x09
+    xor rC, rC
+    int 0x80
+
+ip_msg:
+    db "IP: ", 0
+
+; ============================================================================
+; dna_paint.dna - Simple Paint Program
+; ============================================================================
+.code
+.global _start
+
+_start:
+    ; Create window
+    mov rA, 0x15           ; sys_wm_create
+    lea rP, [rel win_title]
+    mov rC, 100            ; x
+    mov rS, 100            ; y
+    mov rG, 600            ; w
+    mov r0, 400            ; h
+    int 0x80
+    
+    mov [rel win_id], rA
+    
+    ; Main drawing loop
+.paint_loop:
+    ; Check mouse state
+    ; If left button down, draw pixel
+    ; If right button down, erase pixel
+    ; If window closed, exit
+    
+    ; Read mouse
+    ; (would use mouse driver interface)
+    
+    ; Draw pixel at mouse position
+    ; mov rA, 0x13          ; sys_fb_draw
+    ; mov rC, mouse_x
+    ; mov rS, mouse_y
+    ; mov rG, current_color
+    ; int 0x80
+    
+    jmp .paint_loop
+    
+.exit:
+    ; Destroy window
+    mov rA, 0x16           ; sys_wm_destroy
+    mov rC, [rel win_id]
+    int 0x80
+    
+    ; Exit
+    mov rA, 0x09
+    xor rC, rC
+    int 0x80
+
+win_title:
+    db "DNA Paint", 0
+
+.bss
+win_id:
+    resq 1
+current_color:
+    resq 1

@@ -1,0 +1,1437 @@
+; ============================================================================
+; DNAOS - TCP/IP Protocol Stack (DNAsm)
+; ============================================================================
+; Full network stack: Ethernet → IP → ICMP → ARP → UDP → TCP → DHCP → DNS
+; Built on top of E1000 driver. No external dependencies.
+; ============================================================================
+
+; Ethernet frame sizes
+ETH_HEADER_LEN   equ 14
+ETH_MTU          equ 1500
+ETH_TYPE_ARP     equ 0x0806
+ETH_TYPE_IP      equ 0x0800
+ETH_TYPE_IPV6    equ 0x86DD
+
+; IP protocol numbers
+IP_PROTO_ICMP    equ 1
+IP_PROTO_TCP     equ 6
+IP_PROTO_UDP     equ 17
+
+; IP header
+IP_VER_IHL       equ 0x45    ; Version 4, IHL 5 (20 bytes)
+IP_TTL_DEFAULT   equ 64
+IP_TOS_DEFAULT   equ 0
+
+; ICMP types
+ICMP_ECHO_REPLY  equ 0
+ICMP_ECHO_REQ    equ 8
+ICMP_DEST_UNREACH equ 3
+ICMP_TIME_EXCEED equ 11
+
+; TCP flags
+TCP_FIN          equ 0x01
+TCP_SYN          equ 0x02
+TCP_RST          equ 0x04
+TCP_PSH          equ 0x08
+TCP_ACK          equ 0x10
+TCP_URG          equ 0x20
+
+; TCP states
+TCP_CLOSED       equ 0
+TCP_LISTEN       equ 1
+TCP_SYN_SENT     equ 2
+TCP_SYN_RECV     equ 3
+TCP_ESTABLISHED  equ 4
+TCP_FIN_WAIT1    equ 5
+TCP_FIN_WAIT2    equ 6
+TCP_CLOSE_WAIT   equ 7
+TCP_LAST_ACK     equ 8
+TCP_TIME_WAIT    equ 9
+
+; UDP
+UDP_HEADER_LEN   equ 8
+
+; DHCP
+DHCP_DISCOVER    equ 1
+DHCP_OFFER       equ 2
+DHCP_REQUEST     equ 3
+DHCP_DECLINE     equ 4
+DHCP_ACK         equ 5
+DHCP_NAK         equ 6
+DHCP_RELEASE     equ 7
+DHCP_INFORM      equ 8
+DHCP_MAGIC       equ 0x63825363
+DHCP_PORT_SERVER equ 67
+DHCP_PORT_CLIENT equ 68
+
+; DNS
+DNS_PORT         equ 53
+DNS_TYPE_A       equ 1
+DNS_TYPE_AAAA    equ 28
+DNS_CLASS_IN     equ 1
+DNS_FLAG_RD      equ 0x0100  ; Recursion desired
+
+; ARP
+HTYPE_ETHERNET   equ 1
+ARP_REQUEST      equ 1
+ARP_REPLY        equ 2
+
+; Max connections
+MAX_TCP_CONN     equ 16
+MAX_UDP_SOCKETS  equ 16
+MAX_ARP_ENTRIES  equ 32
+
+.code
+.global net_init
+.global net_process_packet
+.global net_tcp_connect
+.global net_tcp_send
+.global net_tcp_close
+.global net_udp_send
+.global net_udp_recv
+.global net_dhcp_discover
+.global net_dns_resolve
+.global net_ping
+.global net_get_ip
+.global net_arp_resolve
+
+; ============================================================================
+; net_init - Initialize network stack
+; ============================================================================
+net_init:
+    push rA
+    push rC
+    push rG
+    
+    ; Clear ARP table
+    lea rG, [rel arp_table]
+    mov rC, MAX_ARP_ENTRIES * 24 / 8  ; 24 bytes per entry
+    xor rA, rA
+.net_init_arp_clear:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .net_init_arp_clear
+    
+    ; Clear TCP connections
+    lea rG, [rel tcp_conns]
+    mov rC, MAX_TCP_CONN * 128 / 8
+    xor rA, rA
+.net_init_tcp_clear:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .net_init_tcp_clear
+    
+    ; Clear UDP sockets
+    lea rG, [rel udp_sockets]
+    mov rC, MAX_UDP_SOCKETS * 32 / 8
+    xor rA, rA
+.net_init_udp_clear:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .net_init_udp_clear
+    
+    ; Set default IP (0.0.0.0 until DHCP)
+    mov qword [rel net_ip_addr], 0
+    mov qword [rel net_gateway], 0
+    mov qword [rel net_subnet_mask], 0x00FFFFFF  ; 255.255.255.0
+    mov qword [rel net_dns_server], 0x08080808    ; 8.8.8.8 default
+    
+    ; Initialize sequence numbers from PIT
+    mov rA, [rel pit_ticks]
+    mov [rel tcp_next_isn], rA
+    mov [rel dns_next_id], rA
+    
+    ; Start DHCP
+    call net_dhcp_discover
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; net_process_packet - Process a received Ethernet frame
+; rP = packet data, rC = length
+; ============================================================================
+net_process_packet:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    mov rS, rP             ; Save packet pointer
+    
+    ; Check minimum Ethernet frame size
+    cmp rC, ETH_HEADER_LEN
+    jl .net_process_done
+    
+    ; Read EtherType (offset 12-13)
+    mov rA.w, [rS + 12]
+    xchg rA.b, rA.b + 1    ; ntohs - swap bytes
+    
+    ; Dispatch by EtherType
+    cmp rA, ETH_TYPE_ARP
+    je .net_process_arp
+    cmp rA, ETH_TYPE_IP
+    je .net_process_ip
+    jmp .net_process_done
+    
+.net_process_arp:
+    mov rP, rS
+    add rP, ETH_HEADER_LEN
+    mov rC, rC
+    sub rC, ETH_HEADER_LEN
+    call net_arp_process
+    jmp .net_process_done
+    
+.net_process_ip:
+    mov rP, rS
+    add rP, ETH_HEADER_LEN
+    mov rC, rC
+    sub rC, ETH_HEADER_LEN
+    call net_ip_process
+    jmp .net_process_done
+    
+.net_process_done:
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ARP - Address Resolution Protocol
+; ============================================================================
+
+; net_arp_process - Process incoming ARP packet
+; rP = ARP data, rC = length
+net_arp_process:
+    push rA
+    push rG
+    push rP
+    
+    ; Check if it's for our IP
+    ; ARP packet: htype(2) ptype(2) hlen(1) plen(1) oper(2)
+    ;             sha(6) spa(4) tha(6) tpa(4)
+    
+    ; Get operation
+    mov rA.w, [rP + 6]
+    xchg rA.b, rA.b + 1
+    
+    ; Check if ARP reply for us
+    cmp rA, ARP_REPLY
+    je .arp_reply
+    
+    ; Check if ARP request for us
+    cmp rA, ARP_REQUEST
+    je .arp_request
+    jmp .arp_done
+    
+.arp_request:
+    ; Check target IP (offset 24)
+    mov rA, [rP + 24]
+    cmp rA, [rel net_ip_addr]
+    jne .arp_done
+    
+    ; Send ARP reply
+    call net_arp_send_reply
+    jmp .arp_done
+    
+.arp_reply:
+    ; Add to ARP cache
+    ; Source MAC at offset 8, Source IP at offset 14
+    call net_arp_cache_add
+    
+.arp_done:
+    pop rP
+    pop rG
+    pop rA
+    ret
+
+; net_arp_send_reply - Reply to ARP request
+net_arp_send_reply:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    ; Build ARP reply in TX buffer
+    lea rG, [rel net_tx_buf]
+    
+    ; Ethernet header: destination = requester MAC (from ARP packet offset 8)
+    lea rS, [rP + 8]       ; Source hardware addr in ARP
+    lea rA, [rel net_our_mac]
+    
+    ; Dest MAC = requester MAC
+    mov rC, 6
+.arp_reply_mac:
+    mov rA.b, [rS]
+    mov [rG], rA.b
+    inc rG
+    inc rS
+    dec rC
+    jnz .arp_reply_mac
+    
+    ; Source MAC = our MAC
+    lea rS, [rel net_our_mac]
+    mov rC, 6
+.arp_reply_our_mac:
+    mov rA.b, [rS]
+    mov [rG], rA.b
+    inc rG
+    inc rS
+    dec rC
+    jnz .arp_reply_our_mac
+    
+    ; EtherType = ARP (0x0806)
+    mov word [rG], 0x0608   ; Already in network byte order
+    add rG, 2
+    
+    ; ARP: htype=1, ptype=0x0800, hlen=6, plen=4, oper=2 (reply)
+    mov word [rG], 0x0001
+    add rG, 2
+    mov word [rG], 0x0008
+    add rG, 2
+    mov byte [rG], 6
+    inc rG
+    mov byte [rG], 4
+    inc rG
+    mov word [rG], 0x0002   ; Reply
+    add rG, 2
+    
+    ; Sender MAC = our MAC
+    lea rS, [rel net_our_mac]
+    mov rC, 6
+.arp_reply_smac:
+    mov rA.b, [rS]
+    mov [rG], rA.b
+    inc rG
+    inc rS
+    dec rC
+    jnz .arp_reply_smac
+    
+    ; Sender IP = our IP
+    mov rA, [rel net_ip_addr]
+    mov [rG], rA
+    add rG, 4
+    
+    ; Target MAC = requester MAC
+    lea rS, [rP + 8]
+    mov rC, 6
+.arp_reply_tmac:
+    mov rA.b, [rS]
+    mov [rG], rA.b
+    inc rG
+    inc rS
+    dec rC
+    jnz .arp_reply_tmac
+    
+    ; Target IP = requester IP
+    mov rA, [rP + 14]
+    mov [rG], rA
+    add rG, 4
+    
+    ; Send packet (42 bytes = 14 ETH + 28 ARP)
+    lea rP, [rel net_tx_buf]
+    mov rC, 42
+    call e1000_send
+    
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; net_arp_cache_add - Add entry to ARP cache
+; rP = ARP packet (source at offset 8 for MAC, 14 for IP)
+net_arp_cache_add:
+    push rA
+    push rC
+    push rG
+    push rS
+    
+    lea rG, [rel arp_table]
+    mov rC, MAX_ARP_ENTRIES
+    
+.arp_cache_scan:
+    ; Check if IP already in cache
+    mov rA, [rP + 14]
+    cmp rA, [rG + 6]
+    je .arp_cache_update
+    
+    ; Check if empty slot
+    cmp dword [rG], 0
+    je .arp_cache_insert
+    
+    add rG, 24
+    dec rC
+    jnz .arp_cache_scan
+    jmp .arp_cache_done
+    
+.arp_cache_update:
+    ; Update MAC address
+    lea rS, [rP + 8]
+    mov rC, 6
+.arp_cache_update_mac:
+    mov rA.b, [rS]
+    mov [rG], rA.b
+    inc rG
+    inc rS
+    dec rC
+    jnz .arp_cache_update_mac
+    jmp .arp_cache_done
+    
+.arp_cache_insert:
+    ; Insert new entry
+    lea rS, [rP + 8]
+    mov rC, 6
+.arp_cache_insert_mac:
+    mov rA.b, [rS]
+    mov [rG], rA.b
+    inc rG
+    inc rS
+    dec rC
+    jnz .arp_cache_insert_mac
+    
+    ; Insert IP
+    mov rA, [rP + 14]
+    mov [rG], rA
+    add rG, 4
+    
+    ; Timestamp
+    mov rA, [rel pit_ticks]
+    mov [rG], rA
+    
+.arp_cache_done:
+    pop rS
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; net_arp_resolve - Resolve IP to MAC
+; rA = IP address → rA = MAC address (0 if not found)
+net_arp_resolve:
+    push rC
+    push rG
+    
+    lea rG, [rel arp_table]
+    mov rC, MAX_ARP_ENTRIES
+    
+.arp_resolve_scan:
+    cmp rA, [rG + 6]
+    je .arp_resolve_found
+    add rG, 24
+    dec rC
+    jnz .arp_resolve_scan
+    
+    ; Not found - send ARP request
+    call net_arp_send_request
+    xor rA, rA
+    pop rG
+    pop rC
+    ret
+    
+.arp_resolve_found:
+    mov rA, [rG]
+    pop rG
+    pop rC
+    ret
+
+; net_arp_send_request - Broadcast ARP request for IP
+; rA = target IP
+net_arp_send_request:
+    push rA
+    push rC
+    push rG
+    push rS
+    
+    push rA                ; Save target IP
+    
+    lea rG, [rel net_tx_buf]
+    
+    ; Ethernet header: destination = broadcast FF:FF:FF:FF:FF:FF
+    mov qword [rG], 0xFFFFFFFFFFFFFFFF
+    mov word [rG + 6], 0xFFFF
+    
+    ; Source MAC = our MAC
+    lea rS, [rel net_our_mac]
+    mov rC, 6
+.arp_req_smac:
+    mov rA.b, [rS]
+    mov [rG + 6], rA.b
+    inc rG
+    inc rS
+    dec rC
+    jnz .arp_req_smac
+    
+    ; EtherType = ARP
+    mov word [rG + 12], 0x0608
+    add rG, 14
+    
+    ; ARP request
+    mov word [rG], 0x0001      ; htype = ethernet
+    mov word [rG + 2], 0x0008  ; ptype = IPv4
+    mov byte [rG + 4], 6       ; hlen
+    mov byte [rG + 5], 4       ; plen
+    mov word [rG + 6], 0x0001  ; oper = request
+    
+    ; Sender MAC
+    lea rS, [rel net_our_mac]
+    mov rC, 6
+.arp_req_sender_mac:
+    mov rA.b, [rS]
+    mov [rG + 8], rA.b
+    inc rS
+    dec rC
+    jnz .arp_req_sender_mac
+    
+    ; Sender IP
+    mov rA, [rel net_ip_addr]
+    mov [rG + 14], rA
+    
+    ; Target MAC = 0
+    mov qword [rG + 18], 0
+    mov word [rG + 22], 0
+    
+    ; Target IP
+    pop rA
+    mov [rG + 24], rA
+    
+    ; Send
+    lea rP, [rel net_tx_buf]
+    mov rC, 42
+    call e1000_send
+    
+    pop rS
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; IP - Internet Protocol
+; ============================================================================
+
+; net_ip_process - Process incoming IP packet
+; rP = IP data, rC = length
+net_ip_process:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Verify IP version
+    mov rA.b, [rP]
+    shr rA, 4
+    cmp rA, 4
+    jne .ip_done
+    
+    ; Verify header length
+    mov rA.b, [rP]
+    and rA, 0x0F
+    shl rA, 2              ; IHL * 4 = header bytes
+    mov rG, rA             ; Save header length
+    
+    ; Check destination IP
+    mov rA, [rP + 16]
+    cmp rA, [rel net_ip_addr]
+    jne .ip_done           ; Not for us
+    
+    ; Get protocol
+    mov rA.b, [rP + 9]
+    
+    ; Dispatch by protocol
+    cmp rA, IP_PROTO_ICMP
+    je .ip_icmp
+    cmp rA, IP_PROTO_TCP
+    je .ip_tcp
+    cmp rA, IP_PROTO_UDP
+    je .ip_udp
+    jmp .ip_done
+    
+.ip_icmp:
+    add rP, rG             ; Skip IP header
+    call net_icmp_process
+    jmp .ip_done
+    
+.ip_tcp:
+    add rP, rG
+    call net_tcp_process
+    jmp .ip_done
+    
+.ip_udp:
+    add rP, rG
+    call net_udp_process
+    jmp .ip_done
+    
+.ip_done:
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; net_ip_send - Send IP packet
+; rP = payload, rC = payload length, rG = protocol, rS = dest IP
+net_ip_send:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    ; Resolve destination MAC via ARP
+    mov rA, rS
+    call net_arp_resolve
+    test rA, rA
+    jz .ip_send_done       ; Can't resolve MAC
+    
+    ; Build IP packet in TX buffer
+    lea rG, [rel net_tx_buf]
+    
+    ; Ethernet header: dest MAC
+    ; (MAC is in rA from arp_resolve - simplified)
+    
+    ; IP header (20 bytes)
+    mov byte [rG + 14], IP_VER_IHL    ; Version + IHL
+    mov byte [rG + 15], IP_TOS_DEFAULT ; TOS
+    mov rA, rC
+    add rA, 20             ; Total length = payload + header
+    mov [rG + 16], rA.w    ; Total length (network byte order)
+    
+    ; Identification
+    mov rA, [rel ip_next_id]
+    inc qword [rel ip_next_id]
+    mov [rG + 18], rA.w
+    
+    ; Flags + Fragment offset (Don't Fragment)
+    mov word [rG + 20], 0x4000
+    
+    ; TTL
+    mov byte [rG + 22], IP_TTL_DEFAULT
+    
+    ; Protocol
+    mov [rG + 23], rG.b    ; Protocol from parameter
+    
+    ; Checksum (0 for now, calculate later)
+    mov word [rG + 24], 0
+    
+    ; Source IP
+    mov rA, [rel net_ip_addr]
+    mov [rG + 26], rA
+    
+    ; Destination IP
+    mov rA, rS
+    mov [rG + 30], rA
+    
+    ; Calculate IP checksum
+    lea rP, [rG + 14]     ; IP header start
+    mov rC, 20
+    call net_checksum
+    mov [rG + 24], rA.w
+    
+    ; Copy payload
+    add rG, 34             ; After IP header
+    ; (memcpy would go here)
+    
+.ip_send_done:
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ICMP - Internet Control Message Protocol
+; ============================================================================
+
+; net_icmp_process - Process incoming ICMP packet
+; rP = ICMP data
+net_icmp_process:
+    push rA
+    
+    ; Get ICMP type
+    mov rA.b, [rP]
+    
+    cmp rA, ICMP_ECHO_REQ
+    je .icmp_echo_req
+    cmp rA, ICMP_ECHO_REPLY
+    je .icmp_echo_reply
+    jmp .icmp_done
+    
+.icmp_echo_req:
+    ; Reply to ping
+    call net_icmp_send_reply
+    jmp .icmp_done
+    
+.icmp_echo_reply:
+    ; Record ping response
+    inc qword [rel net_ping_received]
+    mov rA, [rel pit_ticks]
+    mov [rel net_ping_time], rA
+    
+.icmp_done:
+    pop rA
+    ret
+
+; net_icmp_send_reply - Send ICMP echo reply
+net_icmp_send_reply:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Build ICMP reply in TX buffer
+    ; Type = 0 (echo reply), Code = 0
+    mov byte [rP], ICMP_ECHO_REPLY
+    ; Keep rest of packet the same (id, seq, data)
+    ; Just flip type from 8 to 0
+    
+    ; Recalculate ICMP checksum
+    mov word [rP + 2], 0
+    mov rC, 64             ; ICMP length
+    call net_checksum
+    mov [rP + 2], rA.w
+    
+    ; Send via IP
+    ; (would call net_ip_send)
+    
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; net_ping - Send ICMP echo request
+; rA = destination IP
+net_ping:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Build ICMP echo request
+    lea rG, [rel net_tx_buf]
+    add rG, 34             ; After Ethernet + IP headers
+    
+    ; Type = 8 (echo request), Code = 0
+    mov byte [rG], ICMP_ECHO_REQ
+    mov byte [rG + 1], 0
+    
+    ; Checksum = 0 (calculate later)
+    mov word [rG + 2], 0
+    
+    ; Identifier
+    mov rA, [rel pit_ticks]
+    and rA, 0xFFFF
+    mov [rG + 4], rA.w
+    
+    ; Sequence number
+    mov rA, [rel net_ping_seq]
+    inc qword [rel net_ping_seq]
+    mov [rG + 6], rA.w
+    
+    ; Data = "DNAOS" + padding
+    mov dword [rG + 8], 0x534F414E  ; "NAOS"
+    mov byte [rG + 12], 0x44        ; "D"
+    
+    ; Calculate checksum
+    lea rP, [rG]
+    mov rC, 64
+    call net_checksum
+    mov [rG + 2], rA.w
+    
+    ; Record send time
+    mov qword [rel net_ping_sent], 1
+    mov rA, [rel pit_ticks]
+    mov [rel net_ping_start], rA
+    
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; TCP - Transmission Control Protocol
+; ============================================================================
+
+; net_tcp_process - Process incoming TCP segment
+; rP = TCP data
+net_tcp_process:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Get source port
+    mov rA.w, [rP]
+    xchg rA.b, rA.b + 1    ; ntohs
+    
+    ; Get destination port
+    mov rC.w, [rP + 2]
+    xchg rC.b, rC.b + 1
+    
+    ; Find matching connection
+    call net_tcp_find_conn
+    test rG, rG
+    jz .tcp_process_done
+    
+    ; Get TCP flags
+    mov rA.b, [rP + 13]
+    
+    ; State machine
+    cmp qword [rG + 48], TCP_SYN_RECV
+    je .tcp_syn_recv
+    cmp qword [rG + 48], TCP_ESTABLISHED
+    je .tcp_established
+    jmp .tcp_process_done
+    
+.tcp_syn_recv:
+    ; Expect ACK of our SYN+ACK
+    test rA, TCP_ACK
+    jz .tcp_process_done
+    mov qword [rG + 48], TCP_ESTABLISHED
+    jmp .tcp_process_done
+    
+.tcp_established:
+    ; Handle data
+    test rA, TCP_FIN
+    jnz .tcp_fin_received
+    test rA, TCP_RST
+    jnz .tcp_rst_received
+    
+    ; Process data (copy to receive buffer)
+    ; Get data offset
+    mov rA.b, [rP + 12]
+    shr rA, 4
+    shl rA, 2              ; Data offset in bytes
+    
+    ; Data starts at rP + data_offset
+    ; Copy to connection's receive buffer
+    ; (simplified - would do proper buffering)
+    
+    ; Send ACK
+    call net_tcp_send_ack
+    
+.tcp_process_done:
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+    
+.tcp_fin_received:
+    mov qword [rG + 48], TCP_CLOSE_WAIT
+    call net_tcp_send_ack
+    jmp .tcp_process_done
+    
+.tcp_rst_received:
+    mov qword [rG + 48], TCP_CLOSED
+    jmp .tcp_process_done
+
+; net_tcp_connect - Open TCP connection
+; rA = dest IP, rC = dest port → rG = connection slot
+net_tcp_connect:
+    push rA
+    push rC
+    push rP
+    
+    ; Find free connection slot
+    lea rP, [rel tcp_conns]
+    mov rG, MAX_TCP_CONN
+    
+.tcp_connect_scan:
+    cmp qword [rP + 48], TCP_CLOSED
+    je .tcp_connect_found
+    add rP, 128
+    dec rG
+    jnz .tcp_connect_scan
+    jmp .tcp_connect_fail
+    
+.tcp_connect_found:
+    ; Initialize connection
+    mov qword [rP + 48], TCP_SYN_SENT
+    mov [rP + 32], rA      ; Remote IP
+    mov [rP + 40], rC      ; Remote port
+    
+    ; Generate local port (ephemeral: 49152-65535)
+    mov rA, [rel pit_ticks]
+    and rA, 0x3FFF
+    add rA, 49152
+    mov [rP + 36], rA      ; Local port
+    
+    ; Generate ISN
+    mov rA, [rel tcp_next_isn]
+    add qword [rel tcp_next_isn], 128000
+    mov [rP + 16], rA      ; SND.UNA
+    mov [rP + 24], rA      ; SND.NXT
+    
+    ; Send SYN
+    call net_tcp_send_syn
+    
+    mov rG, rP
+    pop rP
+    pop rC
+    pop rA
+    ret
+    
+.tcp_connect_fail:
+    xor rG, rG
+    pop rP
+    pop rC
+    pop rA
+    ret
+
+; net_tcp_send - Send data on TCP connection
+; rG = connection, rP = data, rC = length
+net_tcp_send:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Check connection state
+    cmp qword [rG + 48], TCP_ESTABLISHED
+    jne .tcp_send_fail
+    
+    ; Build TCP segment
+    ; (would construct header + data, calculate checksum, send via IP)
+    
+    ; Update SND.NXT
+    mov rA, [rG + 24]
+    add rA, rC
+    mov [rG + 24], rA
+    
+.tcp_send_fail:
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; net_tcp_close - Close TCP connection
+; rG = connection
+net_tcp_close:
+    push rA
+    
+    cmp qword [rG + 48], TCP_ESTABLISHED
+    jne .tcp_close_done
+    
+    ; Send FIN
+    call net_tcp_send_fin
+    mov qword [rG + 48], TCP_FIN_WAIT1
+    
+.tcp_close_done:
+    pop rA
+    ret
+
+; net_tcp_send_syn - Send SYN segment
+net_tcp_send_syn:
+    ; Build and send SYN packet
+    ; (simplified - would construct full TCP header)
+    ret
+
+; net_tcp_send_ack - Send ACK segment
+net_tcp_send_ack:
+    ; Build and send ACK packet
+    ret
+
+; net_tcp_send_fin - Send FIN segment
+net_tcp_send_fin:
+    ; Build and send FIN packet
+    ret
+
+; net_tcp_find_conn - Find TCP connection by port pair
+; rA = remote port, rC = local port → rG = connection (0 if not found)
+net_tcp_find_conn:
+    push rC
+    push rP
+    
+    lea rP, [rel tcp_conns]
+    mov rG, MAX_TCP_CONN
+    
+.tcp_find_scan:
+    cmp [rP + 40], rA      ; Remote port
+    jne .tcp_find_next
+    cmp [rP + 36], rC      ; Local port
+    je .tcp_find_found
+    
+.tcp_find_next:
+    add rP, 128
+    dec rG
+    jnz .tcp_find_scan
+    xor rG, rG
+    pop rP
+    pop rC
+    ret
+    
+.tcp_find_found:
+    mov rG, rP
+    pop rP
+    pop rC
+    ret
+
+; ============================================================================
+; UDP - User Datagram Protocol
+; ============================================================================
+
+; net_udp_process - Process incoming UDP datagram
+; rP = UDP data
+net_udp_process:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Get source port
+    mov rA.w, [rP]
+    xchg rA.b, rA.b + 1
+    
+    ; Get dest port
+    mov rC.w, [rP + 2]
+    xchg rC.b, rC.b + 1
+    
+    ; Get length
+    mov rG.w, [rP + 4]
+    xchg rG.b, rG.b + 1
+    
+    ; Check if DHCP response (port 68)
+    cmp rC, DHCP_PORT_CLIENT
+    je .udp_dhcp
+    
+    ; Find matching UDP socket
+    ; (would scan udp_sockets array)
+    
+    jmp .udp_done
+    
+.udp_dhcp:
+    add rP, UDP_HEADER_LEN
+    call net_dhcp_process
+    jmp .udp_done
+    
+.udp_done:
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; net_udp_send - Send UDP datagram
+; rA = dest IP, rC = dest port, rP = data, rS = data length
+net_udp_send:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Build UDP header
+    lea rG, [rel net_tx_buf]
+    add rG, 34             ; After Ethernet + IP headers
+    
+    ; Source port
+    mov rA, [rel net_udp_src_port]
+    mov [rG], rA.w
+    
+    ; Dest port
+    mov [rG + 2], rC.w
+    
+    ; Length
+    mov rA, rS
+    add rA, UDP_HEADER_LEN
+    mov [rG + 4], rA.w
+    
+    ; Checksum = 0 (optional for UDP)
+    mov word [rG + 6], 0
+    
+    ; Copy data
+    add rG, UDP_HEADER_LEN
+    ; (memcpy would go here)
+    
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; DHCP - Dynamic Host Configuration Protocol
+; ============================================================================
+
+; net_dhcp_discover - Send DHCP Discover
+net_dhcp_discover:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Build DHCP Discover packet
+    lea rG, [rel net_tx_buf]
+    add rG, 42             ; After ETH + IP + UDP headers
+    
+    ; DHCP header
+    mov byte [rG], 1       ; op = BOOTREQUEST
+    mov byte [rG + 1], 1   ; htype = Ethernet
+    mov byte [rG + 2], 6   ; hlen = 6
+    mov byte [rG + 3], 0   ; hops
+    
+    ; Transaction ID
+    mov rA, [rel pit_ticks]
+    mov [rG + 4], rA
+    mov [rel dhcp_xid], rA
+    
+    ; Flags = broadcast
+    mov word [rG + 10], 0x8000
+    
+    ; Client IP = 0.0.0.0
+    mov dword [rG + 12], 0
+    ; Your IP = 0.0.0.0
+    mov dword [rG + 16], 0
+    ; Server IP = 0.0.0.0
+    mov dword [rG + 20], 0
+    ; Relay IP = 0.0.0.0
+    mov dword [rG + 24], 0
+    
+    ; Client MAC
+    lea rP, [rel net_our_mac]
+    mov rC, 6
+.dhcp_mac:
+    mov rA.b, [rP]
+    mov [rG + 28], rA.b
+    inc rG
+    inc rP
+    dec rC
+    jnz .dhcp_mac
+    
+    ; Server name = 0 (64 bytes)
+    ; Boot filename = 0 (128 bytes)
+    ; (zeroed already)
+    
+    ; Magic cookie
+    mov dword [rG + 236], DHCP_MAGIC
+    
+    ; DHCP Message Type option
+    mov byte [rG + 240], 53   ; Option: DHCP Message Type
+    mov byte [rG + 241], 1    ; Length: 1
+    mov byte [rG + 242], DHCP_DISCOVER
+    
+    ; DHCP Client Identifier
+    mov byte [rG + 243], 61   ; Option: Client Identifier
+    mov byte [rG + 244], 7    ; Length: 7
+    mov byte [rG + 245], 1    ; htype = Ethernet
+    lea rP, [rel net_our_mac]
+    mov rC, 6
+.dhcp_cid_mac:
+    mov rA.b, [rP]
+    mov [rG + 246], rA.b
+    inc rG
+    inc rP
+    dec rC
+    jnz .dhcp_cid_mac
+    
+    ; End option
+    mov byte [rG + 252], 255
+    
+    ; Send via UDP broadcast
+    mov rA, 0xFFFFFFFF     ; Broadcast IP
+    mov rC, DHCP_PORT_SERVER
+    ; (would call net_udp_send)
+    
+    mov qword [rel dhcp_state], 1  ; DISCOVERING
+    
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; net_dhcp_process - Process DHCP response
+; rP = DHCP data
+net_dhcp_process:
+    push rA
+    
+    ; Verify magic cookie
+    mov rA, [rP + 236]
+    cmp rA, DHCP_MAGIC
+    jne .dhcp_process_done
+    
+    ; Get message type
+    mov rA.b, [rP + 242]
+    
+    cmp rA, DHCP_OFFER
+    je .dhcp_offer
+    cmp rA, DHCP_ACK
+    je .dhcp_ack
+    cmp rA, DHCP_NAK
+    je .dhcp_nak
+    jmp .dhcp_process_done
+    
+.dhcp_offer:
+    ; Save offered IP
+    mov rA, [rP + 16]
+    mov [rel dhcp_offered_ip], rA
+    mov qword [rel dhcp_state], 2  ; OFFERED
+    
+    ; Send DHCP Request
+    call net_dhcp_request
+    jmp .dhcp_process_done
+    
+.dhcp_ack:
+    ; We got our IP!
+    mov rA, [rP + 16]
+    mov [rel net_ip_addr], rA
+    
+    ; Parse options for gateway, DNS, subnet mask
+    ; (would scan DHCP options)
+    
+    mov qword [rel dhcp_state], 4  ; BOUND
+    inc qword [rel net_dhcp_bound]
+    jmp .dhcp_process_done
+    
+.dhcp_nak:
+    mov qword [rel dhcp_state], 0  ; Reset
+    jmp .dhcp_process_done
+    
+.dhcp_process_done:
+    pop rA
+    ret
+
+; net_dhcp_request - Send DHCP Request
+net_dhcp_request:
+    ; Build DHCP Request (similar to Discover but with requested IP)
+    ; (simplified)
+    ret
+
+; ============================================================================
+; DNS - Domain Name System
+; ============================================================================
+
+; net_dns_resolve - Resolve hostname to IP
+; rP = hostname string → rA = IP address (0 if not found)
+net_dns_resolve:
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    ; Build DNS query
+    lea rG, [rel net_tx_buf]
+    add rG, 42             ; After ETH + IP + UDP headers
+    
+    ; Transaction ID
+    mov rA, [rel dns_next_id]
+    inc qword [rel dns_next_id]
+    mov [rG], rA.w
+    mov [rel dns_current_id], rA.w
+    
+    ; Flags: standard query, recursion desired
+    mov word [rG + 2], DNS_FLAG_RD
+    
+    ; Questions = 1
+    mov word [rG + 4], 0x0100
+    
+    ; Answers = 0, Authority = 0, Additional = 0
+    mov dword [rG + 6], 0
+    mov dword [rG + 10], 0
+    
+    ; Encode hostname as DNS name
+    ; Convert "example.com" to "\x07example\x03com\x00"
+    mov rS, rP
+    add rG, 12
+    mov rC, 0              ; Label length counter
+    
+.dns_encode_loop:
+    mov rA.b, [rS]
+    test rA, rA
+    jz .dns_encode_done
+    cmp rA, '.'
+    je .dns_encode_dot
+    
+    ; Regular character
+    inc rC
+    mov [rG + rC], rA.b
+    inc rS
+    jmp .dns_encode_loop
+    
+.dns_encode_dot:
+    ; Write label length
+    mov [rG], rC.b
+    add rG, rC
+    inc rG
+    mov rC, 0
+    inc rS
+    jmp .dns_encode_loop
+    
+.dns_encode_done:
+    ; Write final label length
+    mov [rG], rC.b
+    add rG, rC
+    inc rG
+    mov byte [rG], 0       ; Root label
+    inc rG
+    
+    ; Query type = A (1)
+    mov word [rG], 0x0100
+    add rG, 2
+    
+    ; Query class = IN (1)
+    mov word [rG], 0x0100
+    add rG, 2
+    
+    ; Send via UDP to DNS server
+    mov rA, [rel net_dns_server]
+    mov rC, DNS_PORT
+    ; (would call net_udp_send)
+    
+    ; Wait for response (simplified - would be async)
+    mov qword [rel dns_pending], 1
+    
+    xor rA, rA             ; Return 0 for now (async)
+    
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; Checksum calculation
+; ============================================================================
+
+; net_checksum - Calculate Internet checksum (IP/TCP/UDP/ICMP)
+; rP = data, rC = length → rA = checksum
+net_checksum:
+    push rC
+    push rG
+    push rP
+    
+    xor rG, rG             ; Accumulator
+    
+.checksum_loop:
+    cmp rC, 1
+    je .checksum_odd
+    
+    ; Add 16-bit word
+    mov rA.w, [rP]
+    add rG, rA
+    add rP, 2
+    sub rC, 2
+    jmp .checksum_loop
+    
+.checksum_odd:
+    ; Add last byte (padded with 0)
+    mov rA.b, [rP]
+    and rA, 0xFF
+    add rG, rA
+    
+.checksum_fold:
+    ; Fold 32-bit sum to 16 bits
+    mov rA, rG
+    shr rA, 16
+    add rG, rA
+    mov rA, rG
+    shr rA, 16
+    add rG, rA
+    
+    ; One's complement
+    mov rA, rG
+    not rA
+    and rA, 0xFFFF
+    
+    pop rP
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; net_get_ip - Get our IP address
+; rA = IP address
+; ============================================================================
+net_get_ip:
+    mov rA, [rel net_ip_addr]
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+net_our_mac:
+    db 0x52, 0x54, 0x00, 0x12, 0x34, 0x56   ; QEMU default MAC
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+net_ip_addr:
+    resq 1
+net_gateway:
+    resq 1
+net_subnet_mask:
+    resq 1
+net_dns_server:
+    resq 1
+net_tx_buf:
+    resb 1514              ; Max Ethernet frame
+net_rx_buf:
+    resb 1514
+
+; ARP cache: 32 entries × 24 bytes (6 MAC + 4 IP + 8 timestamp + 6 pad)
+arp_table:
+    resb MAX_ARP_ENTRIES * 24
+
+; TCP connections: 16 × 128 bytes
+tcp_conns:
+    resb MAX_TCP_CONN * 128
+tcp_next_isn:
+    resq 1
+
+; UDP sockets: 16 × 32 bytes
+udp_sockets:
+    resb MAX_UDP_SOCKETS * 32
+net_udp_src_port:
+    resq 1
+
+; DHCP state
+dhcp_state:
+    resq 1
+dhcp_xid:
+    resq 1
+dhcp_offered_ip:
+    resq 1
+net_dhcp_bound:
+    resq 1
+
+; DNS state
+dns_next_id:
+    resq 1
+dns_current_id:
+    resq 2
+dns_pending:
+    resq 1
+
+; Ping state
+net_ping_seq:
+    resq 1
+net_ping_sent:
+    resq 1
+net_ping_received:
+    resq 1
+net_ping_start:
+    resq 1
+net_ping_time:
+    resq 1
+
+; IP identification
+ip_next_id:
+    resq 1

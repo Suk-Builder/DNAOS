@@ -1,462 +1,717 @@
-/*
- * ============================================================================
- * DNAOS Kernel - Boot Assembly (Extended)
- * ============================================================================
- * 
- * Multiboot2 entry → GDT → Long mode → kernel_main()
- * + ISR/IRQ stubs for IDT
- * + Context switch for scheduler
- * + Syscall entry
- * ============================================================================
- */
+; ============================================================================
+; DNAOS - Boot Assembly (Complete)
+; ============================================================================
+; Multiboot2 entry → GDT → Long mode → kernel_main()
+; + ISR/IRQ stubs for IDT
+; + Context switch for scheduler
+; + SYSCALL/SYSRET entry
+; + TSS setup
+; ============================================================================
 
-.section ".text.boot"
+section ".text.boot"
 
-.global _start
+global _start
+extern kernel_main
 
-/* ============================================================================
- * Multiboot2 Header
- * ============================================================================
- */
-.section ".multiboot"
-.align 8
+; ============================================================================
+; Multiboot2 Header
+; ============================================================================
+section ".multiboot"
+align 8
 multiboot_header:
-    .long   0xE85250D6              /* Magic */
-    .long   0                       /* Architecture: i386 */
-    .long   multiboot_header_end - multiboot_header
-    .long   -(0xE85250D6 + 0 + (multiboot_header_end - multiboot_header))  /* Checksum */
+    dd 0xE85250D6              ; Magic
+    dd 0                       ; Architecture: i386
+    dd multiboot_header_end - multiboot_header
+    dd -(0xE85250D6 + 0 + (multiboot_header_end - multiboot_header))  ; Checksum
     
-    /* Framebuffer tag */
-    .word   5                       /* Type: framebuffer */
-    .word   0                       /* Flags */
-    .long   20                      /* Size */
-    .long   1280                    /* Width */
-    .long   720                     /* Height */
-    .long   32                      /* Depth */
+    ; Framebuffer tag (type 5)
+    dw 5                       ; Type = framebuffer
+    dw 0                       ; Flags
+    dd 20                      ; Size
+    dd 1280                    ; Width
+    dd 720                     ; Height
+    dd 32                      ; Depth (bits per pixel)
     
-    /* End tag */
-    .word   0                       /* Type */
-    .word   0                       /* Flags */
-    .long   8                       /* Size */
+    ; End tag
+    dw 0                       ; Type
+    dw 0                       ; Flags
+    dd 8                       ; Size
 multiboot_header_end:
 
-/* ============================================================================
- * Entry Point
- * ============================================================================
- */
-.section ".text"
-.code32
+; ============================================================================
+; GDT (Global Descriptor Table)
+; ============================================================================
+section ".rodata"
+align 16
+gdt_start:
+    ; Null descriptor
+    dq 0
+    
+    ; Kernel code segment (0x08)
+    dw 0xFFFF, 0x0000
+    db 0x00, 0x9A, 0x20, 0x00
+    
+    ; Kernel data segment (0x10)
+    dw 0xFFFF, 0x0000
+    db 0x00, 0x92, 0x20, 0x00
+    
+    ; User code segment (0x18)
+    dw 0xFFFF, 0x0000
+    db 0x00, 0xFA, 0x20, 0x00
+    
+    ; User data segment (0x20)
+    dw 0xFFFF, 0x0000
+    db 0x00, 0xF2, 0x20, 0x00
+    
+    ; TSS segment (0x28) - filled at runtime
+    dq 0, 0
+gdt_end:
+
+gdt_descriptor:
+    dw gdt_end - gdt_start - 1
+    dq gdt_start
+
+; ============================================================================
+; TSS (Task State Segment)
+; ============================================================================
+section ".bss"
+align 4096
+tss:
+    resq 26                    ; 26 × 8 bytes = 208 bytes (64-bit TSS)
+
+; ============================================================================
+; IDT (Interrupt Descriptor Table)
+; ============================================================================
+section ".rodata"
+align 16
+
+; ISR stub table (addresses of ISR handlers)
+isr_stub_table:
+    %assign i 0
+    %rep 32
+        dq isr_stub_%+i
+    %assign i i+1
+    %endrep
+
+; IRQ stub table
+irq_stub_table:
+    %assign i 0
+    %rep 16
+        dq irq_stub_%+i
+    %assign i i+1
+    %endrep
+
+; ============================================================================
+; Entry Point
+; ============================================================================
+section ".text.boot"
+bits 32
 
 _start:
-    /* Save multiboot info */
-    movl    %eax, %esi              /* Magic */
-    movl    %ebx, %edi              /* MBI pointer */
-    
-    /* Disable interrupts */
+    ; Disable interrupts
     cli
     
-    /* Set up stack */
-    movl    $stack_top, %esp
+    ; Save multiboot info
+    mov edi, ebx              ; Multiboot2 info pointer
+    mov esi, eax              ; Multiboot2 magic
     
-    /* Check for multiboot2 */
-    cmpl    $0x36D76289, %esi
-    jne     .halt
+    ; Check multiboot2 magic
+    cmp eax, 0x36D76289
+    jne .hang
     
-    /* ========================================================================
-     * Set up page tables (identity map first 4GB using 2MB pages)
-     * ========================================================================
-     */
-    /* Clear PML4 */
-    movl    $pml4, %eax
-    movl    $0, %ecx
-    movl    $1024, %edx
-.clear_pml4:
-    movl    %ecx, (%eax)
-    addl    $4, %eax
-    decl    %edx
-    jnz     .clear_pml4
+    ; Set up stack
+    mov esp, stack_top_32
     
-    /* Clear PDPT */
-    movl    $pdpt, %eax
-    movl    $0, %ecx
-    movl    $1024, %edx
-.clear_pdpt:
-    movl    %ecx, (%eax)
-    addl    $4, %eax
-    decl    %edx
-    jnz     .clear_pdpt
+    ; Load GDT
+    lgdt [gdt_descriptor_32]
     
-    /* PML4[0] → PDPT */
-    movl    $pdpt, %eax
-    orl     $0x03, %eax             /* Present + Writable */
-    movl    %eax, pml4
+    ; Switch to protected mode (should already be in PM from GRUB)
     
-    /* PDPT[0] → PD0 (0-1GB) */
-    movl    $pd0, %eax
-    orl     $0x03, %eax
-    movl    %eax, pdpt
+    ; Far jump to load new CS
+    jmp 0x08:.pm_entry
+
+.pm_entry:
+    ; Load data segments
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
     
-    /* PDPT[1] → PD1 (1-2GB) */
-    movl    $pd1, %eax
-    orl     $0x03, %eax
-    movl    %eax, pdpt + 8
+    ; Set up page tables for long mode
+    ; PML4 at 0x100000 (1MB)
+    mov edi, 0x100000
+    xor eax, eax
+    mov ecx, 4096 / 4
+    rep stosd                 ; Clear PML4
     
-    /* PDPT[2] → PD2 (2-3GB) */
-    movl    $pd2, %eax
-    orl     $0x03, %eax
-    movl    %eax, pdpt + 16
+    ; PDPT at 0x101000
+    mov edi, 0x101000
+    xor eax, eax
+    mov ecx, 4096 / 4
+    rep stosd                 ; Clear PDPT
     
-    /* PDPT[3] → PD3 (3-4GB) */
-    movl    $pd3, %eax
-    orl     $0x03, %eax
-    movl    %eax, pdpt + 24
+    ; PD at 0x102000
+    mov edi, 0x102000
+    xor eax, eax
+    mov ecx, 4096 / 4
+    rep stosd                 ; Clear PD
     
-    /* Fill PD0-PD3 with 2MB pages */
-    /* Each PD has 512 entries, each mapping 2MB = 1GB total */
-    movl    $0x83, %eax             /* Present + Writable + Page Size (2MB) */
-    movl    $pd0, %ebx
-    movl    $2048, %ecx             /* 512 * 4 PDs */
-.fill_pd:
-    movl    %eax, (%ebx)
-    addl    $0x00200000, %eax       /* Next 2MB */
-    addl    $8, %ebx
-    decl    %ecx
-    jnz     .fill_pd
+    ; Set up PML4[0] → PDPT
+    mov dword [0x100000], 0x101003  ; Present + Writable
     
-    /* Enable PAE */
-    movl    %cr4, %eax
-    orl     $0x20, %eax             /* PAE bit */
-    movl    %eax, %cr4
+    ; Set up PDPT[0] → PD
+    mov dword [0x101000], 0x102003  ; Present + Writable
     
-    /* Load PML4 into CR3 */
-    movl    $pml4, %eax
-    movl    %eax, %cr3
+    ; Set up PD entries (2MB pages, identity map first 4GB)
+    mov edi, 0x102000
+    mov eax, 0x83            ; Present + Writable + Page Size (2MB)
+    mov ecx, 512             ; 512 × 2MB = 1GB
     
-    /* Enable long mode (set EFER.LME) */
-    movl    $0xC0000080, %ecx       /* EFER MSR */
+.map_pd:
+    mov [edi], eax
+    add eax, 0x200000        ; Next 2MB
+    add edi, 8
+    dec ecx
+    jnz .map_pd
+    
+    ; Second PD for 1-2GB
+    mov edi, 0x103000
+    xor eax, eax
+    mov ecx, 4096 / 4
+    rep stosd
+    
+    mov edi, 0x103000
+    mov eax, 0x40000083      ; Start at 1GB
+    mov ecx, 512
+    
+.map_pd2:
+    mov [edi], eax
+    add eax, 0x200000
+    add edi, 8
+    dec ecx
+    jnz .map_pd2
+    
+    ; Set up PDPT[1] → PD2
+    mov dword [0x101008], 0x103003
+    
+    ; Enable PAE (CR4.PAE = bit 5)
+    mov eax, cr4
+    or eax, (1 << 5)
+    mov cr4, eax
+    
+    ; Load PML4 into CR3
+    mov eax, 0x100000
+    mov cr3, eax
+    
+    ; Enable long mode (EFER.LME = bit 8)
+    mov ecx, 0xC0000080      ; EFER MSR
     rdmsr
-    orl     $0x100, %eax            /* LME bit */
+    or eax, (1 << 8)
     wrmsr
     
-    /* Enable paging */
-    movl    %cr0, %eax
-    orl     $0x80000000, %eax       /* PG bit */
-    movl    %eax, %cr0
+    ; Enable paging (CR0.PG = bit 31)
+    mov eax, cr0
+    or eax, (1 << 31)
+    mov cr0, eax
     
-    /* Load 64-bit GDT */
-    lgdt    gdt64_pointer
-    
-    /* Far jump to 64-bit code */
-    ljmpl   $0x08, $long_mode_entry
+    ; Far jump to 64-bit code
+    jmp 0x08:lm_entry
 
+.hang:
+    hlt
+    jmp .hang
+
+; 32-bit GDT descriptor
+gdt_descriptor_32:
+    dw gdt_end - gdt_start - 1
+    dd gdt_start
+
+; 32-bit stack
+section ".bss"
+align 16
+stack_bottom_32:
+    resb 16384
+stack_top_32:
+
+; ============================================================================
+; 64-bit Long Mode Entry
+; ============================================================================
+section ".text.boot"
+bits 64
+
+lm_entry:
+    ; Load 64-bit data segments
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    
+    ; Set up 64-bit stack
+    mov rsp, stack_top
+    
+    ; Set up TSS
+    lea rax, [rel tss]
+    mov [gdt_start + 0x28], ax
+    mov word [gdt_start + 0x28 + 2], 0
+    mov byte [gdt_start + 0x28 + 4], 0x89  ; Present, 64-bit TSS
+    mov byte [gdt_start + 0x28 + 5], 0
+    mov word [gdt_start + 0x28 + 6], 0
+    shr rax, 16
+    mov [gdt_start + 0x28 + 2], ax
+    shr rax, 8
+    mov [gdt_start + 0x28 + 4], al
+    shr rax, 8
+    mov [gdt_start + 0x28 + 7], al
+    
+    ; TSS IST1 for double fault
+    lea rax, [rel df_stack_top]
+    mov [tss + 4], rax       ; IST1
+    
+    ; TSS RSP0 for kernel stack
+    lea rax, [rel stack_top]
+    mov [tss + 1], rax       ; RSP0
+    
+    ; Load task register
+    ltr 0x28
+    
+    ; Reload GDT (64-bit version)
+    lgdt [rel gdt_descriptor]
+    
+    ; Call kernel main
+    ; rdi = multiboot2 info pointer (saved from 32-bit)
+    call kernel_main
+    
+    ; Should not return
 .halt:
-    hlt
-    jmp     .halt
-
-/* ============================================================================
- * 64-bit Entry
- * ============================================================================
- */
-.code64
-long_mode_entry:
-    /* Set up segment registers */
-    movl    $0x10, %eax
-    movl    %eax, %ds
-    movl    %eax, %es
-    movl    %eax, %fs
-    movl    %eax, %gs
-    movl    %eax, %ss
-    
-    /* Set up 64-bit stack */
-    movq    $stack_top, %rsp
-    
-    /* Call kernel_main(magic, mbi) */
-    movl    %esi, %edi              /* First arg: magic */
-    movl    %r8d, %esi              /* Second arg: mbi (saved earlier) */
-    /* Actually, we need to pass the saved values properly */
-    /* rdi = magic, rsi = mbi */
-    
-    call    kernel_main
-    
-    /* Should never return */
     cli
-.halt64:
     hlt
-    jmp     .halt64
+    jmp .halt
 
-/* ============================================================================
- * GDT (64-bit)
- * ============================================================================
- */
-.align 16
-gdt64:
-    .quad   0                       /* Null */
-    .quad   0x00209A0000000000      /* Code: 64-bit, exec, read */
-    .quad   0x0000920000000000      /* Data: 64-bit, write */
-    .quad   0x0020FA0000000000      /* User code: 64-bit, DPL=3 */
-    .quad   0x0000F20000000000      /* User data: 64-bit, DPL=3 */
-gdt64_end:
+; ============================================================================
+; ISR Stubs (CPU Exceptions 0-31)
+; ============================================================================
+section ".text"
+bits 64
 
-gdt64_pointer:
-    .word   gdt64_end - gdt64 - 1
-    .quad   gdt64
+; Macro for ISR without error code
+%macro ISR_NOERR 1
+isr_stub_%+1:
+    push 0                   ; Dummy error code
+    push %1                  ; Interrupt number
+    jmp isr_common
+%endmacro
 
-/* ============================================================================
- * ISR/IRQ Stubs
- * ============================================================================
- */
-.macro ISR_NOERR n
-isr\n:
-    pushq   $0                      /* Dummy error code */
-    pushq   $\n                     /* Interrupt number */
-    jmp     isr_common
-.endm
+; Macro for ISR with error code
+%macro ISR_ERR 1
+isr_stub_%+1:
+    ; Error code already pushed by CPU
+    push %1                  ; Interrupt number
+    jmp isr_common
+%endmacro
 
-.macro ISR_ERR n
-isr\n:
-    pushq   $\n                     /* Error code already pushed */
-    jmp     isr_common
-.endm
+; CPU exception handlers
+ISR_NOERR 0    ; Divide by zero
+ISR_NOERR 1    ; Debug
+ISR_NOERR 2    ; NMI
+ISR_NOERR 3    ; Breakpoint
+ISR_NOERR 4    ; Overflow
+ISR_NOERR 5    ; Bound range
+ISR_NOERR 6    ; Invalid opcode
+ISR_NOERR 7    ; Device not available
+ISR_ERR   8    ; Double fault (has error code)
+ISR_NOERR 9    ; Coprocessor segment overrun
+ISR_ERR   10   ; Invalid TSS
+ISR_ERR   11   ; Segment not present
+ISR_ERR   12   ; Stack segment fault
+ISR_ERR   13   ; General protection fault
+ISR_ERR   14   ; Page fault
+ISR_NOERR 15   ; Reserved
+ISR_NOERR 16   ; x87 FPU error
+ISR_ERR   17   ; Alignment check
+ISR_NOERR 18   ; Machine check
+ISR_NOERR 19   ; SIMD floating point
+ISR_NOERR 20   ; Virtualization
+ISR_NOERR 21   ; Control protection
+ISR_NOERR 22   ; Reserved
+ISR_NOERR 23   ; Reserved
+ISR_NOERR 24   ; Reserved
+ISR_NOERR 25   ; Reserved
+ISR_NOERR 26   ; Reserved
+ISR_NOERR 27   ; Reserved
+ISR_NOERR 28   ; Hypervisor injection
+ISR_ERR   29   ; VMM communication
+ISR_ERR   30   ; Security
+ISR_NOERR 31   ; Reserved
 
-.macro IRQ n, irq_num
-irq\n:
-    pushq   $0
-    pushq   $\irq_num
-    jmp     irq_common
-.endm
-
+; Common ISR handler
 isr_common:
-    /* Save all registers */
-    pushq   %rax
-    pushq   %rbx
-    pushq   %rcx
-    pushq   %rdx
-    pushq   %rsi
-    pushq   %rdi
-    pushq   %rbp
-    pushq   %r8
-    pushq   %r9
-    pushq   %r10
-    pushq   %r11
-    pushq   %r12
-    pushq   %r13
-    pushq   %r14
-    pushq   %r15
+    ; Save all registers
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
     
-    /* Call C handler */
-    movq    120(%rsp), %rdi         /* Interrupt number */
-    call    isr_handler
+    ; Save data segments
+    mov ax, ds
+    push ax
     
-    /* Restore registers */
-    popq    %r15
-    popq    %r14
-    popq    %r13
-    popq    %r12
-    popq    %r11
-    popq    %r10
-    popq    %r9
-    popq    %r8
-    popq    %rbp
-    popq    %rdi
-    popq    %rsi
-    popq    %rdx
-    popq    %rcx
-    popq    %rbx
-    popq    %rax
+    ; Load kernel data segment
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
     
-    addq    $16, %rsp               /* Remove error code + int number */
+    ; Call C handler
+    ; rdi = interrupt number (from stack)
+    ; rsi = error code
+    mov rdi, [rsp + 15*8 + 8]   ; Int number
+    mov rsi, [rsp + 15*8 + 16]  ; Error code
+    
+    ; If page fault, get CR2
+    cmp rdi, 14
+    jne .not_pf
+    mov rdx, cr2
+    jmp .call_handler
+.not_pf:
+    xor rdx, rdx
+    
+.call_handler:
+    extern isr_handler
+    call isr_handler
+    
+    ; Restore data segments
+    pop ax
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    
+    ; Restore registers
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    
+    ; Remove error code and interrupt number
+    add rsp, 16
+    
     iretq
 
+; ============================================================================
+; IRQ Stubs (32-47)
+; ============================================================================
+section ".text"
+bits 64
+
+%macro IRQ_STUB 1
+irq_stub_%+1:
+    push 0
+    push %1 + 32
+    jmp irq_common
+%endmacro
+
+IRQ_STUB 0     ; IRQ0  - PIT Timer
+IRQ_STUB 1     ; IRQ1  - Keyboard
+IRQ_STUB 2     ; IRQ2  - Cascade
+IRQ_STUB 3     ; IRQ3  - COM2
+IRQ_STUB 4     ; IRQ4  - COM1
+IRQ_STUB 5     ; IRQ5  - LPT2
+IRQ_STUB 6     ; IRQ6  - Floppy
+IRQ_STUB 7     ; IRQ7  - LPT1
+IRQ_STUB 8     ; IRQ8  - RTC
+IRQ_STUB 9     ; IRQ9  - Free
+IRQ_STUB 10    ; IRQ10 - Free
+IRQ_STUB 11    ; IRQ11 - Free
+IRQ_STUB 12    ; IRQ12 - Mouse
+IRQ_STUB 13    ; IRQ13 - FPU
+IRQ_STUB 14    ; IRQ14 - Primary ATA
+IRQ_STUB 15    ; IRQ15 - Secondary ATA
+
+; Common IRQ handler
 irq_common:
-    pushq   %rax
-    pushq   %rbx
-    pushq   %rcx
-    pushq   %rdx
-    pushq   %rsi
-    pushq   %rdi
-    pushq   %rbp
-    pushq   %r8
-    pushq   %r9
-    pushq   %r10
-    pushq   %r11
-    pushq   %r12
-    pushq   %r13
-    pushq   %r14
-    pushq   %r15
+    push rax
+    push rbx
+    push rcx
+    push rdx
+    push rsi
+    push rdi
+    push rbp
+    push r8
+    push r9
+    push r10
+    push r11
+    push r12
+    push r13
+    push r14
+    push r15
     
-    movq    120(%rsp), %rdi
-    call    irq_handler
+    mov ax, ds
+    push ax
     
-    popq    %r15
-    popq    %r14
-    popq    %r13
-    popq    %r12
-    popq    %r11
-    popq    %r10
-    popq    %r9
-    popq    %r8
-    popq    %rbp
-    popq    %rdi
-    popq    %rsi
-    popq    %rdx
-    popq    %rcx
-    popq    %rbx
-    popq    %rax
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
     
-    addq    $16, %rsp
+    ; Call IRQ handler
+    mov rdi, [rsp + 15*8 + 8]   ; IRQ number
+    extern irq_handler
+    call irq_handler
+    
+    ; Send EOI to PIC
+    mov al, 0x20
+    out 0x20, al
+    cmp rdi, 40                  ; If IRQ >= 8, also EOI slave
+    jl .no_slave_eoi
+    out 0xA0, al
+.no_slave_eoi:
+    
+    pop ax
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop r11
+    pop r10
+    pop r9
+    pop r8
+    pop rbp
+    pop rdi
+    pop rsi
+    pop rdx
+    pop rcx
+    pop rbx
+    pop rax
+    
+    add rsp, 16
     iretq
 
-/* CPU Exception ISRs */
-ISR_NOERR 0     /* Divide by zero */
-ISR_NOERR 1     /* Debug */
-ISR_NOERR 2     /* NMI */
-ISR_NOERR 3     /* Breakpoint */
-ISR_NOERR 4     /* Overflow */
-ISR_NOERR 5     /* Bound range */
-ISR_NOERR 6     /* Invalid opcode */
-ISR_NOERR 7     /* Device not available */
-ISR_ERR   8     /* Double fault */
-ISR_NOERR 9     /* Coprocessor */
-ISR_ERR   10    /* Invalid TSS */
-ISR_ERR   11    /* Segment not present */
-ISR_ERR   12    /* Stack segment fault */
-ISR_ERR   13    /* General protection fault */
-ISR_ERR   14    /* Page fault */
+; ============================================================================
+; Context Switch (Scheduler)
+; ============================================================================
+section ".text"
+bits 64
 
-/* Hardware IRQs (remapped to 32-47) */
-IRQ 0,  32      /* PIT Timer */
-IRQ 1,  33      /* Keyboard */
-IRQ 2,  34      /* Cascade */
-IRQ 3,  35
-IRQ 4,  36
-IRQ 5,  37
-IRQ 6,  38
-IRQ 7,  39
-IRQ 8,  40      /* RTC */
-IRQ 9,  41
-IRQ 10, 42
-IRQ 11, 43
-IRQ 12, 44      /* Mouse */
-IRQ 13, 45
-IRQ 14, 46      /* Primary ATA */
-IRQ 15, 47      /* Secondary ATA */
+global context_switch
+; rdi = old process stack pointer (pointer to save)
+; rsi = new process stack pointer (value to load)
 
-/* ============================================================================
- * Context Switch (for scheduler)
- * ============================================================================
- */
-.global context_switch
 context_switch:
-    /* Save old context */
-    pushq   %r15
-    pushq   %r14
-    pushq   %r13
-    pushq   %r12
-    pushq   %r11
-    pushq   %r10
-    pushq   %r9
-    pushq   %r8
-    pushq   %rdi
-    pushq   %rsi
-    pushq   %rbp
-    pushq   %rdx
-    pushq   %rcx
-    pushq   %rbx
-    pushq   %rax
+    ; Save old process registers
+    push rbp
+    push rbx
+    push r12
+    push r13
+    push r14
+    push r15
     
-    /* Save old RSP to old_ctx */
-    movq    %rdi, %rax
-    movq    %rsp, (%rax)
+    ; Save old RSP
+    mov [rdi], rsp
     
-    /* Load new CR3 (page tables) */
-    movq    %rdx, %cr3
+    ; Load new RSP
+    mov rsp, rsi
     
-    /* Load new RSP from new_ctx */
-    movq    %rsi, %rsp
+    ; Restore new process registers
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbx
+    pop rbp
     
-    /* Restore new context */
-    popq    %rax
-    popq    %rbx
-    popq    %rcx
-    popq    %rdx
-    popq    %rbp
-    popq    %rsi
-    popq    %rdi
-    popq    %r8
-    popq    %r9
-    popq    %r10
-    popq    %r11
-    popq    %r12
-    popq    %r13
-    popq    %r14
-    popq    %r15
-    
-    iretq
+    ret
 
-/* ============================================================================
- * Syscall Entry (SYSCALL instruction)
- * ============================================================================
- */
-.global syscall_entry
+; ============================================================================
+; SYSCALL/SYSRET Entry
+; ============================================================================
+section ".text"
+bits 64
+
+global syscall_entry
 syscall_entry:
-    /* Swap GS (kernel GS base) */
+    ; Swap GS to kernel GS base
     swapgs
     
-    /* Save user RSP */
-    movq    %rsp, %gs:0            /* Save to per-CPU area */
-    movq    %gs:8, %rsp            /* Load kernel stack */
+    ; Save user RSP
+    mov gs:0, rsp
+    mov rsp, gs:8              ; Kernel stack
     
-    /* Save user registers */
-    pushq   %rcx                    /* Return RIP */
-    pushq   %r11                    /* RFLAGS */
-    pushq   %rbx
-    pushq   %rbp
-    pushq   %r12
-    pushq   %r13
-    pushq   %r14
-    pushq   %r15
+    ; Save user registers
+    push rcx                   ; Return RIP
+    push r11                   ; Saved RFLAGS
+    push rax                   ; Syscall number
+    push rbx
+    push rbp
+    push r12
+    push r13
+    push r14
+    push r15
     
-    /* Call syscall handler */
-    movq    %rax, %rdi              /* Syscall number */
-    movq    %rdi, %rsi              /* arg1 */
-    movq    %rsi, %rdx              /* arg2 */
-    movq    %rdx, %rcx              /* arg3 */
-    movq    %r10, %r8               /* arg4 */
-    movq    %r8,  %r9               /* arg5 */
-    call    syscall_handler
+    ; Call syscall handler
+    ; rdi = syscall number (already in rdi from user)
+    ; rsi, rdx, r10, r8, r9 = arguments
+    mov rcx, r10               ; r10 → rcx for C calling convention
+    extern syscall_handler
+    call syscall_handler
     
-    /* Restore registers */
-    popq    %r15
-    popq    %r14
-    popq    %r13
-    popq    %r12
-    popq    %rbp
-    popq    %rbx
-    popq    %r11
-    popq    %rcx
+    ; Restore registers
+    pop r15
+    pop r14
+    pop r13
+    pop r12
+    pop rbp
+    pop rbx
+    pop rax                    ; Return value
+    pop r11                    ; RFLAGS
+    pop rcx                    ; Return RIP
     
-    /* Restore user RSP */
-    movq    %rsp, %gs:8
-    movq    %gs:0, %rsp
-    
+    ; Restore user RSP
+    mov rsp, gs:0
     swapgs
+    
     sysretq
 
-/* ============================================================================
- * Data
- * ============================================================================
- */
-.section ".bss"
-.align 4096
+; ============================================================================
+; I/O Port Helpers (called from DNAsm code)
+; ============================================================================
+section ".text"
+bits 64
 
-pml4:   .skip 4096
-pdpt:   .skip 4096
-pd0:    .skip 4096
-pd1:    .skip 4096
-pd2:    .skip 4096
-pd3:    .skip 4096
+global outb_func
+global inb_func
+global outw_func
+global inw_func
+global outl_func
+global inl_func
+global io_wait_func
 
-.align 16
+outb_func:
+    mov dx, di
+    mov al, sil
+    out dx, al
+    ret
+
+inb_func:
+    mov dx, di
+    in al, dx
+    ret
+
+outw_func:
+    mov dx, di
+    mov ax, si
+    out dx, ax
+    ret
+
+inw_func:
+    mov dx, di
+    in ax, dx
+    ret
+
+outl_func:
+    mov dx, di
+    mov eax, esi
+    out dx, eax
+    ret
+
+inl_func:
+    mov dx, di
+    in eax, dx
+    ret
+
+io_wait_func:
+    mov dx, 0x80
+    mov al, 0
+    out dx, al
+    ret
+
+; ============================================================================
+; CR register access
+; ============================================================================
+section ".text"
+bits 64
+
+global read_cr2
+global read_cr3
+global write_cr3
+global invlpg_func
+
+read_cr2:
+    mov rax, cr2
+    ret
+
+read_cr3:
+    mov rax, cr3
+    ret
+
+write_cr3:
+    mov cr3, rdi
+    ret
+
+invlpg_func:
+    invlpg [rdi]
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+section ".bss"
+align 4096
+
+; Page tables (already set up, but reserve space)
+; pml4: resq 512
+; pdpt: resq 512
+; pd:   resq 512
+
+; Kernel stack
+align 16
 stack_bottom:
-    .skip   65536
+    resb 65536
 stack_top:
+
+; Double fault stack (IST1)
+align 16
+df_stack_bottom:
+    resb 8192
+df_stack_top:
+
+; IDT storage
+align 16
+idt:
+    resq 256 * 2              ; 256 entries × 16 bytes
+
+idt_descriptor:
+    resw 1                    ; Limit
+    resq 1                    ; Base

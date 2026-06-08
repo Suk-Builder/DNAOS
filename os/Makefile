@@ -38,49 +38,63 @@ DNA_SRCS = kernel/kernel.dna \
            kernel/drivers/serial.dna \
            kernel/gui/wm.dna \
            kernel/sys/syscall.dna \
-           kernel/shell/dnasm.dna
+           kernel/shell/dnasm.dna \
+           kernel/net/tcpip.dna \
+           kernel/lib/stdlib.dna \
+           kernel/boot/compiler.dna
 
-# x86 assembly (boot code, must stay as .S)
-ASM_SRCS = kernel/boot.S kernel/font.S
+# Assembly source files (hardware-required, not DNAsm)
+ASM_SRCS = kernel/boot.S \
+           kernel/font.S
 
-# Generated NASM files
-DNA_NASMS = $(patsubst kernel/%.dna,build/%.nasm,$(DNA_SRCS))
+# Build directory
+BUILDDIR = build
 
 # Object files
-DNA_OBJS = $(patsubst kernel/%.dna,build/%.o,$(DNA_SRCS))
-ASM_OBJS = $(patsubst kernel/%.S,build/%.o,$(ASM_SRCS))
+DNA_NASMS = $(patsubst kernel/%.dna,$(BUILDDIR)/%.nasm,$(DNA_SRCS))
+DNA_OBJS  = $(patsubst kernel/%.dna,$(BUILDDIR)/%.o,$(DNA_SRCS))
+ASM_OBJS  = $(patsubst kernel/%.S,$(BUILDDIR)/%.o,$(ASM_SRCS))
 
 OBJ = $(ASM_OBJS) $(DNA_OBJS)
 
-.PHONY: all clean iso run run-uefi usb dasm-test
+.PHONY: all clean iso run run-uefi usb dasm-test compile check
 
 all: dnaos.bin
 
 # ============================================================================
-# DNAsm → NASM → Object
+# Build directory
 # ============================================================================
 
-# Create build directories
-builddirs:
-	@mkdir -p build/mm build/proc build/fs build/drivers build/gui build/sys build/shell
+$(BUILDDIR):
+	mkdir -p $(BUILDDIR)
+	mkdir -p $(BUILDDIR)/mm
+	mkdir -p $(BUILDDIR)/proc
+	mkdir -p $(BUILDDIR)/fs
+	mkdir -p $(BUILDDIR)/drivers
+	mkdir -p $(BUILDDIR)/gui
+	mkdir -p $(BUILDDIR)/sys
+	mkdir -p $(BUILDDIR)/shell
+	mkdir -p $(BUILDDIR)/net
+	mkdir -p $(BUILDDIR)/lib
+	mkdir -p $(BUILDDIR)/boot
 
-# Compile DNAsm to NASM
-build/%.nasm: kernel/%.dna dasm/dasm.py | builddirs
-	@echo "  DNAsm  $< → $@"
+# ============================================================================
+# Compile DNAsm → NASM → ELF64
+# ============================================================================
+
+# Step 1: DNAsm → NASM
+$(BUILDDIR)/%.nasm: kernel/%.dna | $(BUILDDIR)
+	@echo "DNAsm  $< → $@"
 	@$(DASM) $< -o $@ -n
 
-# Assemble NASM to ELF64
-build/%.o: build/%.nasm
-	@echo "  NASM   $< → $@"
+# Step 2: NASM → ELF64 object
+$(BUILDDIR)/%.o: $(BUILDDIR)/%.nasm
+	@echo "NASM   $< → $@"
 	@$(NASM) -f elf64 -o $@ $<
 
-# Boot assembly (x86, not DNAsm)
-build/boot.o: kernel/boot.S | builddirs
-	@echo "  NASM   $< → $@"
-	@$(NASM) -f elf64 -o $@ $<
-
-build/font.o: kernel/font.S | builddirs
-	@echo "  NASM   $< → $@"
+# Assembly files (boot.S, font.S) → ELF64 directly
+$(BUILDDIR)/%.o: kernel/%.S | $(BUILDDIR)
+	@echo "NASM   $< → $@"
 	@$(NASM) -f elf64 -o $@ $<
 
 # ============================================================================
@@ -88,31 +102,27 @@ build/font.o: kernel/font.S | builddirs
 # ============================================================================
 
 dnaos.bin: $(OBJ)
-	@echo "  LD     $@"
+	@echo "LD     $@"
 	@$(LD) $(LDFLAGS) -o $@ $(OBJ)
 
 # ============================================================================
-# ISO
+# ISO (GRUB bootable)
 # ============================================================================
 
 iso: dnaos.iso
 
 dnaos.iso: dnaos.bin
-	@mkdir -p iso/boot/grub
-	@cp dnaos.bin iso/boot/dnaos.bin
-	@echo 'set timeout=0' > iso/boot/grub/grub.cfg
-	@echo 'set default=0' >> iso/boot/grub/grub.cfg
-	@echo '' >> iso/boot/grub/grub.cfg
-	@echo 'menuentry "DNAOS - Quaternary Operating System" {' >> iso/boot/grub/grub.cfg
-	@echo '    multiboot2 /boot/dnaos.bin' >> iso/boot/grub/grub.cfg
-	@echo '    boot' >> iso/boot/grub/grub.cfg
-	@echo '}' >> iso/boot/grub/grub.cfg
-	@echo '' >> iso/boot/grub/grub.cfg
-	@echo 'menuentry "DNAOS - Safe Mode (800x600)" {' >> iso/boot/grub/grub.cfg
-	@echo '    multiboot2 /boot/dnaos.bin' >> iso/boot/grub/grub.cfg
-	@echo '    boot' >> iso/boot/grub/grub.cfg
-	@echo '}' >> iso/boot/grub/grub.cfg
-	grub-mkrescue -o dnaos.iso iso/ 2>/dev/null
+	mkdir -p iso/boot/grub
+	cp dnaos.bin iso/boot/
+	cp grub.cfg iso/boot/grub/
+	grub-mkrescue -o dnaos.iso iso/ 2>/dev/null || \
+		xorriso -as mkisofs -R -J -c boot/boot.cat \
+		-b boot/grub/i386-pc/eltorito.img -no-emul-boot \
+		-boot-load-size 4 -boot-info-table \
+		--grub2-boot-info -eltorito-alt-boot \
+		-e boot/grub/efi.img -no-emul-boot \
+		-o dnaos.iso iso/ 2>/dev/null || \
+		echo "WARNING: Could not create ISO. Install grub-mkrescue or xorriso."
 
 # ============================================================================
 # QEMU
@@ -150,6 +160,20 @@ dasm-test:
 	@echo "Testing DNAsm compiler..."
 	@python3 dasm/dasm.py --test
 	@echo "All tests passed!"
+
+# ============================================================================
+# Compile only (no link)
+# ============================================================================
+
+compile: $(DNA_NASMS)
+	@echo "All DNAsm files compiled to NASM"
+
+# ============================================================================
+# Check syntax
+# ============================================================================
+
+check: compile
+	@echo "Syntax check complete"
 
 # ============================================================================
 # Clean

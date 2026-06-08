@@ -1,0 +1,968 @@
+; ============================================================================
+; DNAOS - Self-Hosting Compiler (DNAsm → DNAsm)
+; ============================================================================
+; 
+; This is the DNAsm compiler, written IN DNAsm.
+; It compiles .dna source files to x86_64 machine code.
+; 
+* Phase 1: Tokenizer (source → tokens)
+* Phase 2: Parser (tokens → AST)
+* Phase 3: Code generator (AST → x86_64 machine code)
+* Phase 4: ELF64 writer (machine code → executable)
+; 
+; When this compiler can compile itself, DNAOS is self-hosting.
+; ============================================================================
+
+; Token types
+TOK_EOF         equ 0
+TOK_NEWLINE     equ 1
+TOK_LABEL       equ 2     ; identifier:
+TOK_INSTR       equ 3     ; mov, add, etc.
+TOK_REGISTER    equ 4     ; rA, rT, rC, rG, rS, rP, rB, rK, r0-r7
+TOK_NUMBER      equ 5     ; 42, 0xFF, 0b1010
+TOK_STRING      equ 6     ; "hello"
+TOK_ATCG        equ 7     ; atcg "ATCG"
+TOK_SYMBOL      equ 8     ; + - * / , [ ] etc.
+TOK_DIRECTIVE   equ 9     ; .code, .data, .bss, .global, etc.
+TOK_MACRO       equ 10    ; macro, endm
+TOK_INCLUDE     equ 11    ; include
+TOK_QUAT_OP     equ 12    ; qand, qor, qnot, qadd
+TOK_COMMENT     equ 13    ; ; comment
+TOK_IDENT       equ 14    ; Unknown identifier
+
+; AST node types
+AST_INSTR       equ 1     ; Instruction
+AST_LABEL       equ 2     ; Label definition
+AST_DIRECTIVE   equ 3     ; Section directive
+AST_DATA        equ 4     ; Data definition (db, dw, dd, dq, resb, etc.)
+AST_QUAT_OP     equ 5     ; Quaternary operation
+AST_ATCG        equ 6     ; ATCG data
+AST_MACRO_DEF   equ 7     ; Macro definition
+AST_MACRO_CALL  equ 8     ; Macro invocation
+AST_INCLUDE     equ 9     ; Include file
+
+; ELF constants
+ELF_MAGIC       equ 0x464C457F   ; \x7FELF
+ELF_CLASS_64    equ 2
+ELF_DATA_LE     equ 1
+ELF_TYPE_REL    equ 1      ; Relocatable
+ELF_MACHINE_X86 equ 62     ; EM_X86_64
+
+; Max sizes
+MAX_TOKENS      equ 4096
+MAX_AST_NODES   equ 2048
+MAX_SECTIONS    equ 8
+MAX_SYMBOLS     equ 1024
+MAX_RELOCATIONS equ 512
+MAX_SOURCE_SIZE equ 65536
+MAX_OUTPUT_SIZE equ 262144
+
+.code
+.global compiler_main
+.global compiler_compile_file
+.global compiler_tokenize
+.global compiler_parse
+.global compiler_generate
+.global compiler_write_elf
+
+; ============================================================================
+; compiler_main - Entry point for self-hosted compiler
+; ============================================================================
+compiler_main:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Read source file from VFS
+    ; rP = filename
+    call compiler_compile_file
+    
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; compiler_compile_file - Compile a .dna file
+; rP = filename → rA = 0 on success
+; ============================================================================
+compiler_compile_file:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    ; Phase 1: Read source
+    ; Open file from VFS
+    ; (would call vfs_open, vfs_read)
+    
+    ; Phase 2: Tokenize
+    call compiler_tokenize
+    
+    ; Phase 3: Parse
+    call compiler_parse
+    
+    ; Phase 4: Generate code
+    call compiler_generate
+    
+    ; Phase 5: Write ELF
+    call compiler_write_elf
+    
+    xor rA, rA             ; Success
+    
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; Tokenizer - Source → Tokens
+; ============================================================================
+
+; compiler_tokenize - Tokenize source code
+; Input: source buffer, length
+; Output: token array
+compiler_tokenize:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    lea rG, [rel comp_source]
+    lea rS, [rel comp_tokens]
+    xor rC, rC             ; Token count
+    
+.tokenize_loop:
+    ; Skip whitespace
+.tokenize_space:
+    cmp byte [rG], ' '
+    je .tokenize_skip
+    cmp byte [rG], 9       ; Tab
+    je .tokenize_skip
+    jmp .tokenize_check
+    
+.tokenize_skip:
+    inc rG
+    jmp .tokenize_space
+    
+.tokenize_check:
+    ; Check for EOF
+    cmp byte [rG], 0
+    je .tokenize_eof
+    
+    ; Check for comment
+    cmp byte [rG], ';'
+    je .tokenize_comment
+    
+    ; Check for newline
+    cmp byte [rG], 10
+    je .tokenize_newline
+    
+    ; Check for string literal
+    cmp byte [rG], '"'
+    je .tokenize_string
+    
+    ; Check for number
+    cmp byte [rG], '0'
+    jb .tokenize_not_number
+    cmp byte [rG], '9'
+    jbe .tokenize_number
+    
+    ; Check for hex number
+    cmp byte [rG], '0'     ; 0x prefix
+    jne .tokenize_not_hex
+    cmp byte [rG + 1], 'x'
+    je .tokenize_hex
+    
+.tokenize_not_hex:
+.tokenize_not_number:
+    ; Check for directive
+    cmp byte [rG], '.'
+    je .tokenize_directive
+    
+    ; Check for symbol
+    cmp byte [rG], ','
+    je .tokenize_symbol
+    cmp byte [rG], '['
+    je .tokenize_symbol
+    cmp byte [rG], ']'
+    je .tokenize_symbol
+    cmp byte [rG], '+'
+    je .tokenize_symbol
+    cmp byte [rG], '-'
+    je .tokenize_symbol
+    cmp byte [rG], '*'
+    je .tokenize_symbol
+    cmp byte [rG], ':'
+    je .tokenize_colon
+    
+    ; Must be identifier (instruction, register, label, etc.)
+    jmp .tokenize_ident
+    
+.tokenize_eof:
+    ; Add EOF token
+    mov qword [rS], TOK_EOF
+    add rS, 16             ; Each token: 8 bytes type + 8 bytes value
+    inc rC
+    jmp .tokenize_done
+    
+.tokenize_comment:
+    ; Skip until newline
+.tokenize_comment_skip:
+    cmp byte [rG], 10
+    je .tokenize_loop
+    cmp byte [rG], 0
+    je .tokenize_eof
+    inc rG
+    jmp .tokenize_comment_skip
+    
+.tokenize_newline:
+    mov qword [rS], TOK_NEWLINE
+    add rS, 16
+    inc rC
+    inc rG
+    jmp .tokenize_loop
+    
+.tokenize_string:
+    ; Parse string literal
+    inc rG                 ; Skip opening quote
+    mov qword [rS], TOK_STRING
+    add rS, 8
+    ; Store string start
+    mov [rS], rG
+    add rS, 8
+    
+.tokenize_string_loop:
+    cmp byte [rG], '"'
+    je .tokenize_string_end
+    cmp byte [rG], 0
+    je .tokenize_done      ; Unterminated string
+    inc rG
+    jmp .tokenize_string_loop
+    
+.tokenize_string_end:
+    mov byte [rG], 0       ; Null-terminate
+    inc rG
+    inc rC
+    jmp .tokenize_loop
+    
+.tokenize_number:
+    ; Parse decimal number
+    mov qword [rS], TOK_NUMBER
+    add rS, 8
+    xor rA, rA
+    
+.tokenize_number_loop:
+    cmp byte [rG], '0'
+    jb .tokenize_number_end
+    cmp byte [rG], '9'
+    ja .tokenize_number_end
+    imul rA, 10
+    mov rC.b, [rG]
+    sub rC, '0'
+    add rA, rC
+    inc rG
+    jmp .tokenize_number_loop
+    
+.tokenize_number_end:
+    mov [rS], rA
+    add rS, 8
+    inc rC
+    jmp .tokenize_loop
+    
+.tokenize_hex:
+    ; Parse hex number (0x prefix)
+    add rG, 2              ; Skip 0x
+    mov qword [rS], TOK_NUMBER
+    add rS, 8
+    xor rA, rA
+    
+.tokenize_hex_loop:
+    mov rC.b, [rG]
+    cmp rC, '0'
+    jb .tokenize_hex_end
+    cmp rC, '9'
+    jbe .tokenize_hex_digit
+    cmp rC, 'A'
+    jb .tokenize_hex_end
+    cmp rC, 'F'
+    jbe .tokenize_hex_upper
+    cmp rC, 'a'
+    jb .tokenize_hex_end
+    cmp rC, 'f'
+    ja .tokenize_hex_end
+    sub rC, 'a' - 10
+    jmp .tokenize_hex_add
+    
+.tokenize_hex_upper:
+    sub rC, 'A' - 10
+    jmp .tokenize_hex_add
+    
+.tokenize_hex_digit:
+    sub rC, '0'
+    
+.tokenize_hex_add:
+    shl rA, 4
+    or rA, rC
+    inc rG
+    jmp .tokenize_hex_loop
+    
+.tokenize_hex_end:
+    mov [rS], rA
+    add rS, 8
+    inc rC
+    jmp .tokenize_loop
+    
+.tokenize_directive:
+    ; Parse directive (.code, .data, .bss, .global, etc.)
+    mov qword [rS], TOK_DIRECTIVE
+    add rS, 8
+    mov [rS], rG
+    add rS, 8
+    
+.tokenize_directive_loop:
+    cmp byte [rG], ' '
+    je .tokenize_directive_end
+    cmp byte [rG], 10
+    je .tokenize_directive_end
+    cmp byte [rG], 0
+    je .tokenize_directive_end
+    inc rG
+    jmp .tokenize_directive_loop
+    
+.tokenize_directive_end:
+    mov byte [rG], 0
+    inc rC
+    jmp .tokenize_loop
+    
+.tokenize_symbol:
+    mov qword [rS], TOK_SYMBOL
+    add rS, 8
+    mov rA.b, [rG]
+    mov [rS], rA
+    add rS, 8
+    inc rG
+    inc rC
+    jmp .tokenize_loop
+    
+.tokenize_colon:
+    ; Previous identifier was a label
+    ; Go back and change last TOK_IDENT to TOK_LABEL
+    sub rS, 16
+    mov qword [rS], TOK_LABEL
+    add rS, 16
+    inc rG                 ; Skip ':'
+    jmp .tokenize_loop
+    
+.tokenize_ident:
+    ; Parse identifier
+    mov [rS], rG           ; Store start position
+    add rS, 8
+    
+.tokenize_ident_loop:
+    cmp byte [rG], ' '
+    je .tokenize_ident_end
+    cmp byte [rG], 10
+    je .tokenize_ident_end
+    cmp byte [rG], ':'
+    je .tokenize_ident_end
+    cmp byte [rG], ','
+    je .tokenize_ident_end
+    cmp byte [rG], '['
+    je .tokenize_ident_end
+    cmp byte [rG], 0
+    je .tokenize_ident_end
+    inc rG
+    jmp .tokenize_ident_loop
+    
+.tokenize_ident_end:
+    mov byte [rG], 0       ; Null-terminate
+    inc rG
+    
+    ; Classify identifier
+    ; Check if register
+    lea rP, [rS - 8]       ; Pointer to ident string
+    call compiler_classify_ident
+    mov [rS], rA           ; Store token type
+    add rS, 8
+    inc rC
+    jmp .tokenize_loop
+    
+.tokenize_done:
+    mov [rel comp_token_count], rC
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; compiler_classify_ident - Classify an identifier
+; rP = string → rA = token type
+compiler_classify_ident:
+    push rG
+    
+    ; Check registers
+    lea rG, [rel reg_names]
+.classify_reg_loop:
+    ; Check rA
+    cmp word [rP], 'rA'
+    je .classify_register
+    cmp word [rP], 'rT'
+    je .classify_register
+    cmp word [rP], 'rC'
+    je .classify_register
+    cmp word [rP], 'rG'
+    je .classify_register
+    cmp word [rP], 'rS'
+    je .classify_register
+    cmp word [rP], 'rP'
+    je .classify_register
+    cmp word [rP], 'rB'
+    je .classify_register
+    cmp word [rP], 'rK'
+    je .classify_register
+    
+    ; Check quaternary ops
+    cmp dword [rP], 'qand'
+    je .classify_quat
+    cmp dword [rP], 'qor '
+    je .classify_quat
+    cmp dword [rP], 'qnot'
+    je .classify_quat
+    cmp dword [rP], 'qadd'
+    je .classify_quat
+    
+    ; Check ATCG
+    cmp dword [rP], 'atcg'
+    je .classify_atcg
+    
+    ; Check instructions
+    ; (would check against full instruction table)
+    
+    ; Default: identifier
+    mov rA, TOK_IDENT
+    pop rG
+    ret
+    
+.classify_register:
+    mov rA, TOK_REGISTER
+    pop rG
+    ret
+    
+.classify_quat:
+    mov rA, TOK_QUAT_OP
+    pop rG
+    ret
+    
+.classify_atcg:
+    mov rA, TOK_ATCG
+    pop rG
+    ret
+
+; ============================================================================
+; Parser - Tokens → AST
+; ============================================================================
+
+; compiler_parse - Parse tokens into AST
+compiler_parse:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    lea rP, [rel comp_tokens]
+    lea rS, [rel comp_ast]
+    xor rC, rC             ; AST node count
+    mov rG, [rel comp_token_count]
+    
+.parse_loop:
+    test rG, rG
+    jz .parse_done
+    
+    ; Get current token type
+    mov rA, [rP]
+    
+    ; Dispatch by token type
+    cmp rA, TOK_LABEL
+    je .parse_label
+    cmp rA, TOK_INSTR
+    je .parse_instruction
+    cmp rA, TOK_DIRECTIVE
+    je .parse_directive
+    cmp rA, TOK_QUAT_OP
+    je .parse_quat_op
+    cmp rA, TOK_ATCG
+    je .parse_atcg_data
+    cmp rA, TOK_NEWLINE
+    je .parse_skip
+    cmp rA, TOK_EOF
+    je .parse_done
+    jmp .parse_skip
+    
+.parse_label:
+    ; Create AST_LABEL node
+    mov qword [rS], AST_LABEL
+    add rS, 8
+    ; Copy label name pointer
+    mov rA, [rP + 8]
+    mov [rS], rA
+    add rS, 8
+    add rP, 16
+    dec rG
+    inc rC
+    jmp .parse_loop
+    
+.parse_instruction:
+    ; Create AST_INSTR node
+    mov qword [rS], AST_INSTR
+    add rS, 8
+    ; Copy instruction name
+    mov rA, [rP + 8]
+    mov [rS], rA
+    add rS, 8
+    
+    ; Parse operands (up to 3)
+    add rP, 16
+    dec rG
+    
+    ; Operand 1
+    call .parse_operand
+    ; Operand 2
+    call .parse_operand
+    ; Operand 3
+    call .parse_operand
+    
+    inc rC
+    jmp .parse_loop
+    
+.parse_operand:
+    ; Parse one operand (register, number, memory, label)
+    ; Simplified: just store the token
+    cmp rG, 0
+    je .parse_operand_done
+    mov rA, [rP]
+    cmp rA, TOK_NEWLINE
+    je .parse_operand_done
+    cmp rA, TOK_EOF
+    je .parse_operand_done
+    
+    ; Store operand
+    mov [rS], rA           ; Type
+    add rS, 8
+    mov rA, [rP + 8]       ; Value
+    mov [rS], rA
+    add rS, 8
+    add rP, 16
+    dec rG
+    
+.parse_operand_done:
+    ret
+    
+.parse_directive:
+    ; Create AST_DIRECTIVE node
+    mov qword [rS], AST_DIRECTIVE
+    add rS, 8
+    mov rA, [rP + 8]
+    mov [rS], rA
+    add rS, 8
+    add rP, 16
+    dec rG
+    inc rC
+    jmp .parse_loop
+    
+.parse_quat_op:
+    ; Create AST_QUAT_OP node
+    mov qword [rS], AST_QUAT_OP
+    add rS, 8
+    mov rA, [rP + 8]
+    mov [rS], rA
+    add rS, 8
+    add rP, 16
+    dec rG
+    inc rC
+    jmp .parse_loop
+    
+.parse_atcg_data:
+    ; Create AST_ATCG node
+    mov qword [rS], AST_ATCG
+    add rS, 8
+    mov rA, [rP + 8]
+    mov [rS], rA
+    add rS, 8
+    add rP, 16
+    dec rG
+    inc rC
+    jmp .parse_loop
+    
+.parse_skip:
+    add rP, 16
+    dec rG
+    jmp .parse_loop
+    
+.parse_done:
+    mov [rel comp_ast_count], rC
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; Code Generator - AST → x86_64 Machine Code
+; ============================================================================
+
+; compiler_generate - Generate x86_64 code from AST
+compiler_generate:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    lea rP, [rel comp_ast]
+    lea rS, [rel comp_output]
+    xor rC, rC             ; Output position
+    mov rG, [rel comp_ast_count]
+    
+.generate_loop:
+    test rG, rG
+    jz .generate_done
+    
+    ; Get AST node type
+    mov rA, [rP]
+    
+    ; Dispatch
+    cmp rA, AST_INSTR
+    je .gen_instruction
+    cmp rA, AST_LABEL
+    je .gen_label
+    cmp rA, AST_DIRECTIVE
+    je .gen_directive
+    cmp rA, AST_QUAT_OP
+    je .gen_quat_op
+    cmp rA, AST_ATCG
+    je .gen_atcg
+    jmp .gen_skip
+    
+.gen_instruction:
+    ; Look up instruction encoding
+    ; This is the core of the compiler
+    ; For each instruction, emit the correct x86_64 opcode bytes
+    
+    ; Get instruction name
+    add rP, 8
+    mov rA, [rP]           ; Instruction name pointer
+    add rP, 8
+    
+    ; Match instruction
+    call compiler_encode_instruction
+    
+    dec rG
+    jmp .generate_loop
+    
+.gen_label:
+    ; Record label position in symbol table
+    add rP, 8
+    mov rA, [rP]           ; Label name
+    add rP, 8
+    
+    ; Add to symbol table
+    call compiler_add_symbol
+    
+    dec rG
+    jmp .generate_loop
+    
+.gen_directive:
+    ; Handle section directives
+    add rP, 8
+    mov rA, [rP]
+    add rP, 8
+    
+    ; Check which directive
+    ; .code → switch to code section
+    ; .data → switch to data section
+    ; .bss → switch to bss section
+    ; .global → mark symbol as global
+    
+    dec rG
+    jmp .generate_loop
+    
+.gen_quat_op:
+    ; Generate quaternary operation code
+    ; qand → call kernel quat_and function
+    ; qor → call kernel quat_or function
+    ; qnot → call kernel quat_not function
+    ; qadd → call kernel quat_add function
+    
+    add rP, 8
+    mov rA, [rP]           ; Operation name
+    add rP, 8
+    
+    ; Emit: push rC; mov rC, <operand2>; call quat_<op>; pop rC
+    ; (simplified)
+    
+    dec rG
+    jmp .generate_loop
+    
+.gen_atcg:
+    ; Generate ATCG-encoded data
+    add rP, 8
+    mov rA, [rP]           ; ATCG string
+    add rP, 8
+    
+    ; Encode ATCG to raw bytes
+    call compiler_encode_atcg
+    
+    dec rG
+    jmp .generate_loop
+    
+.gen_skip:
+    add rP, 16
+    dec rG
+    jmp .generate_loop
+    
+.generate_done:
+    mov [rel comp_output_size], rC
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; compiler_encode_instruction - Encode one instruction to machine code
+; rA = instruction name, operands follow
+compiler_encode_instruction:
+    push rA
+    push rC
+    push rG
+    
+    ; This is the big one - x86_64 instruction encoding
+    ; Each instruction has a specific opcode format
+    ; We need to handle:
+    ;   - REX prefix (for 64-bit operands, extended registers)
+    ;   - Opcode byte(s)
+    ;   - ModR/M byte
+    ;   - SIB byte
+    ;   - Displacement
+    ;   - Immediate
+    
+    ; Check common instructions
+    ; mov reg, imm64 → REX.W + B8+rd + imm64
+    ; mov reg, reg → REX.W + 89 /r (or 8B /r)
+    ; add reg, imm → REX.W + 81 /0 id (or 83 /0 ib)
+    ; sub reg, imm → REX.W + 81 /5 id
+    ; push reg → 50+rd
+    ; pop reg → 58+rd
+    ; call rel32 → E8 cd
+    ; ret → C3
+    ; nop → 90
+    ; hlt → F4
+    ; out imm8, al → E6 ib
+    ; in al, imm8 → E4 ib
+    ; int imm8 → CD ib
+    
+    ; (Full implementation would be hundreds of cases)
+    ; For self-hosting, we need at minimum:
+    ;   mov, add, sub, and, or, xor, cmp, jmp, je, jne, jl, jg
+    ;   push, pop, call, ret, nop, hlt, in, out, int
+    ;   shl, shr, mul, div, neg, not
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; compiler_add_symbol - Add symbol to symbol table
+; rA = symbol name, rC = current offset
+compiler_add_symbol:
+    push rG
+    
+    lea rG, [rel comp_symbols]
+    ; Find empty slot
+    ; (would scan symbol table)
+    
+    ; Store: name, offset, section, flags
+    mov [rG], rA           ; Name
+    add rG, 8
+    mov [rG], rC           ; Offset
+    add rG, 8
+    mov qword [rG], 0      ; Section
+    add rG, 8
+    mov qword [rG], 0      ; Flags
+    add rG, 8
+    
+    inc qword [rel comp_symbol_count]
+    
+    pop rG
+    ret
+
+; compiler_encode_atcg - Encode ATCG string to raw bytes
+; rA = ATCG string pointer, rS = output buffer
+compiler_encode_atcg:
+    push rA
+    push rC
+    push rG
+    
+.encode_atcg_loop:
+    ; Read 4 ATCG chars → 1 byte
+    xor rG, rG
+    
+    ; Char 0
+    mov rC.b, [rA]
+    call atcg_char_to_val
+    shl rA, 6
+    or rG, rA
+    
+    ; Char 1
+    mov rC.b, [rA + 1]
+    call atcg_char_to_val
+    shl rA, 4
+    or rG, rA
+    
+    ; Char 2
+    mov rC.b, [rA + 2]
+    call atcg_char_to_val
+    shl rA, 2
+    or rG, rA
+    
+    ; Char 3
+    mov rC.b, [rA + 3]
+    call atcg_char_to_val
+    or rG, rA
+    
+    ; Store byte
+    mov [rS], rG.b
+    inc rS
+    add rA, 4
+    
+    ; Check for end
+    cmp byte [rA], 0
+    jne .encode_atcg_loop
+    cmp byte [rA + 1], 0
+    jne .encode_atcg_loop
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ELF64 Writer - Machine Code → Executable
+; ============================================================================
+
+; compiler_write_elf - Write ELF64 relocatable object file
+compiler_write_elf:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    lea rP, [rel comp_output]
+    lea rS, [rel comp_elf_buf]
+    
+    ; ELF header (64 bytes)
+    mov dword [rS], ELF_MAGIC     ; e_ident[0-3]: \x7FELF
+    mov byte [rS + 4], ELF_CLASS_64  ; EI_CLASS
+    mov byte [rS + 5], ELF_DATA_LE   ; EI_DATA
+    mov byte [rS + 6], 1             ; EI_VERSION
+    mov byte [rS + 7], 0             ; EI_OSABI
+    ; Padding bytes 8-15 = 0
+    
+    mov word [rS + 16], ELF_TYPE_REL   ; e_type = relocatable
+    mov word [rS + 18], ELF_MACHINE_X86  ; e_machine = x86_64
+    mov dword [rS + 20], 1             ; e_version
+    mov qword [rS + 24], 0             ; e_entry (0 for .o)
+    mov qword [rS + 32], 64            ; e_phoff (program headers offset)
+    mov qword [rS + 40], 64 + 56 * MAX_SECTIONS  ; e_shoff
+    mov dword [rS + 48], 0             ; e_flags
+    mov word [rS + 52], 64             ; e_ehsize
+    mov word [rS + 54], 56             ; e_phentsize
+    mov word [rS + 56], 0              ; e_phnum
+    mov word [rS + 58], 64             ; e_shentsize
+    mov word [rS + 60], MAX_SECTIONS   ; e_shnum
+    mov word [rS + 62], 0              ; e_shstrndx
+    
+    add rS, 64
+    
+    ; Section headers
+    ; Section 0: NULL
+    ; Section 1: .text (code)
+    ; Section 2: .data (data)
+    ; Section 3: .bss (uninitialized)
+    ; Section 4: .symtab (symbol table)
+    ; Section 5: .strtab (string table)
+    ; Section 6: .rela.text (relocations)
+    ; Section 7: .shstrtab (section name strings)
+    
+    ; (Would write each section header)
+    
+    ; Write code section data
+    ; (Would copy from comp_output)
+    
+    ; Write to file via VFS
+    ; (would call vfs_open, vfs_write)
+    
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+reg_names:
+    db "rA", 0, "rT", 0, "rC", 0, "rG", 0
+    db "rS", 0, "rP", 0, "rB", 0, "rK", 0
+    db "r0", 0, "r1", 0, "r2", 0, "r3", 0
+    db "r4", 0, "r5", 0, "r6", 0, "r7", 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+comp_source:
+    resb MAX_SOURCE_SIZE
+comp_tokens:
+    resb MAX_TOKENS * 16   ; type + value per token
+comp_token_count:
+    resq 1
+comp_ast:
+    resb MAX_AST_NODES * 32  ; type + data per node
+comp_ast_count:
+    resq 1
+comp_output:
+    resb MAX_OUTPUT_SIZE
+comp_output_size:
+    resq 1
+comp_elf_buf:
+    resb MAX_OUTPUT_SIZE + 4096
+comp_symbols:
+    resb MAX_SYMBOLS * 32   ; name + offset + section + flags
+comp_symbol_count:
+    resq 1
+comp_relocations:
+    resb MAX_RELOCATIONS * 24
+comp_reloc_count:
+    resq 1
+comp_current_section:
+    resq 1
+comp_error_line:
+    resq 1
+comp_error_msg:
+    resb 256

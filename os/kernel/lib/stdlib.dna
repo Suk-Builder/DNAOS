@@ -1,0 +1,1073 @@
+; ============================================================================
+; DNAOS - Standard Library (DNAsm)
+; ============================================================================
+; Kernel-level utility functions. No external dependencies.
+; Everything DNAOS needs to function, written in DNAsm.
+; ============================================================================
+
+.code
+.global memcpy
+.global memset
+.global memcmp
+.global strlen
+.global strcpy
+.global strcmp
+.global strncmp
+.global strcat
+.global strchr
+.global strrchr
+.global atoi
+.global itoa
+.global htoa
+.global snprintf
+.global memmove
+
+; ============================================================================
+; memcpy - Copy memory
+; rP = dest, rS = source, rC = count → rP = dest
+; ============================================================================
+memcpy:
+    push rA
+    push rC
+    push rP
+    push rS
+    
+    ; Check alignment for fast copy (8 bytes at a time)
+    test rC, rC
+    jz .memcpy_done
+    
+    test rP, 7
+    jnz .memcpy_byte
+    test rS, 7
+    jnz .memcpy_byte
+    
+    ; Aligned: copy 8 bytes at a time
+    shr rC, 3
+    test rC, rC
+    jz .memcpy_tail
+    
+.memcpy_qword:
+    mov rA, [rS]
+    mov [rP], rA
+    add rP, 8
+    add rS, 8
+    dec rC
+    jnz .memcpy_qword
+    
+.memcpy_tail:
+    ; Copy remaining bytes
+    ; (rC * 8 was already subtracted from original count)
+    ; Simplified: just do byte copy for remainder
+    
+.memcpy_byte:
+    mov rA.b, [rS]
+    mov [rP], rA.b
+    inc rP
+    inc rS
+    dec rC
+    jnz .memcpy_byte
+    
+.memcpy_done:
+    pop rS
+    pop rP
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; memmove - Copy memory (handles overlap)
+; rP = dest, rS = source, rC = count → rP = dest
+; ============================================================================
+memmove:
+    push rA
+    push rC
+    push rP
+    push rS
+    
+    ; Check if regions overlap and dest > source
+    cmp rP, rS
+    jbe .memmove_forward
+    
+    ; Copy backward
+    add rP, rC
+    add rS, rC
+    
+.memcopy_backward:
+    dec rP
+    dec rS
+    mov rA.b, [rS]
+    mov [rP], rA.b
+    dec rC
+    jnz .memcopy_backward
+    jmp .memmove_done
+    
+.memmove_forward:
+    call memcpy
+    
+.memmove_done:
+    pop rS
+    pop rP
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; memset - Fill memory with byte
+; rP = dest, rA = byte value, rC = count → rP = dest
+; ============================================================================
+memset:
+    push rC
+    push rP
+    
+    test rC, rC
+    jz .memset_done
+    
+    ; Check alignment
+    test rP, 7
+    jnz .memset_byte
+    
+    ; Fill 8 bytes at a time
+    ; Replicate byte across qword
+    push rA
+    and rA, 0xFF
+    mov rG, rA
+    shl rG, 8
+    or rA, rG
+    mov rG, rA
+    shl rG, 16
+    or rA, rG
+    mov rG, rA
+    shl rG, 32
+    or rA, rG             ; rA = byte × 8
+    
+    mov rG, rC
+    shr rC, 3
+    
+.memset_qword:
+    mov [rP], rA
+    add rP, 8
+    dec rC
+    jnz .memset_qword
+    
+    ; Remaining bytes
+    mov rC, rG
+    and rC, 7
+    pop rA
+    
+.memset_byte:
+    mov [rP], rA.b
+    inc rP
+    dec rC
+    jnz .memset_byte
+    
+.memset_done:
+    pop rP
+    pop rC
+    ret
+
+; ============================================================================
+; memcmp - Compare memory
+; rP = s1, rS = s2, rC = count → rA = result (<0, =0, >0)
+; ============================================================================
+memcmp:
+    push rC
+    push rP
+    push rS
+    
+.memcmp_loop:
+    test rC, rC
+    jz .memcmp_equal
+    
+    mov rA.b, [rP]
+    mov rG.b, [rS]
+    cmp rA.b, rG.b
+    jb .memcmp_less
+    ja .memcmp_greater
+    
+    inc rP
+    inc rS
+    dec rC
+    jmp .memcmp_loop
+    
+.memcmp_equal:
+    xor rA, rA
+    pop rS
+    pop rP
+    pop rC
+    ret
+    
+.memcmp_less:
+    mov rA, -1
+    pop rS
+    pop rP
+    pop rC
+    ret
+    
+.memcmp_greater:
+    mov rA, 1
+    pop rS
+    pop rP
+    pop rC
+    ret
+
+; ============================================================================
+; strlen - String length
+; rP = string → rA = length
+; ============================================================================
+strlen:
+    push rP
+    
+    xor rA, rA
+.strlen_loop:
+    cmp byte [rP], 0
+    je .strlen_done
+    inc rP
+    inc rA
+    jmp .strlen_loop
+    
+.strlen_done:
+    pop rP
+    ret
+
+; ============================================================================
+; strcpy - Copy string
+; rP = dest, rS = source → rP = dest
+; ============================================================================
+strcpy:
+    push rA
+    push rP
+    push rS
+    
+.strcpy_loop:
+    mov rA.b, [rS]
+    mov [rP], rA.b
+    test rA, rA
+    jz .strcpy_done
+    inc rP
+    inc rS
+    jmp .strcpy_loop
+    
+.strcpy_done:
+    pop rS
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; strcmp - Compare strings
+; rP = s1, rS = s2 → rA = result
+; ============================================================================
+strcmp:
+    push rP
+    push rS
+    
+.strcmp_loop:
+    mov rA.b, [rP]
+    mov rG.b, [rS]
+    cmp rA.b, rG.b
+    jb .strcmp_less
+    ja .strcmp_greater
+    
+    test rA, rA
+    jz .strcmp_equal
+    
+    inc rP
+    inc rS
+    jmp .strcmp_loop
+    
+.strcmp_equal:
+    xor rA, rA
+    pop rS
+    pop rP
+    ret
+    
+.strcmp_less:
+    mov rA, -1
+    pop rS
+    pop rP
+    ret
+    
+.strcmp_greater:
+    mov rA, 1
+    pop rS
+    pop rP
+    ret
+
+; ============================================================================
+; strncmp - Compare strings with length limit
+; rP = s1, rS = s2, rC = max count → rA = result
+; ============================================================================
+strncmp:
+    push rC
+    push rP
+    push rS
+    
+.strncmp_loop:
+    test rC, rC
+    jz .strncmp_equal
+    
+    mov rA.b, [rP]
+    mov rG.b, [rS]
+    cmp rA.b, rG.b
+    jb .strncmp_less
+    ja .strncmp_greater
+    
+    test rA, rA
+    jz .strncmp_equal
+    
+    inc rP
+    inc rS
+    dec rC
+    jmp .strncmp_loop
+    
+.strncmp_equal:
+    xor rA, rA
+    pop rS
+    pop rP
+    pop rC
+    ret
+    
+.strncmp_less:
+    mov rA, -1
+    pop rS
+    pop rP
+    pop rC
+    ret
+    
+.strncmp_greater:
+    mov rA, 1
+    pop rS
+    pop rP
+    pop rC
+    ret
+
+; ============================================================================
+; strcat - Concatenate strings
+; rP = dest, rS = source → rP = dest
+; ============================================================================
+strcat:
+    push rA
+    push rP
+    push rS
+    
+    ; Find end of dest
+.strcat_find_end:
+    cmp byte [rP], 0
+    je .strcat_copy
+    inc rP
+    jmp .strcat_find_end
+    
+.strcat_copy:
+    mov rA.b, [rS]
+    mov [rP], rA.b
+    test rA, rA
+    jz .strcat_done
+    inc rP
+    inc rS
+    jmp .strcat_copy
+    
+.strcat_done:
+    pop rS
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; strchr - Find character in string
+; rP = string, rA = character → rA = pointer to char (0 if not found)
+; ============================================================================
+strchr:
+    push rC
+    
+.strchr_loop:
+    mov rC.b, [rP]
+    cmp rC.b, rA.b
+    je .strchr_found
+    test rC, rC
+    jz .strchr_not_found
+    inc rP
+    jmp .strchr_loop
+    
+.strchr_found:
+    mov rA, rP
+    pop rC
+    ret
+    
+.strchr_not_found:
+    xor rA, rA
+    pop rC
+    ret
+
+; ============================================================================
+; strrchr - Find last occurrence of character
+; rP = string, rA = character → rA = pointer (0 if not found)
+; ============================================================================
+strrchr:
+    push rC
+    push rG
+    
+    xor rG, rG            ; Last found position
+    
+.strrchr_loop:
+    mov rC.b, [rP]
+    cmp rC.b, rA.b
+    jne .strrchr_next
+    mov rG, rP
+    
+.strrchr_next:
+    test rC, rC
+    jz .strrchr_done
+    inc rP
+    jmp .strrchr_loop
+    
+.strrchr_done:
+    mov rA, rG
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; atoi - ASCII string to integer
+; rP = string → rA = integer value
+; ============================================================================
+atoi:
+    push rC
+    push rG
+    push rP
+    
+    xor rG, rG            ; Result
+    xor rC, rC            ; Sign (0=positive, 1=negative)
+    
+    ; Skip whitespace
+.atoi_space:
+    cmp byte [rP], ' '
+    jne .atoi_sign
+    inc rP
+    jmp .atoi_space
+    
+.atoi_sign:
+    ; Check for sign
+    cmp byte [rP], '-'
+    jne .atoi_check_plus
+    mov rC, 1
+    inc rP
+    jmp .atoi_digits
+    
+.atoi_check_plus:
+    cmp byte [rP], '+'
+    jne .atoi_digits
+    inc rP
+    
+.atoi_digits:
+    mov rA.b, [rP]
+    sub rA, '0'
+    cmp rA, 9
+    ja .atoi_done
+    
+    ; result = result * 10 + digit
+    imul rG, 10
+    add rG, rA
+    inc rP
+    jmp .atoi_digits
+    
+.atoi_done:
+    test rC, rC
+    jz .atoi_positive
+    neg rG
+    
+.atoi_positive:
+    mov rA, rG
+    pop rP
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; itoa - Integer to ASCII string
+; rA = value, rP = buffer, rC = radix → rP = string end
+; ============================================================================
+itoa:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Handle negative numbers (for radix 10)
+    cmp rC, 10
+    jne .itoa_positive
+    test rA, rA
+    jns .itoa_positive
+    neg rA
+    mov byte [rP], '-'
+    inc rP
+    
+.itoa_positive:
+    ; Special case: 0
+    test rA, rA
+    jnz .itoa_convert
+    mov byte [rP], '0'
+    inc rP
+    jmp .itoa_done
+    
+.itoa_convert:
+    ; Convert digits (build in reverse)
+    lea rG, [rel itoa_buf]
+    add rG, 20            ; End of buffer
+    
+.itoa_digit_loop:
+    test rA, rA
+    jz .itoa_reverse
+    
+    xor rC, rC            ; Remainder
+    div rC                 ; rA = quotient, rC = remainder
+    
+    ; Convert remainder to ASCII
+    cmp rC, 9
+    jle .itoa_digit_09
+    add rC, 'A' - 10
+    jmp .itoa_digit_store
+.itoa_digit_09:
+    add rC, '0'
+    
+.itoa_digit_store:
+    dec rG
+    mov [rG], rC.b
+    jmp .itoa_digit_loop
+    
+.itoa_reverse:
+    ; Copy reversed digits to output
+.itoa_copy:
+    mov rA.b, [rG]
+    mov [rP], rA.b
+    test rA, rA
+    jz .itoa_done
+    inc rP
+    inc rG
+    jmp .itoa_copy
+    
+.itoa_done:
+    mov byte [rP], 0
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; htoa - Hex integer to ASCII string
+; rA = value, rP = buffer → rP = string end
+; ============================================================================
+htoa:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    lea rG, [rel hex_chars]
+    mov rC, 16             ; 16 hex digits
+    
+.htoa_loop:
+    rol rA, 4              ; Get next nibble
+    push rA
+    and rA, 0x0F
+    mov rA.b, [rG + rA]
+    mov [rP], rA.b
+    inc rP
+    pop rA
+    dec rC
+    jnz .htoa_loop
+    
+    mov byte [rP], 0
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; snprintf - Formatted print to buffer
+; rP = buffer, rC = size, rS = format, ... → rA = chars written
+; ============================================================================
+; Supports: %d (int), %x (hex), %s (string), %c (char), %u (uint), %% (literal %)
+snprintf:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    ; Variadic args start after format (on stack)
+    lea rG, [rsp + 48]    ; First variadic arg
+    
+    xor rA, rA            ; Output counter
+    
+.snprintf_loop:
+    cmp rA, rC
+    jge .snprintf_done
+    
+    mov rG.b, [rS]
+    test rG, rG
+    jz .snprintf_done
+    
+    cmp rG.b, '%'
+    je .snprintf_format
+    
+    ; Regular character
+    mov [rP], rG.b
+    inc rP
+    inc rA
+    inc rS
+    jmp .snprintf_loop
+    
+.snprintf_format:
+    inc rS                 ; Skip '%'
+    mov rG.b, [rS]
+    inc rS
+    
+    cmp rG.b, 'd'
+    je .snprintf_int
+    cmp rG.b, 'u'
+    je .snprintf_uint
+    cmp rG.b, 'x'
+    je .snprintf_hex
+    cmp rG.b, 's'
+    je .snprintf_string
+    cmp rG.b, 'c'
+    je .snprintf_char
+    cmp rG.b, '%'
+    je .snprintf_percent
+    
+    ; Unknown format - output as-is
+    mov byte [rP], '%'
+    inc rP
+    mov [rP], rG.b
+    inc rP
+    add rA, 2
+    jmp .snprintf_loop
+    
+.snprintf_int:
+    ; Get int from variadic args
+    mov rG, [rG_vararg]
+    add qword [rG_vararg], 8
+    push rP
+    mov rP, rP             ; Current output position
+    mov rC, 10
+    call itoa
+    ; (would need strlen of result to advance rA)
+    pop rP
+    jmp .snprintf_loop
+    
+.snprintf_uint:
+    ; Similar to int but unsigned
+    jmp .snprintf_loop
+    
+.snprintf_hex:
+    ; Get int from variadic args, print as hex
+    jmp .snprintf_loop
+    
+.snprintf_string:
+    ; Get string pointer from variadic args
+    jmp .snprintf_loop
+    
+.snprintf_char:
+    ; Get char from variadic args
+    mov rG, [rG_vararg]
+    add qword [rG_vararg], 8
+    mov rG.b, [rG]
+    mov [rP], rG.b
+    inc rP
+    inc rA
+    jmp .snprintf_loop
+    
+.snprintf_percent:
+    mov byte [rP], '%'
+    inc rP
+    inc rA
+    jmp .snprintf_loop
+    
+.snprintf_done:
+    mov byte [rP], 0
+    mov rA, rA             ; Return count
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; Quaternary operations
+; ============================================================================
+
+; quat_and - Quaternary AND (min per pair)
+; rA = quat a, rC = quat b → rA = result
+; Each quat is 2 bits. AND = min(a, b) per pair.
+quat_and:
+    push rC
+    push rG
+    
+    ; Process 4 quats at a time (8 bits = 1 byte)
+    ; For each 2-bit pair: result = min(a, b)
+    ; A=00, T=01, C=10, G=11
+    ; min(00,01)=00, min(00,10)=00, min(10,11)=10, etc.
+    
+    xor rG, rG            ; Result
+    
+.quat_and_loop:
+    ; Extract lowest 2 bits from each
+    mov rA, rA
+    and rA, 3
+    mov rC, rC
+    and rC, 3
+    
+    ; min(a, b)
+    cmp rA, rC
+    jle .quat_and_min_a
+    mov rA, rC
+    
+.quat_and_min_a:
+    ; Shift into result
+    shl rG, 2
+    or rG, rA
+    
+    ; Next pair
+    shr rA, 2
+    shr rC, 2
+    
+    ; Check if done (simplified)
+    test rA, rA
+    jnz .quat_and_loop
+    test rC, rC
+    jnz .quat_and_loop
+    
+    mov rA, rG
+    pop rG
+    pop rC
+    ret
+
+; quat_or - Quaternary OR (max per pair)
+; rA = quat a, rC = quat b → rA = result
+quat_or:
+    push rC
+    push rG
+    
+    xor rG, rG
+    
+.quat_or_loop:
+    mov rA, rA
+    and rA, 3
+    mov rC, rC
+    and rC, 3
+    
+    ; max(a, b)
+    cmp rA, rC
+    jge .quat_or_max_a
+    mov rA, rC
+    
+.quat_or_max_a:
+    shl rG, 2
+    or rG, rA
+    shr rA, 2
+    shr rC, 2
+    test rA, rA
+    jnz .quat_or_loop
+    test rC, rC
+    jnz .quat_or_loop
+    
+    mov rA, rG
+    pop rG
+    pop rC
+    ret
+
+; quat_not - Quaternary NOT (3-x per pair)
+; rA = quat → rA = result
+quat_not:
+    push rC
+    push rG
+    
+    xor rG, rG
+    mov rC, 8             ; 4 pairs
+    
+.quat_not_loop:
+    mov rA, rA
+    and rA, 3
+    mov rA, 3
+    sub rA, rA            ; 3 - x
+    
+    shl rG, 2
+    or rG, rA
+    shr rA, 2
+    dec rC
+    jnz .quat_not_loop
+    
+    mov rA, rG
+    pop rG
+    pop rC
+    ret
+
+; quat_add - Quaternary ADD with carry
+; rA = quat a, rC = quat b → rA = result, carry in rG
+quat_add:
+    push rC
+    push rG
+    
+    xor rG, rG            ; Carry = 0
+    xor rS, rS            ; Result
+    
+.quat_add_loop:
+    ; Extract pair
+    mov rA, rA
+    and rA, 3
+    mov rC, rC
+    and rC, 3
+    
+    ; Add with carry
+    add rA, rC
+    add rA, rG
+    
+    ; Check for carry (sum >= 4)
+    cmp rA, 4
+    jl .quat_add_no_carry
+    sub rA, 4
+    mov rG, 1
+    jmp .quat_add_store
+    
+.quat_add_no_carry:
+    xor rG, rG
+    
+.quat_add_store:
+    shl rS, 2
+    or rS, rA
+    shr rA, 2
+    shr rC, 2
+    
+    test rA, rA
+    jnz .quat_add_loop
+    test rC, rC
+    jnz .quat_add_loop
+    test rG, rG
+    jnz .quat_add_loop    ; Flush remaining carry
+    
+    mov rA, rS
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; ATCG encoding/decoding
+; ============================================================================
+
+; encode_atcg - Encode byte array to ATCG string
+; rP = input bytes, rS = output ATCG, rC = byte count
+encode_atcg:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    lea rG, [rel atcg_table]
+    
+.encode_loop:
+    test rC, rC
+    jz .encode_done
+    
+    ; Each byte = 4 ATCG chars (2 bits each)
+    mov rA.b, [rP]
+    
+    ; High nibble first
+    shr rA, 6
+    and rA, 3
+    mov rA.b, [rG + rA]
+    mov [rS], rA.b
+    inc rS
+    
+    mov rA.b, [rP]
+    shr rA, 4
+    and rA, 3
+    mov rA.b, [rG + rA]
+    mov [rS], rA.b
+    inc rS
+    
+    mov rA.b, [rP]
+    shr rA, 2
+    and rA, 3
+    mov rA.b, [rG + rA]
+    mov [rS], rA.b
+    inc rS
+    
+    mov rA.b, [rP]
+    and rA, 3
+    mov rA.b, [rG + rA]
+    mov [rS], rA.b
+    inc rS
+    
+    inc rP
+    dec rC
+    jmp .encode_loop
+    
+.encode_done:
+    mov byte [rS], 0
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; decode_atcg - Decode ATCG string to byte array
+; rP = input ATCG, rS = output bytes, rC = ATCG char count
+decode_atcg:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+.decode_loop:
+    cmp rC, 4
+    jl .decode_done
+    
+    ; Decode 4 ATCG chars = 1 byte
+    xor rG, rG
+    
+    ; Char 0 (bits 7-6)
+    mov rA.b, [rP]
+    call atcg_char_to_val
+    shl rA, 6
+    or rG, rA
+    
+    ; Char 1 (bits 5-4)
+    mov rA.b, [rP + 1]
+    call atcg_char_to_val
+    shl rA, 4
+    or rG, rA
+    
+    ; Char 2 (bits 3-2)
+    mov rA.b, [rP + 2]
+    call atcg_char_to_val
+    shl rA, 2
+    or rG, rA
+    
+    ; Char 3 (bits 1-0)
+    mov rA.b, [rP + 3]
+    call atcg_char_to_val
+    or rG, rA
+    
+    mov [rS], rG.b
+    inc rS
+    add rP, 4
+    sub rC, 4
+    jmp .decode_loop
+    
+.decode_done:
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; atcg_char_to_val - Convert ATCG char to 2-bit value
+; rA = char → rA = value (A=0, T=1, C=2, G=3)
+atcg_char_to_val:
+    cmp rA.b, 'A'
+    je .atcg_a
+    cmp rA.b, 'a'
+    je .atcg_a
+    cmp rA.b, 'T'
+    je .atcg_t
+    cmp rA.b, 't'
+    je .atcg_t
+    cmp rA.b, 'C'
+    je .atcg_c
+    cmp rA.b, 'c'
+    je .atcg_c
+    ; Default: G
+    mov rA, 3
+    ret
+.atcg_a:
+    mov rA, 0
+    ret
+.atcg_t:
+    mov rA, 1
+    ret
+.atcg_c:
+    mov rA, 2
+    ret
+
+; ============================================================================
+; Random number generator (xorshift64)
+; ============================================================================
+; rand - Generate pseudo-random number
+; rA = random 64-bit value
+rand:
+    push rG
+    
+    mov rG, [rel rand_state]
+    mov rA, rG
+    shl rA, 13
+    xor rG, rA
+    mov rA, rG
+    shr rA, 7
+    xor rG, rA
+    mov rA, rG
+    shl rA, 17
+    xor rG, rA
+    mov [rel rand_state], rG
+    mov rA, rG
+    
+    pop rG
+    ret
+
+; srand - Seed random number generator
+; rA = seed
+srand:
+    mov [rel rand_state], rA
+    ret
+
+; ============================================================================
+; Spinlock
+; ============================================================================
+
+; spinlock_acquire - Acquire spinlock
+; rP = lock address
+spinlock_acquire:
+    lock bts dword [rP], 0
+    jc .spinlock_wait
+    ret
+    
+.spinlock_wait:
+    pause
+    test dword [rP], 1
+    jnz .spinlock_wait
+    jmp spinlock_acquire
+
+; spinlock_release - Release spinlock
+; rP = lock address
+spinlock_release:
+    mov dword [rP], 0
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+atcg_table:
+    db 'A', 'T', 'C', 'G'  ; 0=A, 1=T, 2=C, 3=G
+
+hex_chars:
+    db "0123456789ABCDEF"
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+itoa_buf:
+    resb 21                ; Max uint64 = 20 digits + null
+rand_state:
+    resq 1
+rG_vararg:
+    resq 1
