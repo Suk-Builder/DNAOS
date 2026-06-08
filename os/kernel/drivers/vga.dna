@@ -28,6 +28,7 @@ COLOR_ATCG_T      equ 0xFFCC3333
 COLOR_ATCG_C      equ 0xFF3366CC
 COLOR_ATCG_G      equ 0xFFCCCC33
 
+.extern font_data
 .code
 .global fb_init
 .global fb_draw_pixel
@@ -188,7 +189,7 @@ fb_draw_char:
     jge .fb_char_done
     
     ; Get row data
-    mov rA.b, [r1 + r2]
+    mov al, [r1 + r2]
     
     ; Draw 8 columns
     push rC                ; Save x
@@ -254,11 +255,11 @@ fb_print_str:
     
     mov rC, rA             ; color
 .fb_print_loop:
-    mov rA.b, [rP]
+    mov al, [rP]
     test rA, rA
     jz .fb_print_done
     
-    cmp rA.b, 10           ; Newline
+    cmp al, 10           ; Newline
     je .fb_print_newline
     
     ; Draw character
@@ -345,8 +346,8 @@ fb_scroll_up:
     test rC, rC
     jz .fb_scroll_clear
     
-    mov rA.b, [rS]
-    mov [rP], rA.b
+    mov al, [rS]
+    mov [rP], al
     inc rP
     inc rS
     dec rC

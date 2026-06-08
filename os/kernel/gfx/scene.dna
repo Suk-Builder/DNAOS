@@ -77,17 +77,17 @@ scene_init:
     mov qword [rG + 24], -1 ; No siblings
     ; Identity transform
     movss xmm0, [rel .float_zero]
-    movss [rG + 32], xmm0   ; pos.x = 0
-    movss [rG + 36], xmm0   ; pos.y = 0
-    movss [rG + 40], xmm0   ; pos.z = 0
-    movss [rG + 44], xmm0   ; rot.x = 0
-    movss [rG + 48], xmm0   ; rot.y = 0
-    movss [rG + 52], xmm0   ; rot.z = 0
+    movss dword [rG + 32], xmm0   ; pos.x = 0
+    movss dword [rG + 36], xmm0   ; pos.y = 0
+    movss dword [rG + 40], xmm0   ; pos.z = 0
+    movss dword [rG + 44], xmm0   ; rot.x = 0
+    movss dword [rG + 48], xmm0   ; rot.y = 0
+    movss dword [rG + 52], xmm0   ; rot.z = 0
     movss xmm0, [rel .float_one]
-    movss [rG + 56], xmm0   ; rot.w = 1 (identity quat)
-    movss [rG + 60], xmm0   ; scale.x = 1
-    movss [rG + 64], xmm0   ; scale.y = 1
-    movss [rG + 68], xmm0   ; scale.z = 1
+    movss dword [rG + 56], xmm0   ; rot.w = 1 (identity quat)
+    movss dword [rG + 60], xmm0   ; scale.x = 1
+    movss dword [rG + 64], xmm0   ; scale.y = 1
+    movss dword [rG + 68], xmm0   ; scale.z = 1
     
     mov qword [rel scene_node_count], 1
     
@@ -115,7 +115,7 @@ scene_add_node:
     add rG, rA
     
     mov rA, [rel scene_node_count]
-    mov dword [rG], rC.w    ; type (was in rC)
+    mov word [rG], dx    ; type (was in rC)
     ; Wait, rC had parent_index. Let me fix.
     ; rA = type, rC = parent_index
     ; But I already used rA for offset calculation
@@ -127,24 +127,24 @@ scene_add_node:
     add rG, rA
     
     pop rA                   ; Restore type
-    mov [rG], rA.w           ; type
+    mov [rG], ax           ; type
     mov [rG + 8], rC         ; parent
     mov qword [rG + 16], -1 ; first_child
     mov qword [rG + 24], -1 ; next_sibling
     
     ; Identity transform
     movss xmm0, [rel .float_zero]
-    movss [rG + 32], xmm0
-    movss [rG + 36], xmm0
-    movss [rG + 40], xmm0
-    movss [rG + 44], xmm0
-    movss [rG + 48], xmm0
-    movss [rG + 52], xmm0
+    movss dword [rG + 32], xmm0
+    movss dword [rG + 36], xmm0
+    movss dword [rG + 40], xmm0
+    movss dword [rG + 44], xmm0
+    movss dword [rG + 48], xmm0
+    movss dword [rG + 52], xmm0
     movss xmm0, [rel .float_one]
-    movss [rG + 56], xmm0   ; rot.w = 1
-    movss [rG + 60], xmm0   ; scale.x = 1
-    movss [rG + 64], xmm0   ; scale.y = 1
-    movss [rG + 68], xmm0   ; scale.z = 1
+    movss dword [rG + 56], xmm0   ; rot.w = 1
+    movss dword [rG + 60], xmm0   ; scale.x = 1
+    movss dword [rG + 64], xmm0   ; scale.y = 1
+    movss dword [rG + 68], xmm0   ; scale.z = 1
     
     ; Link to parent's child list
     ; ... (would traverse sibling list)
@@ -226,10 +226,10 @@ camera_perspective:
     push rA
     
     ; Store parameters
-    movss [rP], xmm0         ; fov
-    movss [rP + 4], xmm1     ; aspect
-    movss [rP + 8], xmm2     ; near
-    movss [rP + 12], xmm3    ; far
+    movss dword [rP], xmm0         ; fov
+    movss dword [rP + 4], xmm1     ; aspect
+    movss dword [rP + 8], xmm2     ; near
+    movss dword [rP + 12], xmm3    ; far
     mov dword [rP + 16], 0   ; type = perspective
     
     ; Compute projection matrix
@@ -248,11 +248,11 @@ camera_lookat:
     
     ; Store eye position
     movss xmm0, [rS]
-    movss [rP + 20], xmm0   ; eye.x
+    movss dword [rP + 20], xmm0   ; eye.x
     movss xmm0, [rS + 4]
-    movss [rP + 24], xmm0   ; eye.y
+    movss dword [rP + 24], xmm0   ; eye.y
     movss xmm0, [rS + 8]
-    movss [rP + 28], xmm0   ; eye.z
+    movss dword [rP + 28], xmm0   ; eye.z
     
     ; Compute view matrix
     lea rA, [rP + 128]      ; view_matrix offset
@@ -274,14 +274,14 @@ camera_orbit:
     ; eye.z = target.z + distance * sin(phi) * cos(theta)
     
     ; sin/cos of theta
-    movss [rel .math_temp], xmm0
+    movss dword [rel .math_temp], xmm0
     fld dword [rel .math_temp]
     fsincos
     fstp dword [rel .math_cos]
     fstp dword [rel .math_sin]
     
     ; sin/cos of phi
-    movss [rel .math_temp], xmm1
+    movss dword [rel .math_temp], xmm1
     fld dword [rel .math_temp]
     fsincos
     fstp dword [rel .math_cos2]
@@ -291,18 +291,18 @@ camera_orbit:
     movss xmm0, [rel .math_sin2]  ; sin(phi)
     mulss xmm0, [rel .math_sin]   ; * sin(theta)
     mulss xmm0, xmm2              ; * distance
-    movss [rP + 20], xmm0         ; eye.x (add target.x for non-origin)
+    movss dword [rP + 20], xmm0         ; eye.x (add target.x for non-origin)
     
     ; eye.y = target.y + dist * cos(phi)
     movss xmm0, [rel .math_cos2]  ; cos(phi)
     mulss xmm0, xmm2              ; * distance
-    movss [rP + 24], xmm0         ; eye.y
+    movss dword [rP + 24], xmm0         ; eye.y
     
     ; eye.z = target.z + dist * sin(phi) * cos(theta)
     movss xmm0, [rel .math_sin2]  ; sin(phi)
     mulss xmm0, [rel .math_cos]   ; * cos(theta)
     mulss xmm0, xmm2              ; * distance
-    movss [rP + 28], xmm0         ; eye.z
+    movss dword [rP + 28], xmm0         ; eye.z
     
     ; Recompute view matrix
     ; ... (would call camera_lookat)
@@ -341,7 +341,7 @@ camera_get_view_matrix:
     mov rC, 16
 .cam_get_view_copy:
     movss xmm0, [rA]
-    movss [rS], xmm0
+    movss dword [rS], xmm0
     add rA, 4
     add rS, 4
     dec rC
@@ -359,7 +359,7 @@ camera_get_projection_matrix:
     mov rC, 16
 .cam_get_proj_copy:
     movss xmm0, [rA]
-    movss [rS], xmm0
+    movss dword [rS], xmm0
     add rA, 4
     add rS, 4
     dec rC
@@ -439,19 +439,19 @@ camera_frustum_test_aabb:
 .data
 
 .float_zero:
-    dd 0.0
+    dd 0x00000000
 .float_one:
-    dd 1.0
+    dd 0x3f800000
 .math_temp:
-    dd 0.0
+    dd 0x00000000
 .math_sin:
-    dd 0.0
+    dd 0x00000000
 .math_cos:
-    dd 0.0
+    dd 0x00000000
 .math_sin2:
-    dd 0.0
+    dd 0x00000000
 .math_cos2:
-    dd 0.0
+    dd 0x00000000
 
 ; ============================================================================
 ; BSS

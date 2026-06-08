@@ -20,6 +20,7 @@ LYRIC_PARTICLE   equ 1     ; Text made of particles
 LYRIC_CALLIGRAPHY equ 2    ; Brush stroke animation
 LYRIC_FLOATING   equ 3     ; Text floats up like lanterns
 
+.extern font_data
 .code
 .global lyrics_init
 .global lyrics_load
@@ -67,8 +68,8 @@ lyrics_load:
     push rC
     mov rC, MAX_LINE_LENGTH
 .lyrics_line_copy:
-    mov rA.b, [rS]
-    mov [rG], rA.b
+    mov al, [rS]
+    mov [rG], al
     inc rS
     inc rG
     dec rC
@@ -94,7 +95,7 @@ lyrics_update:
     push rA
     
     ; Advance time
-    ; addss [rel lyrics_time], xmm0
+    ; addss dword [rel lyrics_time], xmm0
     
     ; If shatter animation active, update particles
     ; Each character becomes a particle with velocity
@@ -206,13 +207,13 @@ lyrics_color_shatter:
     dd 0xFFFF88CC           ; Cherry blossom pink
 
 lyrics_scanline_alpha:
-    dd 0.15                 ; Scan line overlay opacity
+    dd 0x3e19999a                 ; Scan line overlay opacity
 lyrics_rgb_split:
-    dd 2.0                  ; Chromatic aberration pixels
+    dd 0x40000000                  ; Chromatic aberration pixels
 lyrics_jitter:
-    dd 1.5                  ; Holographic jitter pixels
+    dd 0x3fc00000                  ; Holographic jitter pixels
 lyrics_glow_radius:
-    dd 8.0                  ; Text glow radius
+    dd 0x41000000                  ; Text glow radius
 
 ; ============================================================================
 ; BSS

@@ -52,6 +52,7 @@ wm_drag_off_x:
 wm_drag_off_y:
     resq 1
 
+.extern WM_TITLE_H
 .code
 
 ; ============================================================================
@@ -262,8 +263,8 @@ strcpy_kernel:
     push rP
     push rS
 .wm_strcpy_loop:
-    mov rA.b, [rS]
-    mov [rP], rA.b
+    mov al, [rS]
+    mov [rP], al
     test rA, rA
     jz .wm_strcpy_done
     inc rP

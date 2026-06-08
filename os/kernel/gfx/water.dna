@@ -114,37 +114,37 @@ water_add_ripple:
 align 4
 
 water_color_r:
-    dd 0.1
+    dd 0x3dcccccd
 water_color_g:
-    dd 0.3
+    dd 0x3e99999a
 water_color_b:
-    dd 0.4
+    dd 0x3ecccccd
 water_fresnel_power:
-    dd 5.0
+    dd 0x40a00000
 water_fresnel_f0:
-    dd 0.02
+    dd 0x3ca3d70a
 water_wave_speed:
-    dd 0.5
+    dd 0x3f000000
 water_wave_height:
-    dd 0.05
+    dd 0x3d4ccccd
 water_absorption_r:
-    dd 0.5                  ; Red absorbed quickly
+    dd 0x3f000000                  ; Red absorbed quickly
 water_absorption_g:
-    dd 0.1                  ; Green absorbed slowly
+    dd 0x3dcccccd                  ; Green absorbed slowly
 water_absorption_b:
-    dd 0.05                 ; Blue absorbed very slowly
+    dd 0x3d4ccccd                 ; Blue absorbed very slowly
 
 ; Wave parameters (4 wave layers)
 wave_dir_x:
-    dd 1.0, 0.7, -0.5, 0.3
+    dd 0x3f800000, 0.7, -0.5, 0.3
 wave_dir_z:
-    dd 0.0, 0.7, 0.8, -0.9
+    dd 0x00000000, 0.7, 0.8, -0.9
 wave_freq:
-    dd 0.5, 1.0, 2.0, 3.0
+    dd 0x3f000000, 1.0, 2.0, 3.0
 wave_amp:
-    dd 0.05, 0.02, 0.01, 0.005
+    dd 0x3d4ccccd, 0.02, 0.01, 0.005
 wave_speed:
-    dd 0.5, 0.7, 1.0, 1.5
+    dd 0x3f000000, 0.7, 1.0, 1.5
 
 ; ============================================================================
 ; BSS

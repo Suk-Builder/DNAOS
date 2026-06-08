@@ -138,18 +138,18 @@ ecs_add_component:
     mov rG, [rG + rC*8]    ; pool pointer
     
     ; Compute offset
-    mov rA_temp, rA
-    shl rA_temp, 6          ; * 64 (COMPONENT_SIZE)
-    add rG, rA_temp
+    mov r8, rA
+    shl r8, 6          ; * 64 (COMPONENT_SIZE)
+    add rG, r8
     
     ; Copy 64 bytes
-    mov rC_temp, 16
+    mov r10, 16
 .ecs_add_copy:
-    mov rA_temp, [rP]
-    mov [rG], rA_temp
+    mov r8, [rP]
+    mov [rG], r8
     add rP, 8
     add rG, 8
-    dec rC_temp
+    dec r10
     jnz .ecs_add_copy
     
     pop rG
@@ -222,13 +222,13 @@ ecs_query:
     jge .ecs_query_done
     
     ; Check if entity mask matches required mask
-    mov rA_temp, [rel ecs_entity_mask + rG*8]
-    and rA_temp, rA          ; required components
-    cmp rA_temp, rA
+    mov r8, [rel ecs_entity_mask + rG*8]
+    and r8, rA          ; required components
+    cmp r8, rA
     jne .ecs_query_next
     
     ; Match! Add to results
-    mov [rP], rG.w
+    mov [rP], bx
     add rP, 4
     inc rS
     cmp rS, rC
@@ -257,9 +257,9 @@ ecs_query_single:
     cmp rG, [rel ecs_next_id]
     jge .ecs_qs_not_found
     
-    mov rA_temp, [rel ecs_entity_mask + rG*8]
-    and rA_temp, rA
-    cmp rA_temp, rA
+    mov r8, [rel ecs_entity_mask + rG*8]
+    and r8, rA
+    cmp r8, rA
     jne .ecs_qs_next
     
     mov rA, rG
@@ -287,9 +287,9 @@ ecs_iterate:
     cmp rG, [rel ecs_next_id]
     jge .ecs_iter_done
     
-    mov rA_temp, [rel ecs_entity_mask + rG*8]
-    and rA_temp, rA
-    cmp rA_temp, rA
+    mov r8, [rel ecs_entity_mask + rG*8]
+    and r8, rA
+    cmp r8, rA
     jne .ecs_iter_next
     
     ; Call callback(entity_id)

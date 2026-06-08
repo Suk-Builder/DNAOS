@@ -5,15 +5,6 @@
 ; 超時空輝夜姫の光 — The light that makes you feel something.
 ;
 ; Effects:
-*   - Bloom (bright areas glow softly)
-*   - Depth of Field (background blur, bokeh)
-*   - Tone Mapping (HDR → LDR, ACES filmic)
-*   - Color Grading (warm/cool shift, saturation)
-*   - Vignette (subtle darkening at edges)
-*   - Chromatic Aberration (subtle color fringing)
-*   - Screen-Space Ambient Occlusion (SSAO)
-*   - Motion Blur (per-object, subtle)
-*   - FXAA (anti-aliasing)
 ; ============================================================================
 
 .code
@@ -390,60 +381,60 @@ align 4
 
 ; Bloom parameters
 bloom_threshold:
-    dd 0.8
+    dd 0x3f4ccccd
 bloom_intensity:
-    dd 0.3
+    dd 0x3e99999a
 bloom_radius:
-    dd 5.0
+    dd 0x40a00000
 
 ; DOF parameters
 dof_focus_distance:
-    dd 50.0
+    dd 0x42480000
 dof_aperture:
-    dd 2.8
+    dd 0x40333333
 dof_focal_length:
-    dd 50.0
+    dd 0x42480000
 dof_sensitivity:
-    dd 0.1
+    dd 0x3dcccccd
 
 ; Tone mapping
 tonemap_exposure:
-    dd 1.2
+    dd 0x3f99999a
 
 ; Color grading
 grade_warm_shift_r:
-    dd 0.02
+    dd 0x3ca3d70a
 grade_warm_shift_g:
-    dd 0.01
+    dd 0x3c23d70a
 grade_warm_shift_b:
-    dd -0.02
+    dd 0xbca3d70a
 grade_saturation:
-    dd 1.1
+    dd 0x3f8ccccd
 grade_contrast:
-    dd 1.05
+    dd 0x3f866666
 grade_shadow_lift:
-    dd 0.02
+    dd 0x3ca3d70a
 
 ; Vignette
 vignette_intensity:
-    dd 0.3
+    dd 0x3e99999a
 
 ; SSAO
 ssao_radius:
-    dd 0.5
+    dd 0x3f000000
 ssao_bias:
-    dd 0.025
+    dd 0x3ccccccd
 ssao_intensity:
-    dd 1.5
+    dd 0x3fc00000
 
 ; FXAA
 fxaa_threshold:
-    dd 0.1
+    dd 0x3dcccccd
 
 ; Gaussian blur weights (13-tap, σ=3.0)
 gauss_weights:
-    dd 0.002, 0.009, 0.028, 0.065, 0.121, 0.180, 0.201
-    dd 0.180, 0.121, 0.065, 0.028, 0.009, 0.002
+    dd 0x3b03126f, 0.009, 0.028, 0.065, 0.121, 0.180, 0.201
+    dd 0x3e3851ec, 0.121, 0.065, 0.028, 0.009, 0.002
 
 ; ============================================================================
 ; BSS

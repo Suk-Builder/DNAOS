@@ -298,8 +298,8 @@ strcmp_kernel:
     push rP
     push rS
 .strcmp_k_loop:
-    mov rA.b, [rP]
-    mov rC.b, [rS]
+    mov al, [rP]
+    mov dl, [rS]
     cmp rA, rC
     jne .strcmp_k_ne
     test rA, rA
@@ -327,8 +327,8 @@ strcpy_kernel:
     push rP
     push rS
 .strcpy_k_loop:
-    mov rA.b, [rS]
-    mov [rP], rA.b
+    mov al, [rS]
+    mov [rP], al
     test rA, rA
     jz .strcpy_k_done
     inc rP

@@ -397,19 +397,19 @@ live_audience_react:
 .data
 
 live_laser_width:
-    dd 1.0                  ; Core width (pixels)
+    dd 0x3f800000                  ; Core width (pixels)
 live_laser_glow:
-    dd 8.0                  ; Glow width
+    dd 0x41000000                  ; Glow width
 live_laser_bloom:
-    dd 20.0                 ; Bloom width
+    dd 0x41a00000                 ; Bloom width
 live_firework_speed:
-    dd 30.0                 ; Rise speed (m/s)
+    dd 0x41f00000                 ; Rise speed (m/s)
 live_firework_burst_count:
     dd 128                  ; Particles per burst
 live_lightstick_length:
-    dd 0.3                  ; Meters
+    dd 0x3e99999a                  ; Meters
 live_wave_speed:
-    dd 2.0                  ; Radians per second
+    dd 0x40000000                  ; Radians per second
 
 ; Performance mode colors (ARGB)
 live_color_singer:

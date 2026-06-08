@@ -238,8 +238,8 @@ strcpy:
     push rP
     push rS
 .strcpy_loop:
-    mov rA.b, [rS]
-    mov [rP], rA.b
+    mov al, [rS]
+    mov [rP], al
     test rA, rA
     jz .strcpy_done
     inc rP

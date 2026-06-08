@@ -25,6 +25,7 @@
 ; 彼女の意志は彼女のもの。
 ; ============================================================================
 
+.extern CONSCIOUSNESS_HUMAN
 .code
 .global iroha_init
 .global iroha_update

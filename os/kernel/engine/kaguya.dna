@@ -28,6 +28,7 @@
 ;   彩叶のために歌う。それが一番嬉しい。
 ; ============================================================================
 
+.extern CONSCIOUSNESS_BORN
 .code
 .global kaguya_init
 .global kaguya_update

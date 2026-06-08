@@ -190,40 +190,40 @@ shadow_compute_cascades:
 align 4
 
 shadow_bias:
-    dd 0.001
+    dd 0x3a83126f
 shadow_normal_bias:
-    dd 0.02
+    dd 0x3ca3d70a
 shadow_softness:
-    dd 1.0
+    dd 0x3f800000
 shadow_cascade_split_0:
-    dd 0.05
+    dd 0x3d4ccccd
 shadow_cascade_split_1:
-    dd 0.15
+    dd 0x3e19999a
 shadow_cascade_split_2:
-    dd 0.4
+    dd 0x3ecccccd
 shadow_cascade_split_3:
-    dd 1.0
+    dd 0x3f800000
 shadow_texel_size:
-    dd 0.00048828125        ; 1/2048
+    dd 0x3a000000        ; 1/2048
 
 ; PCF offsets (4×4 grid)
 pcf_offsets:
-    dd -1.5, -1.5
-    dd -0.5, -1.5
-    dd  0.5, -1.5
-    dd  1.5, -1.5
-    dd -1.5, -0.5
-    dd -0.5, -0.5
-    dd  0.5, -0.5
-    dd  1.5, -0.5
-    dd -1.5,  0.5
-    dd -0.5,  0.5
-    dd  0.5,  0.5
-    dd  1.5,  0.5
-    dd -1.5,  1.5
-    dd -0.5,  1.5
-    dd  0.5,  1.5
-    dd  1.5,  1.5
+    dd 0xbfc00000, -1.5
+    dd 0xbf000000, -1.5
+    dd 0x3f000000, -1.5
+    dd 0x3fc00000, -1.5
+    dd 0xbfc00000, -0.5
+    dd 0xbf000000, -0.5
+    dd 0x3f000000, -0.5
+    dd 0x3fc00000, -0.5
+    dd 0xbfc00000,  0.5
+    dd 0xbf000000,  0.5
+    dd 0x3f000000,  0.5
+    dd 0x3fc00000,  0.5
+    dd 0xbfc00000,  1.5
+    dd 0xbf000000,  1.5
+    dd 0x3f000000,  1.5
+    dd 0x3fc00000,  1.5
 
 ; ============================================================================
 ; BSS

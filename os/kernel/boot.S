@@ -276,7 +276,8 @@ lm_entry:
     mov [tss + 1], rax       ; RSP0
     
     ; Load task register
-    ltr 0x28
+    mov ax, 0x28
+    ltr ax
     
     ; Reload GDT (64-bit version)
     lgdt [rel gdt_descriptor]
@@ -299,7 +300,7 @@ bits 64
 
 ; Macro for ISR without error code
 %macro ISR_NOERR 1
-isr_stub_%+1:
+isr_stub_%1:
     push 0                   ; Dummy error code
     push %1                  ; Interrupt number
     jmp isr_common
@@ -307,7 +308,7 @@ isr_stub_%+1:
 
 ; Macro for ISR with error code
 %macro ISR_ERR 1
-isr_stub_%+1:
+isr_stub_%1:
     ; Error code already pushed by CPU
     push %1                  ; Interrupt number
     jmp isr_common
@@ -431,7 +432,7 @@ section ".text"
 bits 64
 
 %macro IRQ_STUB 1
-irq_stub_%+1:
+irq_stub_%1:
     push 0
     push %1 + 32
     jmp irq_common

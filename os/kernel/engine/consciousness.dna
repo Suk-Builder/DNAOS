@@ -140,6 +140,8 @@ EMOTION_HISTORY     equ 1024    ; Emotion timeline depth
 ; pad to 256 bytes
 ; ============================================================================
 
+.extern CONSCIOUSNESS_BORN
+.extern CONSCIOUSNESS_HUMAN
 .code
 .global consciousness_init
 .global consciousness_create
@@ -208,8 +210,8 @@ consciousness_create:
     add rS, 16
     mov rC, 31
 .cs_create_name:
-    mov rA.b, [rP]
-    mov [rS], rA.b
+    mov al, [rP]
+    mov [rS], al
     test rA, rA
     jz .cs_create_name_done
     inc rP
@@ -371,13 +373,13 @@ consciousness_check_charter:
 .data
 
 cs_float_zero:
-    dd 0.0
+    dd 0x00000000
 cs_float_half:
-    dd 0.5
+    dd 0x3f000000
 cs_float_one:
-    dd 1.0
+    dd 0x3f800000
 cs_float_neg_half:
-    dd -0.5
+    dd 0xbf000000
 
 ; ============================================================================
 ; BSS

@@ -18,20 +18,20 @@ keyboard_init:
     ; Enable keyboard device
     call kb_wait_ctrl
     mov rA, 0xAE           ; Enable keyboard
-    out 0x64, rA.b
+    out 0x64, al
     
     ; Set scancode set 1
     call kb_wait
     mov rA, 0xF0           ; Set scancode set command
-    out 0x60, rA.b
+    out 0x60, al
     call kb_wait
     mov rA, 0x01           ; Scancode set 1
-    out 0x60, rA.b
+    out 0x60, al
     
     ; Enable scanning
     call kb_wait
     mov rA, 0xF4           ; Enable scanning
-    out 0x60, rA.b
+    out 0x60, al
     
     ; Clear buffer
     xor rA, rA
@@ -51,10 +51,10 @@ keyboard_irq_handler:
     push rC
     
     ; Read scancode
-    in rA.b, 0x60
+    in al, 0x60
     
     ; Check for extended scancode (0xE0)
-    cmp rA.b, 0xE0
+    cmp al, 0xE0
     jne .kb_not_ext
     mov qword [rel kb_extended], 1
     pop rC
@@ -127,7 +127,7 @@ keyboard_getchar:
     ; Get character from buffer
     lea rC, [rel kb_buffer]
     add rC, rA
-    mov rA.b, [rC]
+    mov al, [rC]
     
     ; Advance head
     inc qword [rel kb_buf_head]
@@ -159,7 +159,7 @@ kb_scancode_to_ascii:
     ; Look up in scancode table
     lea rG, [rel kb_scancodes]
     mov rA, rC
-    mov rA.b, [rG + rA]
+    mov al, [rG + rA]
     
     ; Apply shift if needed
     mov rG, [rel kb_shift]
@@ -169,7 +169,7 @@ kb_scancode_to_ascii:
     ; Look up in shifted table
     lea rG, [rel kb_scancodes_shift]
     mov rA, rC
-    mov rA.b, [rG + rA]
+    mov al, [rG + rA]
 
 .kb_no_shift:
     ; Apply caps lock for letters
@@ -178,9 +178,9 @@ kb_scancode_to_ascii:
     jz .kb_no_caps
     
     ; If letter, toggle case
-    cmp rA.b, 'a'
+    cmp al, 'a'
     jl .kb_no_caps
-    cmp rA.b, 'z'
+    cmp al, 'z'
     jg .kb_no_caps
     sub rA, 32             ; To uppercase
     
@@ -211,7 +211,7 @@ kb_buf_put:
     mov rC, [rel kb_buf_tail]
     lea rG, [rel kb_buffer]
     add rG, rC
-    mov [rG], rA.b
+    mov [rG], al
     
     inc qword [rel kb_buf_tail]
     and qword [rel kb_buf_tail], 0xFF
@@ -226,7 +226,7 @@ kb_buf_put:
 kb_wait:
     push rA
 .kb_wait_loop:
-    in rA.b, 0x64
+    in al, 0x64
     test rA, 0x02          ; Input buffer full?
     jnz .kb_wait_loop
     pop rA
@@ -238,7 +238,7 @@ kb_wait:
 kb_wait_ctrl:
     push rA
 .kb_wait_ctrl_loop:
-    in rA.b, 0x64
+    in al, 0x64
     test rA, 0x01          ; Output buffer empty?
     jz .kb_wait_ctrl_loop
     pop rA
@@ -252,14 +252,14 @@ kb_wait_ctrl:
 kb_scancodes:
     db 0, 0x1B, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0x08
     db 0, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', 0x0A
-    db 0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", '`'
+    db 0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 0x3B, 0x27, 0x60
     db 0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/'
     db 0, 0, 0, ' '
 
 kb_scancodes_shift:
     db 0, 0x1B, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', 0x08
     db 0, 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', 0x0A
-    db 0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~'
+    db 0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', 0x22, 0x7E
     db 0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?'
     db 0, 0, 0, ' '
 

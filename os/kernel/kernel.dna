@@ -5,6 +5,9 @@
 ; This file is pure DNAsm - the native language of DNAOS.
 ; ============================================================================
 
+.extern font_data
+.extern ar_init
+.extern worldgen_init
 .code
 .global kernel_main
 .extern _multiboot_info
@@ -449,7 +452,7 @@ kernel_main:
     cmp rC, 255
     jge .main_hlt
     lea rG, [rel input_buf]
-    mov [rG + rC], rA.b
+    mov [rG + rC], al
     inc rC
     mov [rel input_pos], rC
     
@@ -500,31 +503,31 @@ pic_init:
     
     ; ICW1: Start initialization
     mov rA, 0x11
-    out 0x20, rA.b
-    out 0xA0, rA.b
+    out 0x20, al
+    out 0xA0, al
     
     ; ICW2: Vector offsets
     mov rA, 32            ; Master: IRQ 32-39
-    out 0x21, rA.b
+    out 0x21, al
     mov rA, 40            ; Slave:  IRQ 40-47
-    out 0xA1, rA.b
+    out 0xA1, al
     
     ; ICW3: Cascade wiring
     mov rA, 4
-    out 0x21, rA.b
+    out 0x21, al
     mov rA, 2
-    out 0xA1, rA.b
+    out 0xA1, al
     
     ; ICW4: 8086 mode
     mov rA, 1
-    out 0x21, rA.b
-    out 0xA1, rA.b
+    out 0x21, al
+    out 0xA1, al
     
     ; Mask all IRQs except keyboard (IRQ1) and cascade (IRQ2)
     mov rA, 0xFD          ; 11111101 - enable IRQ1 only
-    out 0x21, rA.b
+    out 0x21, al
     mov rA, 0xFF          ; Mask all slave IRQs
-    out 0xA1, rA.b
+    out 0xA1, al
     
     pop rC
     pop rA
@@ -545,14 +548,14 @@ pit_init:
     
     ; Channel 0, lo/hi byte, mode 3 (square wave)
     mov rA, 0x36
-    out 0x43, rA.b
+    out 0x43, al
     
     ; Divisor = 1193182 / 100 = 11931
     mov rA, 11931
-    out 0x40, rA.b        ; Low byte
+    out 0x40, al        ; Low byte
     mov rA, 11931
     shr rA, 8
-    out 0x40, rA.b        ; High byte
+    out 0x40, al        ; High byte
     
     pop rA
     ret
@@ -564,9 +567,9 @@ keyboard_init:
     push rA
     
     ; Enable keyboard IRQ (IRQ1)
-    in rA.b, 0x21
+    in al, 0x21
     and rA, 0xFD          ; Clear bit 1
-    out 0x21, rA.b
+    out 0x21, al
     
     ; Reset buffer
     mov qword [rel kbd_buf_head], 0
@@ -581,11 +584,11 @@ keyboard_init:
 ; ============================================================================
 kbd_getchar:
     ; Read from keyboard controller
-    in rA.b, 0x64
+    in al, 0x64
     test rA, 1            ; Output buffer full?
     jz .kbd_empty
     
-    in rA.b, 0x60         ; Read scancode
+    in al, 0x60         ; Read scancode
     
     ; Simple scancode to ASCII (set 1, US layout)
     ; This is a minimal mapping for shell use
@@ -610,18 +613,18 @@ kbd_getchar:
     
     ; Check shift state
     mov rC, rA
-    mov rA.b, [rel kbd_shift]
+    mov al, [rel kbd_shift]
     test rA, rA
     jnz .kbd_shifted
     
     ; Unshifted scancode table
     lea rG, [rel scancode_table]
-    mov rA.b, [rG + rC]
+    mov al, [rG + rC]
     ret
 
 .kbd_shifted:
     lea rG, [rel scancode_shift_table]
-    mov rA.b, [rG + rC]
+    mov al, [rG + rC]
     ret
 
 .kbd_bs:
@@ -658,7 +661,7 @@ align 16
 scancode_shift_table:
     db 0,0,"!@#$%^&*()_+",0,0
     db "QWERTYUIOP{}",0,0,0
-    db "ASDFGHJKL:\"~",0
+    db "ASDFGHJKL:", 0x7E, 0
     db 0,"|ZXCVBNM<>?",0,0,0
     db " "
     times 256-58 db 0
@@ -674,35 +677,35 @@ mouse_init:
     
     ; Enable auxiliary device
     mov rA, 0xA8
-    out 0x64, rA.b
+    out 0x64, al
     call ps2_wait
     
     ; Enable IRQ12
     mov rA, 0x20
-    out 0x64, rA.b
+    out 0x64, al
     call ps2_wait_read
-    in rC.b, 0x60
+    in al, 0x60
     or rC, 2              ; Set bit 1 (enable IRQ12)
     mov rA, 0x60
-    out 0x64, rA.b
+    out 0x64, al
     call ps2_wait
-    out 0x60, rC.b
+    out 0x60, al
     call ps2_wait
     
     ; Set defaults
     mov rA, 0xF6
-    out 0x60, rA.b
+    out 0x60, al
     call ps2_wait_read
     
     ; Enable streaming
     mov rA, 0xF4
-    out 0x60, rA.b
+    out 0x60, al
     call ps2_wait_read
     
     ; Enable mouse IRQ (IRQ12) in PIC
-    in rA.b, 0xA1
+    in al, 0xA1
     and rA, 0xEF          ; Clear bit 4
-    out 0xA1, rA.b
+    out 0xA1, al
     
     ; Initialize mouse state
     mov qword [rel mouse_x], 640
@@ -717,7 +720,7 @@ ps2_wait:
     push rC
     mov rC, 100000
 .ps2_wait_loop:
-    in rA.b, 0x64
+    in al, 0x64
     test rA, 2
     jz .ps2_wait_done
     dec rC
@@ -730,7 +733,7 @@ ps2_wait_read:
     push rC
     mov rC, 100000
 .ps2_wr_loop:
-    in rA.b, 0x64
+    in al, 0x64
     test rA, 1
     jnz .ps2_wr_done
     dec rC
@@ -915,7 +918,7 @@ console_print_color:
     
     mov rC, rA            ; Save color
 .con_print_loop:
-    mov rA.b, [rP]
+    mov al, [rP]
     test rA, rA
     jz .con_print_done
     cmp rA, 10            ; newline
@@ -1129,9 +1132,10 @@ pci_scan:
     mov rA, 0x80000000
     shl rG, 11
     or rA, rG
-    mov rC, 0xCF8
-    out rC, rA
-    in rA, 0xCFC
+    mov dx, 0xCF8
+    out dx, eax
+    mov dx, 0xCFC
+    in eax, dx
     
     ; Check if device exists (vendor != 0xFFFF)
     cmp rA, 0xFFFFFFFF
@@ -1189,7 +1193,7 @@ shell_parse:
     push rS
     
     lea rP, [rel input_buf]
-    mov rA.b, [rP]
+    mov al, [rP]
     
     ; Check commands
     cmp rA, 'H'
@@ -1261,9 +1265,9 @@ shell_parse:
 .shell_reboot:
     ; Reboot via keyboard controller
     cli
-    out 0x64, rA.b        ; Pulse reset line
+    out 0x64, al        ; Pulse reset line
     mov rA, 0xFE
-    out 0x64, rA.b
+    out 0x64, al
     jmp .shell_reboot     ; Should not reach here
 
 .shell_done:
@@ -1291,12 +1295,14 @@ msg_atcg_encoded:
 ; ============================================================================
 outb:
     ; rP=port, rA=value
-    out rP.w, rA.b
+    mov dx, di
+    out dx, al
     ret
 
 inb:
     ; rP=port, returns rA=value
-    in rA.b, rP.w
+    mov dx, di
+    in al, dx
     ret
 
 ; ============================================================================
@@ -1319,8 +1325,8 @@ strlen:
 strcmp:
     ; rP=str1, rS=str2, returns rA=0 if equal
 .strcmp_loop:
-    mov rA.b, [rP]
-    mov rC.b, [rS]
+    mov al, [rP]
+    mov dl, [rS]
     cmp rA, rC
     jne .strcmp_ne
     test rA, rA
@@ -1349,7 +1355,8 @@ itoa:
     
 .itoa_loop:
     xor rC, rC
-    div rA, rC            ; rA/rC → quotient in rA, remainder in rC
+    xor rdx, rdx
+    div rC            ; rA/rC → quotient in rA, remainder in rC
     ; ... simplified
     push rC
     inc rS
@@ -1358,8 +1365,8 @@ itoa:
     
 .itoa_write:
     pop rA
-    mov rA.b, [rG + rA]
-    mov [rP], rA.b
+    mov al, [rG + rA]
+    mov [rP], al
     inc rP
     dec rS
     jnz .itoa_write
@@ -1525,8 +1532,8 @@ encode_byte_to_atcg:
     rol rA, 2             ; Rotate top 2 bits
     mov rS, rA
     and rS, 3             ; Get 2-bit value
-    mov rS.b, [rG + rS]  ; Look up ATCG char
-    mov [rP], rS.b
+    mov sil, [rG + rS]  ; Look up ATCG char
+    mov [rP], sil
     inc rP
     dec rC
     jnz .encode_loop
@@ -1546,29 +1553,29 @@ serial_init:
     
     ; Disable interrupts on UART
     mov rA, 0
-    out COM1_PORT + 1, rA.b
+    out COM1_PORT + 1, al
     
     ; Enable DLAB
     mov rA, 0x80
-    out COM1_PORT + 3, rA.b
+    out COM1_PORT + 3, al
     
     ; Set baud rate divisor to 1 (115200 baud)
     mov rA, 1
-    out COM1_PORT, rA.b
+    out COM1_PORT, al
     mov rA, 0
-    out COM1_PORT + 1, rA.b
+    out COM1_PORT + 1, al
     
     ; 8 bits, no parity, one stop bit
     mov rA, 3
-    out COM1_PORT + 3, rA.b
+    out COM1_PORT + 3, al
     
     ; Enable FIFO
     mov rA, 0xC7
-    out COM1_PORT + 2, rA.b
+    out COM1_PORT + 2, al
     
     ; Enable IRQs, RTS/DSR set
     mov rA, 0x0B
-    out COM1_PORT + 4, rA.b
+    out COM1_PORT + 4, al
     
     pop rA
     ret
@@ -1577,10 +1584,10 @@ serial_putchar:
     ; rA=char
     push rC
 .ser_wait:
-    in rC.b, COM1_PORT + 5
+    in al, COM1_PORT + 5
     test rC, 0x20
     jz .ser_wait
-    out COM1_PORT, rA.b
+    out COM1_PORT, al
     pop rC
     ret
 
@@ -1589,7 +1596,7 @@ serial_print:
     push rA
     push rP
 .ser_print_loop:
-    mov rA.b, [rP]
+    mov al, [rP]
     test rA, rA
     jz .ser_print_done
     call serial_putchar
@@ -1613,42 +1620,42 @@ ata_read_sector:
     
     ; Wait for BSY to clear
 .ata_wait:
-    in rC.b, 0x1F7
+    in al, 0x1F7
     test rC, 0x80
     jnz .ata_wait
     
     ; Select drive (LBA mode, master)
     mov rC, 0xE0          ; LBA28, master
-    out 0x1F6, rC.b
+    out 0x1F6, al
     
     ; Sector count = 1
     mov rC, 1
-    out 0x1F2, rC.b
+    out 0x1F2, al
     
     ; LBA low/mid/high
-    out 0x1F3, rA.b       ; LBA low
+    out 0x1F3, al       ; LBA low
     mov rC, rA
     shr rC, 8
-    out 0x1F4, rC.b       ; LBA mid
+    out 0x1F4, al       ; LBA mid
     mov rC, rA
     shr rC, 16
-    out 0x1F5, rC.b       ; LBA high
+    out 0x1F5, al       ; LBA high
     
     ; Send READ command
     mov rC, 0x20
-    out 0x1F7, rC.b
+    out 0x1F7, al
     
     ; Wait for data
 .ata_data_wait:
-    in rC.b, 0x1F7
+    in al, 0x1F7
     test rC, 0x08         ; DRQ
     jz .ata_data_wait
     
     ; Read 256 words (512 bytes)
     mov rC, 256
 .ata_read_loop:
-    in rA, 0x1F0          ; Read word
-    mov [rP], rA.w
+    in eax, 0x1F0          ; Read word
+    mov [rP], ax
     add rP, 2
     dec rC
     jnz .ata_read_loop
@@ -1667,49 +1674,49 @@ ata_write_sector:
     
     ; Wait for BSY to clear
 .ata_w_wait:
-    in rC.b, 0x1F7
+    in al, 0x1F7
     test rC, 0x80
     jnz .ata_w_wait
     
     ; Select drive
     mov rC, 0xE0
-    out 0x1F6, rC.b
+    out 0x1F6, al
     
     ; Sector count = 1
     mov rC, 1
-    out 0x1F2, rC.b
+    out 0x1F2, al
     
     ; LBA
-    out 0x1F3, rA.b
+    out 0x1F3, al
     mov rC, rA
     shr rC, 8
-    out 0x1F4, rC.b
+    out 0x1F4, al
     mov rC, rA
     shr rC, 16
-    out 0x1F5, rC.b
+    out 0x1F5, al
     
     ; Send WRITE command
     mov rC, 0x30
-    out 0x1F7, rC.b
+    out 0x1F7, al
     
     ; Wait for DRQ
 .ata_w_drq:
-    in rC.b, 0x1F7
+    in al, 0x1F7
     test rC, 0x08
     jz .ata_w_drq
     
     ; Write 256 words
     mov rC, 256
 .ata_write_loop:
-    mov rA.w, [rP]
-    out 0x1F0, rA.w
+    mov ax, [rP]
+    out 0x1F0, al
     add rP, 2
     dec rC
     jnz .ata_write_loop
     
     ; Flush cache
     mov rC, 0xE7
-    out 0x1F7, rC.b
+    out 0x1F7, al
     
     pop rC
     pop rP
@@ -1724,13 +1731,13 @@ acpi_shutdown:
     ; Try ACPI shutdown via port 0x604 (QEMU)
     push rA
     mov rA, 0x2000
-    out 0x604, rA.w
+    out 0x604, ax
     ; Try port 0xB004 (bochs)
     mov rA, 0x2000
-    out 0xB004, rA.w
+    out 0xB004, ax
     ; Try old-style AT shutdown
     mov rA, 0x0F
-    out 0x92, rA.b
+    out 0x92, al
     pop rA
     ret
 
@@ -1738,7 +1745,7 @@ acpi_reboot:
     ; Keyboard controller reset
     cli
     mov rA, 0xFE
-    out 0x64, rA.b
+    out 0x64, al
     ; Triple fault fallback
     lidt [rel null_idt]
     int 0
@@ -1765,23 +1772,24 @@ beep:
     
     ; Calculate divisor
     mov rG, 1193182
-    div rG, rA            ; divisor = 1193182 / freq
+    xor rdx, rdx
+    div rA            ; divisor = 1193182 / freq
     
     ; Program PIT channel 2
     push rA
     mov rA, 0xB6
-    out 0x43, rA.b
+    out 0x43, al
     mov rA, rG
-    out 0x42, rA.b
+    out 0x42, al
     mov rA, rG
     shr rA, 8
-    out 0x42, rA.b
+    out 0x42, al
     pop rA
     
     ; Enable speaker
-    in rA.b, 0x61
+    in al, 0x61
     or rA, 3
-    out 0x61, rA.b
+    out 0x61, al
     
     ; Wait (simplified - would use PIT sleep)
     mov rC, 1000000
@@ -1791,9 +1799,9 @@ beep:
     jnz .beep_wait
     
     ; Disable speaker
-    in rA.b, 0x61
+    in al, 0x61
     and rA, 0xFC
-    out 0x61, rA.b
+    out 0x61, al
     
     pop rG
     pop rC

@@ -117,7 +117,7 @@ rast_init:
     mov rC, 1280 * 720
     movss xmm0, [rel .float_one]
 .rast_init_depth:
-    movss [rG], xmm0
+    movss dword [rG], xmm0
     add rG, 4
     dec rC
     jnz .rast_init_depth
@@ -159,7 +159,7 @@ rast_clear:
     mov rC, 1280 * 720
     movss xmm0, [rel .float_one]
 .rast_clear_depth_loop:
-    movss [rG], xmm0
+    movss dword [rG], xmm0
     add rG, 4
     dec rC
     jnz .rast_clear_depth_loop
@@ -181,7 +181,7 @@ rast_clear_depth:
     mov rC, 1280 * 720
     movss xmm0, [rel .float_one]
 .rast_cd_loop:
-    movss [rG], xmm0
+    movss dword [rG], xmm0
     add rG, 4
     dec rC
     jnz .rast_cd_loop
@@ -221,7 +221,7 @@ rast_set_mvp:
     mov rC, 16
 .rast_copy_model:
     movss xmm0, [rP]
-    movss [rA], xmm0
+    movss dword [rA], xmm0
     add rP, 4
     add rA, 4
     dec rC
@@ -231,7 +231,7 @@ rast_set_mvp:
     mov rC, 16
 .rast_copy_view:
     movss xmm0, [rS]
-    movss [rA], xmm0
+    movss dword [rA], xmm0
     add rS, 4
     add rA, 4
     dec rC
@@ -241,7 +241,7 @@ rast_set_mvp:
     mov rC, 16
 .rast_copy_proj:
     movss xmm0, [rG]
-    movss [rA], xmm0
+    movss dword [rA], xmm0
     add rG, 4
     add rA, 4
     dec rC
@@ -332,7 +332,8 @@ rast_transform_vertex:
     lea rA, [rP + VERTEX_UV_OFF]
     lea rG, [rS + 24]
 .rast_tv_uv:
-    mov byte [rG], [rA]
+    mov al, [rA]
+mov byte [rG], al
     inc rA
     inc rG
     dec rC
@@ -342,7 +343,8 @@ rast_transform_vertex:
     lea rA, [rP + VERTEX_COL_OFF]
     lea rG, [rS + 32]
 .rast_tv_col:
-    mov byte [rG], [rA]
+    mov al, [rA]
+mov byte [rG], al
     inc rA
     inc rG
     dec rC
@@ -350,20 +352,20 @@ rast_transform_vertex:
     
     ; Transform position by model matrix → world_pos
     lea rG, [rel rast_model]
-    lea rP_temp, [rP + VERTEX_POS_OFF]
+    lea r12, [rP + VERTEX_POS_OFF]
     lea rP_out, [rS]         ; world_pos
     ; call mat4_transform_vec3
     
     ; Transform normal by model matrix (use inverse transpose for non-uniform scale)
     ; Simplified: just use model matrix for now
     lea rG, [rel rast_model]
-    lea rP_temp, [rP + VERTEX_NORM_OFF]
+    lea r12, [rP + VERTEX_NORM_OFF]
     lea rP_out, [rS + 12]   ; world_norm
     ; call mat4_transform_vec3
     
     ; Transform position by MVP → clip_pos
     lea rG, [rel rast_mvp]
-    lea rP_temp, [rP + VERTEX_POS_OFF]
+    lea r12, [rP + VERTEX_POS_OFF]
     lea rP_out, [rS + 48]   ; clip_pos
     ; call mat4_transform_vec4
     
@@ -374,13 +376,13 @@ rast_transform_vertex:
     movss xmm0, [rS + 60]   ; clip.w
     movss xmm1, [rS + 48]   ; clip.x
     divss xmm1, xmm0
-    movss [rS + 64], xmm1   ; ndc.x
+    movss dword [rS + 64], xmm1   ; ndc.x
     movss xmm1, [rS + 52]   ; clip.y
     divss xmm1, xmm0
-    movss [rS + 68], xmm1   ; ndc.y
+    movss dword [rS + 68], xmm1   ; ndc.y
     movss xmm1, [rS + 56]   ; clip.z
     divss xmm1, xmm0
-    movss [rS + 72], xmm1   ; ndc.z
+    movss dword [rS + 72], xmm1   ; ndc.z
     
     ; Store 1/w for perspective-correct interpolation
     movss xmm1, xmm0
@@ -390,7 +392,7 @@ rast_transform_vertex:
     movss xmm4, [rel .float_two]
     subss xmm4, xmm3
     mulss xmm2, xmm4        ; Refined 1/w
-    movss [rS + 84], xmm2   ; 1/w
+    movss dword [rS + 84], xmm2   ; 1/w
     
     ; Viewport transform → screen coordinates
     ; screen.x = (ndc.x + 1) * 0.5 * viewport_w + viewport_x
@@ -402,7 +404,7 @@ rast_transform_vertex:
     mulss xmm0, xmm1
     cvtsi2ss xmm1, [rel rast_vp_x]
     addss xmm0, xmm1
-    movss [rS + 76], xmm0   ; screen.x
+    movss dword [rS + 76], xmm0   ; screen.x
     
     movss xmm0, [rS + 68]   ; ndc.y
     movss xmm1, [rel .float_one]
@@ -412,7 +414,7 @@ rast_transform_vertex:
     mulss xmm1, xmm0
     cvtsi2ss xmm0, [rel rast_vp_y]
     addss xmm1, xmm0
-    movss [rS + 80], xmm1   ; screen.y
+    movss dword [rS + 80], xmm1   ; screen.y
     
     pop rG
     pop rC
@@ -526,9 +528,9 @@ rast_rasterize_triangle:
     
     ; Store vertex screen positions
     movss xmm0, [rP + 76]
-    movss [rel .v0_sx], xmm0
+    movss dword [rel .v0_sx], xmm0
     movss xmm0, [rP + 80]
-    movss [rel .v0_sy], xmm0
+    movss dword [rel .v0_sy], xmm0
     movss xmm0, [rS + 76]   ; Hmm, rS was overwritten
     ; This is getting messy with register allocation.
     ; Let me use a simpler approach.
@@ -723,7 +725,7 @@ rast_write_pixel:
     ; Write depth
     test qword [rel rast_state], RS_DEPTH_WRITE
     jz .rast_wp_no_depth_write
-    movss [rel rast_depth_buf + rG*4], xmm0
+    movss dword [rel rast_depth_buf + rG*4], xmm0
 
 .rast_wp_no_depth_write:
     ; Convert float color to ARGB uint32
@@ -851,18 +853,18 @@ rast_draw_line:
 
 .rast_dl_continue:
     ; e2 = 2 * err
-    mov rG_temp, r0
-    shl rG_temp, 1
+    mov r11, r0
+    shl r11, 1
     
     ; if e2 >= dy: err += dy, x0 += sx
-    cmp rG_temp, r1
+    cmp r11, r1
     jl .rast_dl_skip_x
     add r0, r1
     add rA, r2
 
 .rast_dl_skip_x:
     ; if e2 <= dx: err += dx, y0 += sy
-    cmp rG_temp, r0_temp    ; Hmm, need dx saved
+    cmp r11, r0_temp    ; Hmm, need dx saved
     jg .rast_dl_skip_y
     add r0, r0_dx           ; Need to save dx
     add rC, r3
@@ -930,11 +932,11 @@ rast_set_camera:
     push rA
     lea rA, [rel rast_cam_pos]
     movss xmm0, [rP]
-    movss [rA], xmm0
+    movss dword [rA], xmm0
     movss xmm0, [rP + 4]
-    movss [rA + 4], xmm0
+    movss dword [rA + 4], xmm0
     movss xmm0, [rP + 8]
-    movss [rA + 8], xmm0
+    movss dword [rA + 8], xmm0
     pop rA
     ret
 
@@ -956,15 +958,15 @@ rast_set_texture:
 .data
 
 .float_zero:
-    dd 0.0
+    dd 0x00000000
 .float_one:
-    dd 1.0
+    dd 0x3f800000
 .float_half:
-    dd 0.5
+    dd 0x3f000000
 .float_255:
-    dd 255.0
+    dd 0x437f0000
 .ambient_strength:
-    dd 0.15
+    dd 0x3e19999a
 .zero_val:
     dq 0
 .max_x_val:
@@ -979,8 +981,8 @@ rast_set_texture:
 .bb_max_y: dq 0
 
 ; Vertex screen positions
-.v0_sx: dd 0.0
-.v0_sy: dd 0.0
+.v0_sx: dd 0x00000000
+.v0_sy: dd 0x00000000
 
 ; ============================================================================
 ; BSS

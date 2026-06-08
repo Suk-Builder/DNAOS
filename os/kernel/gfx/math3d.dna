@@ -62,13 +62,13 @@ vec3_add:
     push rA
     movss xmm0, [rS]
     addss xmm0, [rG]
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     movss xmm0, [rS + 4]
     addss xmm0, [rG + 4]
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     movss xmm0, [rS + 8]
     addss xmm0, [rG + 8]
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     pop rA
     ret
 
@@ -80,13 +80,13 @@ vec3_sub:
     push rA
     movss xmm0, [rS]
     subss xmm0, [rG]
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     movss xmm0, [rS + 4]
     subss xmm0, [rG + 4]
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     movss xmm0, [rS + 8]
     subss xmm0, [rG + 8]
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     pop rA
     ret
 
@@ -98,13 +98,13 @@ vec3_mul:
     push rA
     movss xmm0, [rS]
     mulss xmm0, [rG]
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     movss xmm0, [rS + 4]
     mulss xmm0, [rG + 4]
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     movss xmm0, [rS + 8]
     mulss xmm0, [rG + 8]
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     pop rA
     ret
 
@@ -115,20 +115,20 @@ vec3_mul:
 vec3_scale:
     push rA
     mulss xmm0, [rS]
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     movss xmm0, [rel .vec3_scale_s]
     mulss xmm0, [rS + 4]
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     movss xmm0, [rel .vec3_scale_s + 4]
     mulss xmm0, [rS + 8]
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     pop rA
     ret
 
 .data
 align 4
 .vec3_scale_s:
-    dd 0.0, 0.0, 0.0, 0.0
+    dd 0x00000000, 0.0, 0.0, 0.0
 
 .code
 
@@ -161,7 +161,7 @@ vec3_cross:
     movss xmm1, [rS + 8]
     mulss xmm1, [rG + 4]
     subss xmm0, xmm1
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     
     ; y = a.z*b.x - a.x*b.z
     movss xmm0, [rS + 8]
@@ -169,7 +169,7 @@ vec3_cross:
     movss xmm1, [rS]
     mulss xmm1, [rG + 8]
     subss xmm0, xmm1
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     
     ; z = a.x*b.y - a.y*b.x
     movss xmm0, [rS]
@@ -177,7 +177,7 @@ vec3_cross:
     movss xmm1, [rS + 4]
     mulss xmm1, [rG]
     subss xmm0, xmm1
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     
     pop rA
     ret
@@ -219,22 +219,22 @@ vec3_normalize:
     
     movss xmm0, [rS]
     mulss xmm0, xmm1
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     movss xmm0, [rS + 4]
     mulss xmm0, xmm1
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     movss xmm0, [rS + 8]
     mulss xmm0, xmm1
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     pop rG
     pop rA
     ret
 
 .vec3_norm_zero:
     movss xmm0, [rel .float_zero]
-    movss [rP], xmm0
-    movss [rP + 4], xmm0
-    movss [rP + 8], xmm0
+    movss dword [rP], xmm0
+    movss dword [rP + 4], xmm0
+    movss dword [rP + 8], xmm0
     pop rG
     pop rA
     ret
@@ -254,21 +254,21 @@ vec3_lerp:
     movss xmm3, [rG]
     mulss xmm3, xmm0
     addss xmm2, xmm3
-    movss [rP], xmm2
+    movss dword [rP], xmm2
     
     movss xmm2, [rS + 4]
     mulss xmm2, xmm1
     movss xmm3, [rG + 4]
     mulss xmm3, xmm0
     addss xmm2, xmm3
-    movss [rP + 4], xmm2
+    movss dword [rP + 4], xmm2
     
     movss xmm2, [rS + 8]
     mulss xmm2, xmm1
     movss xmm3, [rG + 8]
     mulss xmm3, xmm0
     addss xmm2, xmm3
-    movss [rP + 8], xmm2
+    movss dword [rP + 8], xmm2
     
     pop rA
     ret
@@ -280,7 +280,7 @@ vec3_lerp:
 vec3_reflect:
     push rA
     ; reflect = incident - 2 * dot(incident, normal) * normal
-    mov rP_save, rP
+    mov r13, rP
     mov rP, rS
     call vec3_dot          ; xmm0 = dot(i, n)
     addss xmm0, xmm0      ; xmm0 = 2*dot
@@ -296,13 +296,13 @@ vec3_reflect:
     ; result = incident - 2*dot*normal
     movss xmm4, [rS]
     subss xmm4, xmm1
-    movss [rP_save], xmm4
+    movss dword [r13], xmm4
     movss xmm4, [rS + 4]
     subss xmm4, xmm2
-    movss [rP_save + 4], xmm4
+    movss dword [r13 + 4], xmm4
     movss xmm4, [rS + 8]
     subss xmm4, xmm3
-    movss [rP_save + 8], xmm4
+    movss dword [r13 + 8], xmm4
     
     pop rA
     ret
@@ -341,32 +341,32 @@ mat4_identity:
     xor rA, rA
     mov rC, 16
 .mat4_id_loop:
-    movss [rP + rA*4], xmm0   ; Will set all to 0 first
+    movss dword [rP + rA*4], xmm0   ; Will set all to 0 first
     inc rA
     dec rC
     jnz .mat4_id_loop
     
     ; Set diagonal to 1.0
     movss xmm0, [rel .float_one]
-    movss [rP], xmm0
-    movss [rP + 20], xmm0     ; [1][1]
-    movss [rP + 40], xmm0     ; [2][2]
-    movss [rP + 60], xmm0     ; [3][3]
+    movss dword [rP], xmm0
+    movss dword [rP + 20], xmm0     ; [1][1]
+    movss dword [rP + 40], xmm0     ; [2][2]
+    movss dword [rP + 60], xmm0     ; [3][3]
     
     ; Zero the rest
     movss xmm0, [rel .float_zero]
-    movss [rP + 4], xmm0
-    movss [rP + 8], xmm0
-    movss [rP + 12], xmm0
-    movss [rP + 16], xmm0
-    movss [rP + 24], xmm0
-    movss [rP + 28], xmm0
-    movss [rP + 32], xmm0
-    movss [rP + 36], xmm0
-    movss [rP + 44], xmm0
-    movss [rP + 48], xmm0
-    movss [rP + 52], xmm0
-    movss [rP + 56], xmm0
+    movss dword [rP + 4], xmm0
+    movss dword [rP + 8], xmm0
+    movss dword [rP + 12], xmm0
+    movss dword [rP + 16], xmm0
+    movss dword [rP + 24], xmm0
+    movss dword [rP + 28], xmm0
+    movss dword [rP + 32], xmm0
+    movss dword [rP + 36], xmm0
+    movss dword [rP + 44], xmm0
+    movss dword [rP + 48], xmm0
+    movss dword [rP + 52], xmm0
+    movss dword [rP + 56], xmm0
     
     pop rC
     pop rA
@@ -420,7 +420,7 @@ mat4_multiply:
     mov rA, r0
     shl rA, 2
     add rA, r1
-    movss [rP + rA*4], xmm0
+    movss dword [rP + rA*4], xmm0
     
     inc r1
     cmp r1, 4
@@ -445,14 +445,14 @@ mat4_translate:
     call mat4_identity
     
     ; Set translation column (column 3)
-    movss [rP + 12], xmm0   ; m[3][0] = x
-    movss [rP + 16], xmm1   ; m[3][1] = y  -- wait, column-major
+    movss dword [rP + 12], xmm0   ; m[3][0] = x
+    movss dword [rP + 16], xmm1   ; m[3][1] = y  -- wait, column-major
     ; Column 3: [12]=col3.x, [16]=col3.y, [20]=col3.z, [24]=col3.w
     ; Actually in column-major: m[col*4 + row]
     ; Translation goes in column 3: indices 12,13,14,15 → offsets 48,52,56,60
-    movss [rP + 48], xmm0   ; col3.x = tx
-    movss [rP + 52], xmm1   ; col3.y = ty
-    movss [rP + 56], xmm2   ; col3.z = tz
+    movss dword [rP + 48], xmm0   ; col3.x = tx
+    movss dword [rP + 52], xmm1   ; col3.y = ty
+    movss dword [rP + 56], xmm2   ; col3.z = tz
     
     pop rA
     ret
@@ -468,7 +468,7 @@ mat4_rotate_x:
     call mat4_identity
     
     ; cos(angle), sin(angle)
-    movss [rel .math_temp], xmm0
+    movss dword [rel .math_temp], xmm0
     fld dword [rel .math_temp]
     fsincos
     fstp dword [rel .math_cos]
@@ -491,13 +491,13 @@ mat4_rotate_x:
     ;   col1 = (0, cos, sin, 0)
     ;   col2 = (0, -sin, cos, 0)
     
-    movss [rP + 20], xmm0   ; col1.y = cos  (offset 5*4=20)
-    movss [rP + 24], xmm1   ; col1.z = sin  (offset 6*4=24)
+    movss dword [rP + 20], xmm0   ; col1.y = cos  (offset 5*4=20)
+    movss dword [rP + 24], xmm1   ; col1.z = sin  (offset 6*4=24)
     movss xmm2, xmm1
     xorps xmm3, xmm3
     subss xmm3, xmm2        ; xmm3 = -sin
-    movss [rP + 36], xmm3   ; col2.y = -sin (offset 9*4=36)
-    movss [rP + 40], xmm0   ; col2.z = cos  (offset 10*4=40)
+    movss dword [rP + 36], xmm3   ; col2.y = -sin (offset 9*4=36)
+    movss dword [rP + 40], xmm0   ; col2.z = cos  (offset 10*4=40)
     
     pop rG
     pop rA
@@ -513,7 +513,7 @@ mat4_rotate_y:
     
     call mat4_identity
     
-    movss [rel .math_temp], xmm0
+    movss dword [rel .math_temp], xmm0
     fld dword [rel .math_temp]
     fsincos
     fstp dword [rel .math_cos]
@@ -527,10 +527,10 @@ mat4_rotate_y:
     
     ; col0 = (cos, 0, -sin, 0)
     ; col2 = (sin, 0, cos, 0)
-    movss [rP], xmm0         ; col0.x = cos
-    movss [rP + 8], xmm3     ; col0.z = -sin
-    movss [rP + 32], xmm1    ; col2.x = sin
-    movss [rP + 40], xmm0    ; col2.z = cos
+    movss dword [rP], xmm0         ; col0.x = cos
+    movss dword [rP + 8], xmm3     ; col0.z = -sin
+    movss dword [rP + 32], xmm1    ; col2.x = sin
+    movss dword [rP + 40], xmm0    ; col2.z = cos
     
     pop rG
     pop rA
@@ -546,7 +546,7 @@ mat4_rotate_z:
     
     call mat4_identity
     
-    movss [rel .math_temp], xmm0
+    movss dword [rel .math_temp], xmm0
     fld dword [rel .math_temp]
     fsincos
     fstp dword [rel .math_cos]
@@ -559,10 +559,10 @@ mat4_rotate_z:
     
     ; col0 = (cos, sin, 0, 0)
     ; col1 = (-sin, cos, 0, 0)
-    movss [rP], xmm0         ; col0.x = cos
-    movss [rP + 4], xmm1     ; col0.y = sin
-    movss [rP + 16], xmm3    ; col1.x = -sin
-    movss [rP + 20], xmm0    ; col1.y = cos
+    movss dword [rP], xmm0         ; col0.x = cos
+    movss dword [rP + 4], xmm1     ; col0.y = sin
+    movss dword [rP + 16], xmm3    ; col1.x = -sin
+    movss dword [rP + 20], xmm0    ; col1.y = cos
     
     pop rG
     pop rA
@@ -575,9 +575,9 @@ mat4_rotate_z:
 mat4_scale:
     push rA
     call mat4_identity
-    movss [rP], xmm0         ; col0.x = sx
-    movss [rP + 20], xmm1    ; col1.y = sy
-    movss [rP + 40], xmm2    ; col2.z = sz
+    movss dword [rP], xmm0         ; col0.x = sx
+    movss dword [rP + 20], xmm1    ; col1.y = sy
+    movss dword [rP + 40], xmm2    ; col2.z = sz
     pop rA
     ret
 
@@ -594,7 +594,7 @@ mat4_perspective:
     mov rA, 0
 .mat4_persp_clear:
     movss xmm4, [rG]
-    movss [rP + rA*4], xmm4
+    movss dword [rP + rA*4], xmm4
     inc rA
     cmp rA, 16
     jl .mat4_persp_clear
@@ -602,7 +602,7 @@ mat4_perspective:
     ; tanHalfFov = tan(fov/2)
     movss xmm4, [rel .float_half]
     mulss xmm4, xmm0        ; fov/2
-    movss [rel .math_temp], xmm4
+    movss dword [rel .math_temp], xmm4
     fld dword [rel .math_temp]
     fptan
     fstp dword [rel .math_temp]  ; discard 1.0 pushed by fptan
@@ -618,12 +618,12 @@ mat4_perspective:
     mulss xmm6, xmm4
     movss xmm7, [rel .float_one]
     divss xmm7, xmm6
-    movss [rP], xmm7         ; col0.x
+    movss dword [rP], xmm7         ; col0.x
     
     ; m[1][1] = 1 / tanHalfFov
     movss xmm6, [rel .float_one]
     divss xmm6, xmm4
-    movss [rP + 20], xmm6    ; col1.y
+    movss dword [rP + 20], xmm6    ; col1.y
     
     ; m[2][2] = -(far + near) / range
     movss xmm6, xmm3
@@ -631,11 +631,11 @@ mat4_perspective:
     divss xmm6, xmm5
     xorps xmm7, xmm7
     subss xmm7, xmm6
-    movss [rP + 40], xmm7    ; col2.z
+    movss dword [rP + 40], xmm7    ; col2.z
     
     ; m[2][3] = -1
     movss xmm6, [rel .float_neg_one]
-    movss [rP + 44], xmm6    ; col2.w
+    movss dword [rP + 44], xmm6    ; col2.w
     
     ; m[3][2] = -2 * far * near / range
     movss xmm6, xmm3
@@ -645,7 +645,7 @@ mat4_perspective:
     divss xmm6, xmm5
     xorps xmm7, xmm7
     subss xmm7, xmm6
-    movss [rP + 56], xmm7    ; col3.z
+    movss dword [rP + 56], xmm7    ; col3.z
     
     pop rG
     pop rA
@@ -688,33 +688,33 @@ mat4_lookat:
     
     ; Row 0: s
     movss xmm0, [rsp + 24]
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     movss xmm0, [rsp + 28]
-    movss [rP + 16], xmm0
+    movss dword [rP + 16], xmm0
     movss xmm0, [rsp + 32]
-    movss [rP + 32], xmm0
+    movss dword [rP + 32], xmm0
     
     ; Row 1: u
     movss xmm0, [rsp + 48]
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     movss xmm0, [rsp + 52]
-    movss [rP + 20], xmm0
+    movss dword [rP + 20], xmm0
     movss xmm0, [rsp + 56]
-    movss [rP + 36], xmm0
+    movss dword [rP + 36], xmm0
     
     ; Row 2: -f
     movss xmm0, [rsp]
     xorps xmm1, xmm1
     subss xmm1, xmm0
-    movss [rP + 8], xmm1
+    movss dword [rP + 8], xmm1
     movss xmm0, [rsp + 4]
     xorps xmm1, xmm1
     subss xmm1, xmm0
-    movss [rP + 24], xmm1
+    movss dword [rP + 24], xmm1
     movss xmm0, [rsp + 8]
     xorps xmm1, xmm1
     subss xmm1, xmm0
-    movss [rP + 40], xmm1
+    movss dword [rP + 40], xmm1
     
     ; Translation: -dot(s,eye), -dot(u,eye), dot(f,eye)
     lea rS, [rsp + 24]
@@ -746,19 +746,19 @@ mat4_ortho:
     subss xmm4, xmm0
     movss xmm5, [rel .float_two]
     divss xmm5, xmm4
-    movss [rP], xmm5
+    movss dword [rP], xmm5
     
     ; m[1][1] = 2/(top-bottom)
     movss xmm4, xmm3
     subss xmm4, xmm2
     movss xmm5, [rel .float_two]
     divss xmm5, xmm4
-    movss [rP + 20], xmm5
+    movss dword [rP + 20], xmm5
     
     ; m[2][2] = -2/(far-near)
     ; (near and far from stack - simplified)
     movss xmm5, [rel .float_neg_one]
-    movss [rP + 40], xmm5
+    movss dword [rP + 40], xmm5
     
     ; m[3][0] = -(right+left)/(right-left)
     movss xmm4, xmm1
@@ -768,7 +768,7 @@ mat4_ortho:
     divss xmm4, xmm5
     xorps xmm5, xmm5
     subss xmm5, xmm4
-    movss [rP + 48], xmm5
+    movss dword [rP + 48], xmm5
     
     ; m[3][1] = -(top+bottom)/(top-bottom)
     movss xmm4, xmm3
@@ -778,7 +778,7 @@ mat4_ortho:
     divss xmm4, xmm5
     xorps xmm5, xmm5
     subss xmm5, xmm4
-    movss [rP + 52], xmm5
+    movss dword [rP + 52], xmm5
     
     pop rA
     ret
@@ -796,7 +796,7 @@ mat4_transpose:
     mov rC, 0
 .mat4_trans_loop:
     movss xmm0, [rS + rC*4]
-    movss [rP + rC*4], xmm0
+    movss dword [rP + rC*4], xmm0
     inc rC
     cmp rC, 16
     jl .mat4_trans_loop
@@ -805,38 +805,38 @@ mat4_transpose:
     ; m[0][1] ↔ m[1][0]: offsets 4 ↔ 16
     movss xmm0, [rS + 4]
     movss xmm1, [rS + 16]
-    movss [rP + 16], xmm0
-    movss [rP + 4], xmm1
+    movss dword [rP + 16], xmm0
+    movss dword [rP + 4], xmm1
     
     ; m[0][2] ↔ m[2][0]: 8 ↔ 32
     movss xmm0, [rS + 8]
     movss xmm1, [rS + 32]
-    movss [rP + 32], xmm0
-    movss [rP + 8], xmm1
+    movss dword [rP + 32], xmm0
+    movss dword [rP + 8], xmm1
     
     ; m[0][3] ↔ m[3][0]: 12 ↔ 48
     movss xmm0, [rS + 12]
     movss xmm1, [rS + 48]
-    movss [rP + 48], xmm0
-    movss [rP + 12], xmm1
+    movss dword [rP + 48], xmm0
+    movss dword [rP + 12], xmm1
     
     ; m[1][2] ↔ m[2][1]: 24 ↔ 36
     movss xmm0, [rS + 24]
     movss xmm1, [rS + 36]
-    movss [rP + 36], xmm0
-    movss [rP + 24], xmm1
+    movss dword [rP + 36], xmm0
+    movss dword [rP + 24], xmm1
     
     ; m[1][3] ↔ m[3][1]: 28 ↔ 52
     movss xmm0, [rS + 28]
     movss xmm1, [rS + 52]
-    movss [rP + 52], xmm0
-    movss [rP + 28], xmm1
+    movss dword [rP + 52], xmm0
+    movss dword [rP + 28], xmm1
     
     ; m[2][3] ↔ m[3][2]: 44 ↔ 56
     movss xmm0, [rS + 44]
     movss xmm1, [rS + 56]
-    movss [rP + 56], xmm0
-    movss [rP + 44], xmm1
+    movss dword [rP + 56], xmm0
+    movss dword [rP + 44], xmm1
     
     pop rC
     pop rA
@@ -898,7 +898,7 @@ mat4_transform_vec4:
     movss xmm1, [rG + 48]
     mulss xmm1, [rS + 12]
     addss xmm0, xmm1
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     jmp .mat4_tv4_next
 
 .mat4_tv4_row1:
@@ -913,7 +913,7 @@ mat4_transform_vec4:
     movss xmm1, [rG + 52]
     mulss xmm1, [rS + 12]
     addss xmm0, xmm1
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     jmp .mat4_tv4_next
 
 .mat4_tv4_row2:
@@ -928,7 +928,7 @@ mat4_transform_vec4:
     movss xmm1, [rG + 56]
     mulss xmm1, [rS + 12]
     addss xmm0, xmm1
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     jmp .mat4_tv4_next
 
 .mat4_tv4_row3:
@@ -943,7 +943,7 @@ mat4_transform_vec4:
     movss xmm1, [rG + 60]
     mulss xmm1, [rS + 12]
     addss xmm0, xmm1
-    movss [rP + 12], xmm0
+    movss dword [rP + 12], xmm0
 
 .mat4_tv4_next:
     inc rC
@@ -967,13 +967,13 @@ mat4_transform_vec3:
     
     ; Set w=1
     movss xmm0, [rS]
-    movss [rsp], xmm0
+    movss dword [rsp], xmm0
     movss xmm0, [rS + 4]
-    movss [rsp + 4], xmm0
+    movss dword [rsp + 4], xmm0
     movss xmm0, [rS + 8]
-    movss [rsp + 8], xmm0
+    movss dword [rsp + 8], xmm0
     movss xmm0, [rel .float_one]
-    movss [rsp + 12], xmm0
+    movss dword [rsp + 12], xmm0
     
     ; Transform
     lea rP, [rsp]           ; Wait, we need another temp
@@ -987,13 +987,13 @@ mat4_transform_vec3:
     movss xmm0, [rsp + 12]  ; w
     movss xmm1, [rsp]       ; x
     divss xmm1, xmm0
-    movss [rP], xmm1
+    movss dword [rP], xmm1
     movss xmm1, [rsp + 4]   ; y
     divss xmm1, xmm0
-    movss [rP + 4], xmm1
+    movss dword [rP + 4], xmm1
     movss xmm1, [rsp + 8]   ; z
     divss xmm1, xmm0
-    movss [rP + 8], xmm1
+    movss dword [rP + 8], xmm1
     
     add rsp, 32
     pop rA
@@ -1010,11 +1010,11 @@ mat4_transform_vec3:
 quat_identity:
     push rA
     movss xmm0, [rel .float_zero]
-    movss [rP], xmm0         ; x = 0
-    movss [rP + 4], xmm0     ; y = 0
-    movss [rP + 8], xmm0     ; z = 0
+    movss dword [rP], xmm0         ; x = 0
+    movss dword [rP + 4], xmm0     ; y = 0
+    movss dword [rP + 8], xmm0     ; z = 0
     movss xmm0, [rel .float_one]
-    movss [rP + 12], xmm0    ; w = 1
+    movss dword [rP + 12], xmm0    ; w = 1
     pop rA
     ret
 
@@ -1029,7 +1029,7 @@ quat_from_axis_angle:
     ; q = (axis * sin(angle/2), cos(angle/2))
     movss xmm1, [rel .float_half]
     mulss xmm1, xmm0        ; angle/2
-    movss [rel .math_temp], xmm1
+    movss dword [rel .math_temp], xmm1
     fld dword [rel .math_temp]
     fsincos
     fstp dword [rel .math_cos]  ; cos
@@ -1040,21 +1040,21 @@ quat_from_axis_angle:
     ; q.x = axis.x * sin
     movss xmm0, [rS]
     mulss xmm0, xmm2
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     
     ; q.y = axis.y * sin
     movss xmm0, [rS + 4]
     mulss xmm0, xmm2
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     
     ; q.z = axis.z * sin
     movss xmm0, [rS + 8]
     mulss xmm0, xmm2
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     
     ; q.w = cos
     movss xmm0, [rel .math_cos]
-    movss [rP + 12], xmm0
+    movss dword [rP + 12], xmm0
     
     pop rG
     pop rA
@@ -1083,7 +1083,7 @@ quat_multiply:
     movss xmm1, [rS + 8]    ; a.z
     mulss xmm1, [rG + 8]    ; * b.z
     subss xmm0, xmm1
-    movss [rP + 12], xmm0   ; out.w
+    movss dword [rP + 12], xmm0   ; out.w
     
     ; x
     movss xmm0, [rS + 12]   ; a.w
@@ -1097,7 +1097,7 @@ quat_multiply:
     movss xmm1, [rS + 8]    ; a.z
     mulss xmm1, [rG + 4]    ; * b.y
     subss xmm0, xmm1
-    movss [rP], xmm0        ; out.x
+    movss dword [rP], xmm0        ; out.x
     
     ; y
     movss xmm0, [rS + 12]   ; a.w
@@ -1111,7 +1111,7 @@ quat_multiply:
     movss xmm1, [rS + 8]    ; a.z
     mulss xmm1, [rG]        ; * b.x
     addss xmm0, xmm1
-    movss [rP + 4], xmm0    ; out.y
+    movss dword [rP + 4], xmm0    ; out.y
     
     ; z
     movss xmm0, [rS + 12]   ; a.w
@@ -1125,7 +1125,7 @@ quat_multiply:
     movss xmm1, [rS + 8]    ; a.z
     mulss xmm1, [rG + 12]   ; * b.w
     addss xmm0, xmm1
-    movss [rP + 8], xmm0    ; out.z
+    movss dword [rP + 8], xmm0    ; out.z
     
     pop rA
     ret
@@ -1164,16 +1164,16 @@ quat_normalize:
     
     movss xmm0, [rS]
     mulss xmm0, xmm1
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     movss xmm0, [rS + 4]
     mulss xmm0, xmm1
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     movss xmm0, [rS + 8]
     mulss xmm0, xmm1
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     movss xmm0, [rS + 12]
     mulss xmm0, xmm1
-    movss [rP + 12], xmm0
+    movss dword [rP + 12], xmm0
     pop rA
     ret
 
@@ -1191,17 +1191,17 @@ quat_conjugate:
     movss xmm0, [rS]
     xorps xmm1, xmm1
     subss xmm1, xmm0
-    movss [rP], xmm1         ; -x
+    movss dword [rP], xmm1         ; -x
     movss xmm0, [rS + 4]
     xorps xmm1, xmm1
     subss xmm1, xmm0
-    movss [rP + 4], xmm1     ; -y
+    movss dword [rP + 4], xmm1     ; -y
     movss xmm0, [rS + 8]
     xorps xmm1, xmm1
     subss xmm1, xmm0
-    movss [rP + 8], xmm1     ; -z
+    movss dword [rP + 8], xmm1     ; -z
     movss xmm0, [rS + 12]
-    movss [rP + 12], xmm0    ; w
+    movss dword [rP + 12], xmm0    ; w
     pop rA
     ret
 
@@ -1254,28 +1254,28 @@ quat_slerp:
     movss xmm4, [rG]
     mulss xmm4, xmm0
     addss xmm3, xmm4
-    movss [rP], xmm3
+    movss dword [rP], xmm3
     
     movss xmm3, [rS + 4]
     mulss xmm3, xmm2
     movss xmm4, [rG + 4]
     mulss xmm4, xmm0
     addss xmm3, xmm4
-    movss [rP + 4], xmm3
+    movss dword [rP + 4], xmm3
     
     movss xmm3, [rS + 8]
     mulss xmm3, xmm2
     movss xmm4, [rG + 8]
     mulss xmm4, xmm0
     addss xmm3, xmm4
-    movss [rP + 8], xmm3
+    movss dword [rP + 8], xmm3
     
     movss xmm3, [rS + 12]
     mulss xmm3, xmm2
     movss xmm4, [rG + 12]
     mulss xmm4, xmm0
     addss xmm3, xmm4
-    movss [rP + 12], xmm3
+    movss dword [rP + 12], xmm3
     
     ; Normalize
     mov rS, rP
@@ -1286,14 +1286,14 @@ quat_slerp:
 
 .quat_slerp_acos:
     ; theta = acos(dot)
-    movss [rel .math_temp], xmm1
+    movss dword [rel .math_temp], xmm1
     fld dword [rel .math_temp]
     facos
     fstp dword [rel .math_temp]
     movss xmm2, [rel .math_temp] ; theta
     
     ; sin(theta)
-    movss [rel .math_temp], xmm2
+    movss dword [rel .math_temp], xmm2
     fld dword [rel .math_temp]
     fsin
     fstp dword [rel .math_sin]
@@ -1302,7 +1302,7 @@ quat_slerp:
     movss xmm3, [rel .float_one]
     subss xmm3, xmm0        ; 1-t
     mulss xmm3, xmm2        ; theta*(1-t)
-    movss [rel .math_temp], xmm3
+    movss dword [rel .math_temp], xmm3
     fld dword [rel .math_temp]
     fsin
     fstp dword [rel .math_temp]
@@ -1310,7 +1310,7 @@ quat_slerp:
     
     ; sin(theta*t)
     mulss xmm0, xmm2        ; theta*t
-    movss [rel .math_temp], xmm0
+    movss dword [rel .math_temp], xmm0
     fld dword [rel .math_temp]
     fsin
     fstp dword [rel .math_temp]
@@ -1328,28 +1328,28 @@ quat_slerp:
     movss xmm1, [rG]
     mulss xmm1, xmm4
     addss xmm0, xmm1
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     
     movss xmm0, [rS + 4]
     mulss xmm0, xmm3
     movss xmm1, [rG + 4]
     mulss xmm1, xmm4
     addss xmm0, xmm1
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     
     movss xmm0, [rS + 8]
     mulss xmm0, xmm3
     movss xmm1, [rG + 8]
     mulss xmm1, xmm4
     addss xmm0, xmm1
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     
     movss xmm0, [rS + 12]
     mulss xmm0, xmm3
     movss xmm1, [rG + 12]
     mulss xmm1, xmm4
     addss xmm0, xmm1
-    movss [rP + 12], xmm0
+    movss dword [rP + 12], xmm0
     
     pop rG
     pop rA
@@ -1377,83 +1377,83 @@ quat_to_mat4:
     movss xmm4, xmm0
     mulss xmm4, xmm0        ; x*x
     addss xmm4, xmm4        ; 2*x*x = xx
-    movss [rel .q_xx], xmm4
+    movss dword [rel .q_xx], xmm4
     
     movss xmm4, xmm1
     mulss xmm4, xmm1
     addss xmm4, xmm4        ; yy
-    movss [rel .q_yy], xmm4
+    movss dword [rel .q_yy], xmm4
     
     movss xmm4, xmm2
     mulss xmm4, xmm2
     addss xmm4, xmm4        ; zz
-    movss [rel .q_zz], xmm4
+    movss dword [rel .q_zz], xmm4
     
     movss xmm4, xmm0
     mulss xmm4, xmm1
     addss xmm4, xmm4        ; xy
-    movss [rel .q_xy], xmm4
+    movss dword [rel .q_xy], xmm4
     
     movss xmm4, xmm0
     mulss xmm4, xmm2
     addss xmm4, xmm4        ; xz
-    movss [rel .q_xz], xmm4
+    movss dword [rel .q_xz], xmm4
     
     movss xmm4, xmm1
     mulss xmm4, xmm2
     addss xmm4, xmm4        ; yz
-    movss [rel .q_yz], xmm4
+    movss dword [rel .q_yz], xmm4
     
     movss xmm4, xmm3
     mulss xmm4, xmm0
     addss xmm4, xmm4        ; wx
-    movss [rel .q_wx], xmm4
+    movss dword [rel .q_wx], xmm4
     
     movss xmm4, xmm3
     mulss xmm4, xmm1
     addss xmm4, xmm4        ; wy
-    movss [rel .q_wy], xmm4
+    movss dword [rel .q_wy], xmm4
     
     movss xmm4, xmm3
     mulss xmm4, xmm2
     addss xmm4, xmm4        ; wz
-    movss [rel .q_wz], xmm4
+    movss dword [rel .q_wz], xmm4
     
     ; Column 0: (1-yy-zz, xy+wz, xz-wy, 0)
     movss xmm0, [rel .float_one]
     subss xmm0, [rel .q_yy]
     subss xmm0, [rel .q_zz]
-    movss [rP], xmm0
+    movss dword [rP], xmm0
     movss xmm0, [rel .q_xy]
     addss xmm0, [rel .q_wz]
-    movss [rP + 4], xmm0
+    movss dword [rP + 4], xmm0
     movss xmm0, [rel .q_xz]
     subss xmm0, [rel .q_wy]
-    movss [rP + 8], xmm0
+    movss dword [rP + 8], xmm0
     
     ; Column 1: (xy-wz, 1-xx-zz, yz+wx, 0)
     movss xmm0, [rel .q_xy]
     subss xmm0, [rel .q_wz]
-    movss [rP + 16], xmm0
+    movss dword [rP + 16], xmm0
     movss xmm0, [rel .float_one]
     subss xmm0, [rel .q_xx]
     subss xmm0, [rel .q_zz]
-    movss [rP + 20], xmm0
+    movss dword [rP + 20], xmm0
     movss xmm0, [rel .q_yz]
     addss xmm0, [rel .q_wx]
-    movss [rP + 24], xmm0
+    movss dword [rP + 24], xmm0
     
     ; Column 2: (xz+wy, yz-wx, 1-xx-yy, 0)
     movss xmm0, [rel .q_xz]
     addss xmm0, [rel .q_wy]
-    movss [rP + 32], xmm0
+    movss dword [rP + 32], xmm0
     movss xmm0, [rel .q_yz]
     subss xmm0, [rel .q_wx]
-    movss [rP + 36], xmm0
+    movss dword [rP + 36], xmm0
     movss xmm0, [rel .float_one]
     subss xmm0, [rel .q_xx]
     subss xmm0, [rel .q_yy]
-    movss [rP + 40], xmm0
+    movss dword [rP + 40], xmm0
     
     pop rA
     ret
@@ -1471,18 +1471,18 @@ quat_rotate_vec3:
     
     ; q_conjugate
     lea rA, [rsp + 16]
-    mov rP_temp, rA
+    mov r12, rA
     call quat_conjugate     ; q_conj at [rsp+16]
     
     ; v as quat
     movss xmm0, [rS]
-    movss [rsp], xmm0
+    movss dword [rsp], xmm0
     movss xmm0, [rS + 4]
-    movss [rsp + 4], xmm0
+    movss dword [rsp + 4], xmm0
     movss xmm0, [rS + 8]
-    movss [rsp + 8], xmm0
+    movss dword [rsp + 8], xmm0
     movss xmm0, [rel .float_zero]
-    movss [rsp + 12], xmm0
+    movss dword [rsp + 12], xmm0
     
     ; temp = q * v
     lea rP, [rsp + 16]     ; Hmm, need another temp
@@ -1507,33 +1507,33 @@ quat_rotate_vec3:
 align 4
 
 .float_zero:
-    dd 0.0
+    dd 0x00000000
 .float_one:
-    dd 1.0
+    dd 0x3f800000
 .float_neg_one:
-    dd -1.0
+    dd 0xbf800000
 .float_two:
-    dd 2.0
+    dd 0x40000000
 .float_half:
-    dd 0.5
+    dd 0x3f000000
 .float_tiny:
-    dd 1.0e-7
+    dd 0x3f800000e-7
 .float_slerp_threshold:
-    dd 0.9995
+    dd 0x3f7fdf3b
 
 .math_temp:
-    dd 0.0
+    dd 0x00000000
 .math_sin:
-    dd 0.0
+    dd 0x00000000
 .math_cos:
-    dd 0.0
+    dd 0x00000000
 
-.q_xx: dd 0.0
-.q_yy: dd 0.0
-.q_zz: dd 0.0
-.q_xy: dd 0.0
-.q_xz: dd 0.0
-.q_yz: dd 0.0
-.q_wx: dd 0.0
-.q_wy: dd 0.0
-.q_wz: dd 0.0
+.q_xx: dd 0x00000000
+.q_yy: dd 0x00000000
+.q_zz: dd 0x00000000
+.q_xy: dd 0x00000000
+.q_xz: dd 0x00000000
+.q_yz: dd 0x00000000
+.q_wx: dd 0x00000000
+.q_wy: dd 0x00000000
+.q_wz: dd 0x00000000

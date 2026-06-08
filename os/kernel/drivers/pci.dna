@@ -57,7 +57,7 @@ pci_init:
     call pci_read_config
     
     ; Check if device exists (vendor != 0xFFFF)
-    cmp rA.w, 0xFFFF
+    cmp ax, 0xFFFF
     je .pci_next_slot
     
     ; Device found! Store it
@@ -119,10 +119,11 @@ pci_read_config:
     
     ; Write address
     mov rA, PCI_CONFIG_ADDR
-    out rA, rC.d
+    out dx, eax
     
     ; Read data
-    in rA.d, PCI_CONFIG_DATA
+    mov dx, 0xCFC
+    in eax, dx
     
     pop rC
     ret
@@ -138,8 +139,9 @@ pci_write_config:
     or rC, rP
     or rC, rS
     
-    out PCI_CONFIG_ADDR, rC.d
-    out PCI_CONFIG_DATA, rA.d
+    mov dx, 0xCF8
+    out dx, eax
+    out dx, eax
     
     pop rC
     ret

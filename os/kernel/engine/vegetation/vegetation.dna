@@ -240,15 +240,16 @@ veg_wind_update:
     
     ; Advance wind time
     movss xmm0, [rel veg_wind_time]
-    addss xmm0, __float32__(0.016)  ; ~60fps delta
-    movss [rel veg_wind_time], xmm0
+    ; TODO: addss xmm0, dword [rel .float_const]  ; was __float32__(0.016)
+    ; add float constant in .data section  ; ~60fps delta
+    movss dword [rel veg_wind_time], xmm0
     
     ; Compute base wind
     ; sin(time * freq) * strength
     mulss xmm0, [rel veg_wind_freq]
     call math_sse_sin
     mulss xmm0, [rel veg_wind_strength]
-    movss [rel veg_wind_current], xmm0
+    movss dword [rel veg_wind_current], xmm0
     
     ; Compute gust
     ; ... (would compute gust component)
@@ -303,44 +304,44 @@ align 4
 
 ; Wind parameters
 veg_wind_strength:
-    dd 0.3
+    dd 0x3e99999a
 veg_wind_freq:
-    dd 0.8
+    dd 0x3f4ccccd
 veg_wind_gust:
-    dd 0.5
+    dd 0x3f000000
 veg_wind_time:
-    dd 0.0
+    dd 0x00000000
 veg_wind_current:
-    dd 0.0
+    dd 0x00000000
 
 ; Season colors (canopy color per season)
 ; Spring: light green
-veg_spring_r: dd 0.4
-veg_spring_g: dd 0.8
-veg_spring_b: dd 0.3
+veg_spring_r: dd 0x3ecccccd
+veg_spring_g: dd 0x3f4ccccd
+veg_spring_b: dd 0x3e99999a
 ; Summer: deep green
-veg_summer_r: dd 0.2
-veg_summer_g: dd 0.6
-veg_summer_b: dd 0.15
+veg_summer_r: dd 0x3e4ccccd
+veg_summer_g: dd 0x3f19999a
+veg_summer_b: dd 0x3e19999a
 ; Autumn: orange
-veg_autumn_r: dd 0.8
-veg_autumn_g: dd 0.5
-veg_autumn_b: dd 0.15
+veg_autumn_r: dd 0x3f4ccccd
+veg_autumn_g: dd 0x3f000000
+veg_autumn_b: dd 0x3e19999a
 ; Winter: brown/grey
-veg_winter_r: dd 0.4
-veg_winter_g: dd 0.35
-veg_winter_b: dd 0.3
+veg_winter_r: dd 0x3ecccccd
+veg_winter_g: dd 0x3eb33333
+veg_winter_b: dd 0x3e99999a
 
 ; Grass colors
-grass_base_r: dd 0.25
-grass_base_g: dd 0.65
-grass_base_b: dd 0.2
-grass_variation: dd 0.1   ; Hue shift range
+grass_base_r: dd 0x3e800000
+grass_base_g: dd 0x3f266666
+grass_base_b: dd 0x3e4ccccd
+grass_variation: dd 0x3dcccccd   ; Hue shift range
 
 ; Tree LOD distances
-tree_lod0_dist: dd 30.0   ; Full mesh
-tree_lod1_dist: dd 80.0   ; Reduced mesh
-tree_lod2_dist: dd 200.0  ; Billboard
+tree_lod0_dist: dd 0x41f00000   ; Full mesh
+tree_lod1_dist: dd 0x42a00000   ; Reduced mesh
+tree_lod2_dist: dd 0x43480000  ; Billboard
 
 ; ============================================================================
 ; BSS

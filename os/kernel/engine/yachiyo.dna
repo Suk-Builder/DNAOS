@@ -278,8 +278,8 @@ yachiyo_split_create:
     mov qword [rG], 1       ; Active
     mov [rG + 8], rC        ; Type
     ; Copy position from main body
-    mov rA_temp, [rel yachiyo_pos_x]
-    mov [rG + 16], rA_temp
+    mov r8, [rel yachiyo_pos_x]
+    mov [rG + 16], r8
     ; ... (copy other properties)
     
     inc qword [rel yachiyo_active_splits]

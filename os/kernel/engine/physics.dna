@@ -77,11 +77,11 @@ phys_init:
     
     ; Set default gravity
     movss xmm0, [rel .grav_x]
-    movss [rel phys_gravity], xmm0
+    movss dword [rel phys_gravity], xmm0
     movss xmm0, [rel .grav_y]
-    movss [rel phys_gravity + 4], xmm0
+    movss dword [rel phys_gravity + 4], xmm0
     movss xmm0, [rel .grav_z]
-    movss [rel phys_gravity + 8], xmm0
+    movss dword [rel phys_gravity + 8], xmm0
     
     ; Clear bodies
     mov qword [rel phys_body_count], 0
@@ -91,7 +91,7 @@ phys_init:
     
     ; Set timestep
     movss xmm0, [rel .dt_60fps]
-    movss [rel phys_timestep], xmm0
+    movss dword [rel phys_timestep], xmm0
     
     pop rG
     pop rC
@@ -126,56 +126,56 @@ phys_step:
     ; acceleration += gravity
     movss xmm0, [rG + 52]   ; accel.x
     addss xmm0, [rel phys_gravity]
-    movss [rG + 52], xmm0
+    movss dword [rG + 52], xmm0
     movss xmm0, [rG + 56]   ; accel.y
     addss xmm0, [rel phys_gravity + 4]
-    movss [rG + 56], xmm0
+    movss dword [rG + 56], xmm0
     movss xmm0, [rG + 60]   ; accel.z
     addss xmm0, [rel phys_gravity + 8]
-    movss [rG + 60], xmm0
+    movss dword [rG + 60], xmm0
     
     ; velocity += acceleration * dt
     movss xmm0, [rel phys_timestep]
     movss xmm1, [rG + 52]   ; accel.x
     mulss xmm1, xmm0
     addss xmm1, [rG + 28]   ; + vel.x
-    movss [rG + 28], xmm1
+    movss dword [rG + 28], xmm1
     
     movss xmm1, [rG + 56]   ; accel.y
     mulss xmm1, xmm0
     addss xmm1, [rG + 32]   ; + vel.y
-    movss [rG + 32], xmm1
+    movss dword [rG + 32], xmm1
     
     movss xmm1, [rG + 60]   ; accel.z
     mulss xmm1, xmm0
     addss xmm1, [rG + 36]   ; + vel.z
-    movss [rG + 36], xmm1
+    movss dword [rG + 36], xmm1
     
     ; Apply damping (air resistance)
     movss xmm1, [rel .damping]
     mulss xmm1, [rG + 28]
-    movss [rG + 28], xmm1
+    movss dword [rG + 28], xmm1
     mulss xmm1, [rG + 32]
-    movss [rG + 32], xmm1
+    movss dword [rG + 32], xmm1
     mulss xmm1, [rG + 36]
-    movss [rG + 36], xmm1
+    movss dword [rG + 36], xmm1
     
     ; position += velocity * dt
     movss xmm0, [rel phys_timestep]
     movss xmm1, [rG + 28]   ; vel.x
     mulss xmm1, xmm0
     addss xmm1, [rG]        ; + pos.x
-    movss [rG], xmm1
+    movss dword [rG], xmm1
     
     movss xmm1, [rG + 32]   ; vel.y
     mulss xmm1, xmm0
     addss xmm1, [rG + 4]    ; + pos.y
-    movss [rG + 4], xmm1
+    movss dword [rG + 4], xmm1
     
     movss xmm1, [rG + 36]   ; vel.z
     mulss xmm1, xmm0
     addss xmm1, [rG + 8]    ; + pos.z
-    movss [rG + 8], xmm1
+    movss dword [rG + 8], xmm1
     
     ; Angular integration (simplified)
     ; rotation += 0.5 * dt * (0, ang_vel) * rotation
@@ -183,9 +183,9 @@ phys_step:
     
     ; Clear acceleration (will be recalculated next frame)
     movss xmm0, [rel .float_zero]
-    movss [rG + 52], xmm0
-    movss [rG + 56], xmm0
-    movss [rG + 60], xmm0
+    movss dword [rG + 52], xmm0
+    movss dword [rG + 56], xmm0
+    movss dword [rG + 60], xmm0
 
 .phys_step_next_body:
     add rG, 128
@@ -234,8 +234,8 @@ phys_add_body:
     
     mov rC, 32              ; Copy 128 bytes = 32 dwords
 .phys_add_copy:
-    mov rA_temp, [rP]
-    mov [rG], rA_temp
+    mov r8, [rP]
+    mov [rG], r8
     add rP, 4
     add rG, 4
     dec rC
@@ -249,11 +249,11 @@ phys_add_body:
     je .phys_add_static
     movss xmm1, [rel .float_one]
     divss xmm1, xmm0
-    movss [rG - 128 + 68], xmm1 ; inv_mass
+    movss dword [rG - 128 + 68], xmm1 ; inv_mass
     jmp .phys_add_done
 
 .phys_add_static:
-    movss [rG - 128 + 68], xmm1 ; inv_mass = 0
+    movss dword [rG - 128 + 68], xmm1 ; inv_mass = 0
 
 .phys_add_done:
     mov rA, [rel phys_body_count]
@@ -293,13 +293,21 @@ phys_remove_body:
     ; Let me redo
     pop rA
     
-    lea rP, [rel phys_bodies + rA*128]  ; Dest
-    lea rS, [rel phys_bodies + rC*128]  ; Source
+    lea rP, [rel phys_bodies]
+    push rA
+    imul rA, 128
+    add rP, rA
+    pop rA  ; Dest
+    lea rS, [rel phys_bodies]
+    push rC
+    imul rC, 128
+    add rS, rC
+    pop rC  ; Source
     ; Copy 128 bytes
     mov rG, 32
 .phys_remove_copy:
-    mov rA_temp, [rS]
-    mov [rP], rA_temp
+    mov r8, [rS]
+    mov [rP], r8
     add rP, 4
     add rS, 4
     dec rG
@@ -318,13 +326,17 @@ phys_remove_body:
 phys_apply_force:
     push rG
     
-    lea rG, [rel phys_bodies + rA*128]
+    lea rG, [rel phys_bodies]
+    push rA
+    shl rA, 7
+    add rG, rA
+    pop rA
     addss xmm0, [rG + 52]   ; force_accum.x + fx
-    movss [rG + 52], xmm0
+    movss dword [rG + 52], xmm0
     addss xmm1, [rG + 56]
-    movss [rG + 56], xmm1
+    movss dword [rG + 56], xmm1
     addss xmm2, [rG + 60]
-    movss [rG + 60], xmm2
+    movss dword [rG + 60], xmm2
     
     pop rG
     ret
@@ -336,19 +348,23 @@ phys_apply_force:
 phys_apply_impulse:
     push rG
     
-    lea rG, [rel phys_bodies + rA*128]
+    lea rG, [rel phys_bodies]
+    push rA
+    shl rA, 7
+    add rG, rA
+    pop rA
     
     ; velocity += impulse * inv_mass
     movss xmm3, [rG + 68]   ; inv_mass
     mulss xmm0, xmm3
     addss xmm0, [rG + 28]   ; vel.x + jx * inv_mass
-    movss [rG + 28], xmm0
+    movss dword [rG + 28], xmm0
     mulss xmm1, xmm3
     addss xmm1, [rG + 32]
-    movss [rG + 32], xmm1
+    movss dword [rG + 32], xmm1
     mulss xmm2, xmm3
     addss xmm2, [rG + 36]
-    movss [rG + 36], xmm2
+    movss dword [rG + 36], xmm2
     
     pop rG
     ret
@@ -358,9 +374,9 @@ phys_apply_impulse:
 ; xmm0 = gx, xmm1 = gy, xmm2 = gz
 ; ============================================================================
 phys_set_gravity:
-    movss [rel phys_gravity], xmm0
-    movss [rel phys_gravity + 4], xmm1
-    movss [rel phys_gravity + 8], xmm2
+    movss dword [rel phys_gravity], xmm0
+    movss dword [rel phys_gravity + 4], xmm1
+    movss dword [rel phys_gravity + 8], xmm2
     ret
 
 ; ============================================================================
@@ -570,21 +586,21 @@ phys_aabb_query:
 .data
 
 .float_zero:
-    dd 0.0
+    dd 0x00000000
 .float_one:
-    dd 1.0
+    dd 0x3f800000
 .float_max:
-    dd 3.4e38
+    dd 0x4059999ae38
 .grav_x:
-    dd 0.0
+    dd 0x00000000
 .grav_y:
-    dd -9.81
+    dd 0xc11cf5c3
 .grav_z:
-    dd 0.0
+    dd 0x00000000
 .dt_60fps:
-    dd 0.0166667            ; 1/60
+    dd 0x3c88889a            ; 1/60
 .damping:
-    dd 0.99
+    dd 0x3f7d70a4
 
 ; ============================================================================
 ; BSS

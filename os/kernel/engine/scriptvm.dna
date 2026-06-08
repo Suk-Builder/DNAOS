@@ -208,7 +208,7 @@ vm_execute:
 
 .vm_op_push_f32:
     mov rG, [rel vm_ip]
-    mov rA, dword [rG]     ; Load as raw bits
+    movsxd rA, dword [rG]     ; Load as raw bits
     add qword [rel vm_ip], 4
     mov rS, [rel vm_sp]
     mov [rel vm_stack + rS*8], rA

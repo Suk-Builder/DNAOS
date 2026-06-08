@@ -60,7 +60,7 @@ ata_init:
     ; Reset both channels
     ; Primary
     mov rA, 4              ; SRST bit
-    out ATA_PRIMARY_CTRL, rA.b
+    out ATA_PRIMARY_CTRL, al
     ; Wait
     mov rC, 1000
 .ata_reset_wait1:
@@ -69,18 +69,18 @@ ata_init:
     jnz .ata_reset_wait1
     ; Clear reset
     xor rA, rA
-    out ATA_PRIMARY_CTRL, rA.b
+    out ATA_PRIMARY_CTRL, al
     
     ; Secondary
     mov rA, 4
-    out ATA_SECONDARY_CTRL, rA.b
+    out ATA_SECONDARY_CTRL, al
     mov rC, 1000
 .ata_reset_wait2:
     nop
     dec rC
     jnz .ata_reset_wait2
     xor rA, rA
-    out ATA_SECONDARY_CTRL, rA.b
+    out ATA_SECONDARY_CTRL, al
     
     ; Detect drives
     ; Try primary master
@@ -90,8 +90,8 @@ ata_init:
     call ata_wait_bsy
     
     ; Check if drive exists
-    in rA.b, ATA_PRIMARY_CMD + ATA_STATUS
-    cmp rA.b, 0xFF         ; Floating bus = no drive
+    in al, ATA_PRIMARY_CMD + ATA_STATUS
+    cmp al, 0xFF         ; Floating bus = no drive
     je .ata_no_primary_master
     
     ; Identify drive
@@ -105,8 +105,8 @@ ata_init:
     call ata_select_drive
     call ata_wait_bsy
     
-    in rA.b, ATA_PRIMARY_CMD + ATA_STATUS
-    cmp rA.b, 0xFF
+    in al, ATA_PRIMARY_CMD + ATA_STATUS
+    cmp al, 0xFF
     je .ata_no_primary_slave
     
     mov rP, ATA_PRIMARY_CMD
@@ -123,7 +123,7 @@ ata_init:
 ata_select_drive:
     push rA
     add rP, ATA_DRIVE
-    out rP, rA.b
+    out dx, al
     ; Wait 400ns
     mov rC, 100
 .ata_select_wait:
@@ -141,7 +141,8 @@ ata_wait_bsy:
     push rA
 .ata_bsy_loop:
     add rP, ATA_STATUS
-    in rA.b, rP
+    mov dx, di
+    in al, dx
     sub rP, ATA_STATUS
     test rA, ATA_STATUS_BSY
     jnz .ata_bsy_loop
@@ -156,7 +157,8 @@ ata_wait_drq:
     push rA
 .ata_drq_loop:
     add rP, ATA_STATUS
-    in rA.b, rP
+    mov dx, di
+    in al, dx
     sub rP, ATA_STATUS
     test rA, ATA_STATUS_DRQ
     jz .ata_drq_loop
@@ -175,7 +177,7 @@ ata_identify:
     ; Send IDENTIFY command
     add rP, ATA_COMMAND
     mov rA, ATA_CMD_IDENTIFY
-    out rP, rA.b
+    out dx, al
     sub rP, ATA_COMMAND
     
     ; Wait for data
@@ -187,8 +189,9 @@ ata_identify:
     mov rC, 256
     lea rG, [rel ata_ident_buf]
 .ata_ident_read:
-    in rA.w, rP
-    mov [rG], rA.w
+    mov dx, di
+    in ax, dx
+    mov [rG], ax
     add rG, 2
     dec rC
     jnz .ata_ident_read
@@ -216,7 +219,8 @@ ata_read_sector:
     shr rA, 24
     and rA, 0x0F
     or rG, rA
-    out rP, rG.b
+    mov dx, di
+    out dx, al
     sub rP, ATA_DRIVE
     
     ; Wait for drive ready
@@ -225,25 +229,25 @@ ata_read_sector:
     ; Set sector count = 1
     add rP, ATA_SECTOR
     mov rA, 1
-    out rP, rA.b
+    out dx, al
     sub rP, ATA_SECTOR
     
     ; Set LBA
     add rP, ATA_LBA_LOW
     mov rA, [rel ata_read_lba]
-    out rP, rA.b           ; LBA 0-7
+    out dx, al           ; LBA 0-7
     inc rP
     shr rA, 8
-    out rP, rA.b           ; LBA 8-15
+    out dx, al           ; LBA 8-15
     inc rP
     shr rA, 8
-    out rP, rA.b           ; LBA 16-23
+    out dx, al           ; LBA 16-23
     sub rP, ATA_LBA_HIGH
     
     ; Send READ command
     add rP, ATA_COMMAND
     mov rA, ATA_CMD_READ_PIO
-    out rP, rA.b
+    out dx, al
     sub rP, ATA_COMMAND
     
     ; Wait for data
@@ -254,8 +258,9 @@ ata_read_sector:
     add rP, ATA_DATA
     mov rC, 256
 .ata_read_loop:
-    in rA.w, rP
-    mov [rS], rA.w
+    mov dx, di
+    in ax, dx
+    mov [rS], ax
     add rS, 2
     dec rC
     jnz .ata_read_loop
@@ -282,7 +287,8 @@ ata_write_sector:
     shr rA, 24
     and rA, 0x0F
     or rG, rA
-    out rP, rG.b
+    mov dx, di
+    out dx, al
     sub rP, ATA_DRIVE
     
     call ata_wait_bsy
@@ -290,25 +296,25 @@ ata_write_sector:
     ; Sector count = 1
     add rP, ATA_SECTOR
     mov rA, 1
-    out rP, rA.b
+    out dx, al
     sub rP, ATA_SECTOR
     
     ; LBA
     add rP, ATA_LBA_LOW
     mov rA, [rel ata_write_lba]
-    out rP, rA.b
+    out dx, al
     inc rP
     shr rA, 8
-    out rP, rA.b
+    out dx, al
     inc rP
     shr rA, 8
-    out rP, rA.b
+    out dx, al
     sub rP, ATA_LBA_HIGH
     
     ; Send WRITE command
     add rP, ATA_COMMAND
     mov rA, ATA_CMD_WRITE_PIO
-    out rP, rA.b
+    out dx, al
     sub rP, ATA_COMMAND
     
     call ata_wait_bsy
@@ -318,8 +324,9 @@ ata_write_sector:
     add rP, ATA_DATA
     mov rC, 256
 .ata_write_loop:
-    mov rA.w, [rS]
-    out rP, rA.w
+    mov ax, [rS]
+    mov dx, di
+    out dx, ax
     add rS, 2
     dec rC
     jnz .ata_write_loop
@@ -327,7 +334,7 @@ ata_write_sector:
     ; Flush cache
     add rP, ATA_COMMAND
     mov rA, 0xE7           ; FLUSH CACHE
-    out rP, rA.b
+    out dx, al
     sub rP, ATA_COMMAND
     
     pop rG

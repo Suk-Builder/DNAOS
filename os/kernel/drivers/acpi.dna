@@ -23,7 +23,7 @@ acpi_init:
     ; Search for RSDP in first 1KB of EBDA
     ; EBDA address is at 0x40E
     mov rP, 0x40E
-    mov rA.w, [rP]
+    mov ax, [rP]
     shl rA, 4              ; EBDA segment << 4
     mov rP, rA
     mov rC, 1024 / 16      ; Search 1KB in 16-byte steps
@@ -86,8 +86,8 @@ acpi_check_rsdp:
     lea rG, [rel rsdp_sig]
     mov rC, 8
 .acpi_sig_cmp:
-    mov rA.b, [rP]
-    cmp rA.b, [rG]
+    mov al, [rP]
+    cmp al, [rG]
     jne .acpi_not_rsdp
     inc rP
     inc rG
@@ -195,14 +195,12 @@ acpi_shutdown:
     ; Write SLP_TYP | SLP_EN
     ; SLP_TYP for S5 (shutdown) is usually 0x1C00
     mov rA, 0x1C00 | 0x2000  ; SLP_TYPa | SLP_EN
-    out rP, rA.w
-    
+    out rP, ax
     ; Also write to PM1b if it exists
     mov rP, [rG + 0x42]
     test rP, rP
     jz .acpi_shutdown_done
-    out rP, rA.w
-
+    out rP, ax
 .acpi_shutdown_done:
     hlt                     ; Should not reach here
     ret
@@ -210,7 +208,7 @@ acpi_shutdown:
 .acpi_shutdown_fail:
     ; No ACPI - try keyboard controller shutdown
     mov rA, 0xFE
-    out 0x64, rA.b
+    out 0x64, al
     hlt
     ret
 
@@ -223,7 +221,7 @@ acpi_reboot:
     
     ; Pulse reset line
     mov rA, 0xFE
-    out 0x64, rA.b
+    out 0x64, al
     
     ; Method 2: Triple fault (fallback)
     ; Load null IDT and trigger interrupt

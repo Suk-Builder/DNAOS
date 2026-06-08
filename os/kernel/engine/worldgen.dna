@@ -57,7 +57,7 @@ worldgen_init:
     lea rA, [rel wgen_perm]
     mov rC, 256
 .wgen_init_perm:
-    mov [rA + rC - 1], rC.b  ; Fill with 0-255
+    mov [rA + rC - 1], dl  ; Fill with 0-255
     dec rC
     jnz .wgen_init_perm
     
@@ -75,8 +75,8 @@ worldgen_init:
     add rA, 12345
     shr rA, 16
     and rA, 0x7FFF
-    xor rC_temp, rC
-    inc rC_temp
+    xor r10, rC
+    inc r10
     ; ... simplified shuffle
     
     jmp .wgen_shuffle
@@ -363,19 +363,19 @@ worldgen_perlin3d:
 .data
 
 .noise_scale:
-    dd 0.01
+    dd 0x3c23d70a
 .h_deep_water:
-    dd 0.2
+    dd 0x3e4ccccd
 .h_water:
-    dd 0.3
+    dd 0x3e99999a
 .h_beach:
-    dd 0.35
+    dd 0x3eb33333
 .h_grass:
-    dd 0.6
+    dd 0x3f19999a
 .h_forest:
-    dd 0.75
+    dd 0x3f400000
 .h_mountain:
-    dd 0.85
+    dd 0x3f59999a
 
 biome_names:
     db "Deep Ocean", 0, 0, 0, 0, 0   ; 16 bytes each

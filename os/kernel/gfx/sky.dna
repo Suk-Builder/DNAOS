@@ -5,12 +5,6 @@
 ;
 ; Implements:
 ;   - Rayleigh/Mie atmospheric scattering (Preetham model)
-*   - Volumetric cloud rendering (ray marching)
-*   - God rays (crepuscular rays) post-process
-*   - Sun disk with corona
-*   - Stars at twilight/night
-*   - Moon with phases
-*   - Time-of-day cycle (dawn → day → dusk → night)
 ; 
 ; The sky is NOT a background. It's 70% of the frame.
 ; It has to be perfect.
@@ -107,11 +101,13 @@ sky_update:
     addss xmm0, [rel sky_time]
     
     ; Wrap to [0, 1)
-    comiss xmm0, __float32__(1.0)
+    ; TODO: comiss xmm0, dword [rel .float_const]  ; was __float32__(1.0)
+    ; add float constant in .data section
     jb .sky_time_ok
-    subss xmm0, __float32__(1.0)
+    ; TODO: subss xmm0, dword [rel .float_const]  ; was __float32__(1.0)
+    ; add float constant in .data section
 .sky_time_ok:
-    movss [rel sky_time], xmm0
+    movss dword [rel sky_time], xmm0
     
     ; Calculate sun position from time
     ; Sun angle = time * 2π (rises in east, sets in west)
@@ -124,8 +120,10 @@ sky_update:
     ; At time=0.0/1.0: midnight (below horizon)
     
     movss xmm0, [rel sky_time]
-    subss xmm0, __float32__(0.25)   ; Offset so 0.25 = sunrise
-    mulss xmm0, __float32__(6.283185) ; * 2π
+    ; TODO: subss xmm0, dword [rel .float_const]  ; was __float32__(0.25)
+    ; add float constant in .data section   ; Offset so 0.25 = sunrise
+    ; TODO: mulss xmm0, dword [rel .float_const]  ; was __float32__(6.283185)
+    ; add float constant in .data section ; * 2π
     
     ; Sun elevation: sin(angle) * max_elevation
     ; At noon (angle=PI/2): sin = 1.0 → max elevation
@@ -140,7 +138,7 @@ sky_update:
     ; sun_dir.x = cos(elevation) * cos(azimuth)
     ; sun_dir.z = cos(elevation) * sin(azimuth)
     
-    movss [rel sky_sun_y], xmm0   ; y = sin(elevation)
+    movss dword [rel sky_sun_y], xmm0   ; y = sin(elevation)
     
     ; Calculate sun color based on elevation
     ; Low sun (dawn/dusk): warm orange/red
@@ -275,8 +273,10 @@ atmospheric_scatter:
     ; F_R(γ) = (3/16π) * (1 + cos²(γ))
     movss xmm5, xmm3
     mulss xmm5, xmm5       ; cos²(γ)
-    addss xmm5, __float32__(1.0)
-    mulss xmm5, __float32__(0.0596831)  ; 3/(16π)
+    ; TODO: addss xmm5, dword [rel .float_const]  ; was __float32__(1.0)
+    ; add float constant in .data section
+    ; TODO: mulss xmm5, dword [rel .float_const]  ; was __float32__(0.0596831)
+    ; add float constant in .data section  ; 3/(16π)
     
     ; Mie phase function (Henyey-Greenstein)
     ; F_M(γ) = (1-g²) / (4π * (1+g²-2g*cos(γ))^1.5)
@@ -514,7 +514,7 @@ sky_get_fog_density:
 ; xmm0 = time [0..1]
 ; ============================================================================
 sky_set_time:
-    movss [rel sky_time], xmm0
+    movss dword [rel sky_time], xmm0
     ret
 
 ; ============================================================================
@@ -552,125 +552,125 @@ align 4
 
 ; Time of day [0..1]
 sky_time:
-    dd 0.5                  ; Noon
+    dd 0x3f000000                  ; Noon
 sky_time_speed:
-    dd 0.00001              ; Time advance per frame
+    dd 0x3727c5ac              ; Time advance per frame
 
 ; Sun direction (normalized)
 sky_sun_x:
-    dd 0.0
+    dd 0x00000000
 sky_sun_y:
-    dd 0.8                  ; Above horizon
+    dd 0x3f4ccccd                  ; Above horizon
 sky_sun_z:
-    dd 0.6
+    dd 0x3f19999a
 
 ; Sun color (RGB, linear)
 sky_sun_color_r:
-    dd 1.0
+    dd 0x3f800000
 sky_sun_color_g:
-    dd 0.95
+    dd 0x3f733333
 sky_sun_color_b:
-    dd 0.85
+    dd 0x3f59999a
 
 ; Ambient color
 sky_ambient_r:
-    dd 0.3
+    dd 0x3e99999a
 sky_ambient_g:
-    dd 0.35
+    dd 0x3eb33333
 sky_ambient_b:
-    dd 0.5
+    dd 0x3f000000
 
 ; Fog
 sky_fog_r:
-    dd 0.7
+    dd 0x3f333333
 sky_fog_g:
-    dd 0.75
+    dd 0x3f400000
 sky_fog_b:
-    dd 0.85
+    dd 0x3f59999a
 sky_fog_density:
-    dd 0.002
+    dd 0x3b03126f
 sky_fog_distance:
-    dd 500.0
+    dd 0x43fa0000
 
 ; Rayleigh scattering coefficients
 sky_rayleigh_r:
-    dd 5.5e-6
+    dd 0x40b00000e-6
 sky_rayleigh_g:
-    dd 13.0e-6
+    dd 0x41500000e-6
 sky_rayleigh_b:
-    dd 22.4e-6
+    dd 0x41b33333e-6
 
 ; Mie scattering
 sky_mie_coeff:
-    dd 21.0e-6
+    dd 0x41a80000e-6
 sky_mie_g:
-    dd 0.758
+    dd 0x3f420c4a
 sky_mie_g_sq:
-    dd 0.574564             ; g²
+    dd 0x3f1316a0             ; g²
 
 ; Sun
 sky_sun_intensity:
-    dd 20.0
+    dd 0x41a00000
 sky_sun_angular_radius:
-    dd 0.00925              ; ~0.53 degrees in radians
+    dd 0x3c178d50              ; ~0.53 degrees in radians
 
 ; Atmosphere
 sky_earth_radius:
-    dd 6360000.0
+    dd 0x4ac21780
 sky_atmo_radius:
-    dd 6420000.0
+    dd 0x4ac3ec40
 sky_rayleigh_height:
-    dd 8500.0               ; Rayleigh scale height
+    dd 0x4604d000               ; Rayleigh scale height
 sky_mie_height:
-    dd 1200.0               ; Mie scale height
+    dd 0x44960000               ; Mie scale height
 
 ; Cloud parameters
 cloud_density:
-    dd 0.5
+    dd 0x3f000000
 cloud_coverage:
-    dd 0.4
+    dd 0x3ecccccd
 cloud_wind_x:
-    dd 0.001
+    dd 0x3a83126f
 cloud_wind_z:
-    dd 0.0005
+    dd 0x3a03126f
 cloud_offset_x:
-    dd 0.0
+    dd 0x00000000
 cloud_offset_z:
-    dd 0.0
+    dd 0x00000000
 cloud_bottom:
-    dd 1500.0               ; Cumulus bottom altitude
+    dd 0x44bb8000               ; Cumulus bottom altitude
 cloud_top:
-    dd 4000.0               ; Cumulus top altitude
+    dd 0x457a0000               ; Cumulus top altitude
 cloud_cirrus_bottom:
-    dd 5000.0
+    dd 0x459c4000
 cloud_cirrus_top:
-    dd 8000.0
+    dd 0x45fa0000
 
 ; God ray parameters
 godray_num_samples:
     dd 32
 godray_decay:
-    dd 0.97
+    dd 0x3f7851ec
 godray_weight:
-    dd 0.7
+    dd 0x3f333333
 godray_exposure:
-    dd 1.0
+    dd 0x3f800000
 
 ; Dawn/dusk color palettes
-dawn_horizon_r: dd 0.95
-dawn_horizon_g: dd 0.5
-dawn_horizon_b: dd 0.3
-dawn_zenith_r:  dd 0.2
-dawn_zenith_g:  dd 0.25
-dawn_zenith_b:  dd 0.55
+dawn_horizon_r: dd 0x3f733333
+dawn_horizon_g: dd 0x3f000000
+dawn_horizon_b: dd 0x3e99999a
+dawn_zenith_r:  dd 0x3e4ccccd
+dawn_zenith_g:  dd 0x3e800000
+dawn_zenith_b:  dd 0x3f0ccccd
 
 ; Night colors
-night_zenith_r: dd 0.01
-night_zenith_g: dd 0.01
-night_zenith_b: dd 0.05
-night_horizon_r: dd 0.02
-night_horizon_g: dd 0.02
-night_horizon_b: dd 0.08
+night_zenith_r: dd 0x3c23d70a
+night_zenith_g: dd 0x3c23d70a
+night_zenith_b: dd 0x3d4ccccd
+night_horizon_r: dd 0x3ca3d70a
+night_horizon_g: dd 0x3ca3d70a
+night_horizon_b: dd 0x3da3d70a
 
 ; ============================================================================
 ; BSS

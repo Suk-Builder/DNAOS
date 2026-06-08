@@ -23,6 +23,7 @@
 ;   VER        - Show version
 ; ============================================================================
 
+.extern keyboard_getchar
 .code
 .global shell_prompt
 .global shell_execute
@@ -59,7 +60,7 @@ shell_main:
     mov rP, [rel shell_input_pos]
     lea rC, [rel shell_input_buf]
     add rC, rP
-    mov [rC], rA.b
+    mov [rC], al
     inc qword [rel shell_input_pos]
     
     ; Echo character

@@ -320,33 +320,33 @@ MOUNTAIN_HUANG  equ 2       ; 黄山 (future)
 ar_jinfo_name:
     db "金佛山", 0
 ar_jinfo_altitude:
-    dd 2238.0
+    dd 0x450be000
 ar_jinfo_lat:
-    dd 29.0167              ; 29°01'N
+    dd 0x41e82234              ; 29°01'N
 ar_jinfo_lon:
-    dd 107.1000             ; 107°06'E
+    dd 0x42d63333             ; 107°06'E
 ar_jinfo_cloud_alt:
-    dd 1800.0               ; 云海 typically below 1800m
+    dd 0x44e10000               ; 云海 typically below 1800m
 
 ; Dawn timing (approximate, by season)
 ar_dawn_spring:
-    dd 6.25                 ; 6:15
+    dd 0x40c80000                 ; 6:15
 ar_dawn_summer:
-    dd 5.75                 ; 5:45
+    dd 0x40b80000                 ; 5:45
 ar_dawn_autumn:
-    dd 6.5                  ; 6:30
+    dd 0x40d00000                  ; 6:30
 ar_dawn_winter:
-    dd 7.0                  ; 7:00
+    dd 0x40e00000                  ; 7:00
 
 ; Dusk timing
 ar_dusk_spring:
-    dd 19.25                ; 19:15
+    dd 0x419a0000                ; 19:15
 ar_dusk_summer:
-    dd 19.75                ; 19:45
+    dd 0x419e0000                ; 19:45
 ar_dusk_autumn:
-    dd 18.75                ; 18:45
+    dd 0x41960000                ; 18:45
 ar_dusk_winter:
-    dd 18.25                ; 18:15
+    dd 0x41920000                ; 18:15
 
 ; ============================================================================
 ; BSS

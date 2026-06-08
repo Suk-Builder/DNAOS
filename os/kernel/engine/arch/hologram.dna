@@ -173,35 +173,35 @@ neon_flicker:
 .data
 
 holo_scan_speed:
-    dd 0.5                  ; Scan lines per second
+    dd 0x3f000000                  ; Scan lines per second
 holo_jitter_amount:
-    dd 1.0                  ; Pixels of jitter
+    dd 0x3f800000                  ; Pixels of jitter
 holo_alpha_base:
-    dd 0.7                  ; Base transparency
+    dd 0x3f333333                  ; Base transparency
 holo_chromatic_offset:
-    dd 2.0                  ; Pixels of RGB split
+    dd 0x40000000                  ; Pixels of RGB split
 
 neon_glow_inner:
-    dd 4.0                  ; Inner glow radius (pixels)
+    dd 0x40800000                  ; Inner glow radius (pixels)
 neon_glow_outer:
-    dd 12.0                 ; Outer glow radius
+    dd 0x41400000                 ; Outer glow radius
 neon_glow_bloom:
-    dd 24.0                 ; Bloom radius
+    dd 0x41c00000                 ; Bloom radius
 neon_flicker_speed:
-    dd 7.3                  ; Flicker frequency
+    dd 0x40e9999a                  ; Flicker frequency
 neon_flicker_amount:
-    dd 0.1                  ; Flicker amplitude
+    dd 0x3dcccccd                  ; Flicker amplitude
 neon_off_probability:
-    dd 0.001                ; Random off chance per frame
+    dd 0x3a83126f                ; Random off chance per frame
 
 lantern_light_radius:
-    dd 3.0                  ; Meters
+    dd 0x40400000                  ; Meters
 lantern_color_r:
-    dd 1.0
+    dd 0x3f800000
 lantern_color_g:
-    dd 0.6
+    dd 0x3f19999a
 lantern_color_b:
-    dd 0.2
+    dd 0x3e4ccccd
 
 ; ============================================================================
 ; BSS

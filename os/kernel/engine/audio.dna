@@ -4,14 +4,6 @@
 ; Software audio synthesis and mixing.
 ; No sound card driver needed — uses PC speaker + AC97 (if available).
 ; 
-* Features:
-*   - 16-channel mixer
-*   - Sample playback (8-bit, 16-bit PCM)
-*   - Procedural sound synthesis (sine, square, saw, noise)
-*   - Volume, panning per channel
-*   - ADSR envelope
-*   - Simple reverb effect
-*   - ATCG-to-audio mapping (DNA sounds)
 ; ============================================================================
 
 SAMPLE_RATE     equ 44100
@@ -77,7 +69,7 @@ audio_init:
     
     ; Set master volume
     movss xmm0, [rel .float_one]
-    movss [rel audio_master_vol], xmm0
+    movss dword [rel audio_master_vol], xmm0
     
     ; Initialize noise seed
     mov qword [rel audio_noise_seed], 0xDEADBEEF12345678
@@ -99,26 +91,26 @@ audio_play_channel:
     add rG, rA
     
     mov dword [rG], CHAN_PLAYING  ; state
-    mov dword [rG + 4], rC.w      ; waveform
-    movss [rG + 8], xmm0     ; frequency
-    movss [rG + 12], xmm1    ; duration
+    mov dword [rG + 4], dx      ; waveform
+    movss dword [rG + 8], xmm0     ; frequency
+    movss dword [rG + 12], xmm1    ; duration
     movss xmm2, [rel .float_zero]
-    movss [rG + 16], xmm2    ; phase = 0
+    movss dword [rG + 16], xmm2    ; phase = 0
     movss xmm2, [rel .float_one]
-    movss [rG + 20], xmm2    ; volume = 1.0
+    movss dword [rG + 20], xmm2    ; volume = 1.0
     movss xmm2, [rel .float_half]
-    movss [rG + 24], xmm2    ; pan = 0.5 (center)
+    movss dword [rG + 24], xmm2    ; pan = 0.5 (center)
     mov dword [rG + 28], ADSR_ATTACK ; adsr_state
     movss xmm2, [rel .float_zero]
-    movss [rG + 32], xmm2    ; adsr_phase = 0
+    movss dword [rG + 32], xmm2    ; adsr_phase = 0
     movss xmm2, [rel .adsr_attack_time]
-    movss [rG + 36], xmm2    ; attack_time
+    movss dword [rG + 36], xmm2    ; attack_time
     movss xmm2, [rel .adsr_decay_time]
-    movss [rG + 40], xmm2    ; decay_time
+    movss dword [rG + 40], xmm2    ; decay_time
     movss xmm2, [rel .adsr_sustain_level]
-    movss [rG + 44], xmm2    ; sustain_level
+    movss dword [rG + 44], xmm2    ; sustain_level
     movss xmm2, [rel .adsr_release_time]
-    movss [rG + 48], xmm2    ; release_time
+    movss dword [rG + 48], xmm2    ; release_time
     
     pop rG
     ret
@@ -145,7 +137,7 @@ audio_set_volume:
     lea rG, [rel audio_channels]
     shl rA, 6
     add rG, rA
-    movss [rG + 20], xmm0
+    movss dword [rG + 20], xmm0
     pop rG
     ret
 
@@ -158,7 +150,7 @@ audio_set_panning:
     lea rG, [rel audio_channels]
     shl rA, 6
     add rG, rA
-    movss [rG + 24], xmm0
+    movss dword [rG + 24], xmm0
     pop rG
     ret
 
@@ -171,7 +163,7 @@ audio_set_frequency:
     lea rG, [rel audio_channels]
     shl rA, 6
     add rG, rA
-    movss [rG + 8], xmm0
+    movss dword [rG + 8], xmm0
     pop rG
     ret
 
@@ -184,7 +176,7 @@ audio_set_waveform:
     lea rG, [rel audio_channels]
     shl rA, 6
     add rG, rA
-    mov [rG + 4], rC.w
+    mov [rG + 4], dx
     pop rG
     ret
 
@@ -272,7 +264,7 @@ audio_synthesize:
     ; phase += frequency / sample_rate
     movss xmm0, [rG + 16]   ; phase
     mulss xmm0, [rel .two_pi]
-    movss [rel .audio_math_temp], xmm0
+    movss dword [rel .audio_math_temp], xmm0
     fld dword [rel .audio_math_temp]
     fsin
     fstp dword [rel .audio_math_temp]
@@ -288,7 +280,7 @@ audio_synthesize:
     jb .audio_synth_sine_no_wrap
     subss xmm1, xmm2
 .audio_synth_sine_no_wrap:
-    movss [rG + 16], xmm1   ; Update phase
+    movss dword [rG + 16], xmm1   ; Update phase
     
     pop rA
     ret
@@ -313,7 +305,7 @@ audio_synthesize:
     jb .audio_synth_sq_no_wrap
     subss xmm1, xmm2
 .audio_synth_sq_no_wrap:
-    movss [rG + 16], xmm1
+    movss dword [rG + 16], xmm1
     
     pop rA
     ret
@@ -333,7 +325,7 @@ audio_synthesize:
     jb .audio_synth_saw_no_wrap
     subss xmm1, xmm2
 .audio_synth_saw_no_wrap:
-    movss [rG + 16], xmm1
+    movss dword [rG + 16], xmm1
     
     pop rA
     ret
@@ -356,7 +348,7 @@ audio_synthesize:
     jb .audio_synth_tri_no_wrap
     subss xmm1, xmm2
 .audio_synth_tri_no_wrap:
-    movss [rG + 16], xmm1
+    movss dword [rG + 16], xmm1
     
     pop rA
     ret
@@ -410,7 +402,7 @@ audio_play_note:
     divss xmm1, [rel .float_12]
     
     ; 2^x = exp2(x) ≈ using x87
-    movss [rel .audio_math_temp], xmm1
+    movss dword [rel .audio_math_temp], xmm1
     fld dword [rel .audio_math_temp]
     fld1
     fld1
@@ -506,9 +498,9 @@ audio_play_pcm:
     mov dword [rA], CHAN_PLAYING
     mov dword [rA + 4], WAVE_PCM
     mov [rA + 56], rP       ; pcm_data pointer
-    mov [rA + 60], rC.w     ; pcm_length
+    mov [rA + 60], dx     ; pcm_length
     movss xmm0, [rel .float_zero]
-    movss [rA + 16], xmm0   ; phase = 0 (used as sample position)
+    movss dword [rA + 16], xmm0   ; phase = 0 (used as sample position)
     pop rA
     ret
 
@@ -518,37 +510,37 @@ audio_play_pcm:
 .data
 
 .float_zero:
-    dd 0.0
+    dd 0x00000000
 .float_one:
-    dd 1.0
+    dd 0x3f800000
 .float_neg_one:
-    dd -1.0
+    dd 0xbf800000
 .float_half:
-    dd 0.5
+    dd 0x3f000000
 .float_12:
-    dd 12.0
+    dd 0x41400000
 .midi_a4:
-    dd 69.0
+    dd 0x428a0000
 .two_pi:
-    dd 6.28318530718
+    dd 0x40c90fdb
 .inv_sample_rate:
-    dd 0.00002267574        ; 1/44100
+    dd 0x37be37c8        ; 1/44100
 .inv_2g31:
-    dd 4.656612873e-10      ; 1/2^31
+    dd 0x409502f9e-10      ; 1/2^31
 .abs_mask:
     dd 0x7FFFFFFF
 
 .adsr_attack_time:
-    dd 0.01                 ; 10ms attack
+    dd 0x3c23d70a                 ; 10ms attack
 .adsr_decay_time:
-    dd 0.1                  ; 100ms decay
+    dd 0x3dcccccd                  ; 100ms decay
 .adsr_sustain_level:
-    dd 0.7                  ; 70% sustain
+    dd 0x3f333333                  ; 70% sustain
 .adsr_release_time:
-    dd 0.3                  ; 300ms release
+    dd 0x3e99999a                  ; 300ms release
 
 .audio_math_temp:
-    dd 0.0
+    dd 0x00000000
 
 ; ============================================================================
 ; BSS

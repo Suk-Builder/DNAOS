@@ -21,29 +21,29 @@ serial_init:
     
     ; Disable interrupts
     mov rA, 0x00
-    out COM1_PORT + 1, rA.b
+    out COM1_PORT + 1, al
     
     ; Enable DLAB (set baud rate divisor)
     mov rA, 0x80
-    out COM1_PORT + 3, rA.b
+    out COM1_PORT + 3, al
     
     ; Set divisor to 1 (115200 baud)
     mov rA, 0x01           ; Low byte
-    out COM1_PORT, rA.b
+    out COM1_PORT, al
     mov rA, 0x00           ; High byte
-    out COM1_PORT + 1, rA.b
+    out COM1_PORT + 1, al
     
     ; 8 bits, no parity, one stop bit (8N1)
     mov rA, 0x03
-    out COM1_PORT + 3, rA.b
+    out COM1_PORT + 3, al
     
     ; Enable FIFO, clear them, 14-byte threshold
     mov rA, 0xC7
-    out COM1_PORT + 2, rA.b
+    out COM1_PORT + 2, al
     
     ; IRQs enabled, RTS/DSR set
     mov rA, 0x0B
-    out COM1_PORT + 4, rA.b
+    out COM1_PORT + 4, al
     
     pop rA
     ret
@@ -58,14 +58,14 @@ serial_putchar:
     
     ; Wait for transmit buffer empty
 .serial_tx_wait:
-    in rC.b, COM1_PORT + 5
+    in al, COM1_PORT + 5
     test rC, 0x20          ; THR empty?
     jz .serial_tx_wait
     
     ; Send character
     pop rC
     pop rA
-    out COM1_PORT, rA.b
+    out COM1_PORT, al
     ret
 
 ; ============================================================================
@@ -77,7 +77,7 @@ serial_print:
     push rP
     
 .serial_print_loop:
-    mov rA.b, [rP]
+    mov al, [rP]
     test rA, rA
     jz .serial_print_done
     call serial_putchar
@@ -108,7 +108,7 @@ serial_print_hex:
     and rA, 0x0F
     lea rP, [rel hex_chars]
     add rP, rA
-    mov rA.b, [rP]
+    mov al, [rP]
     call serial_putchar
     pop rA
     dec rC

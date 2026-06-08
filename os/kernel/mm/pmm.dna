@@ -5,6 +5,7 @@
 ; Supports up to 4GB = 1048576 pages = 32768 uint32s = 128KB bitmap.
 ; ============================================================================
 
+.extern pmm_bitmap
 .code
 .global pmm_init
 .global pmm_alloc_page
@@ -117,7 +118,7 @@ pmm_test_bit:
     
     lea rP, [rel pmm_bitmap]
     bt [rP + rA*4], rC
-    setc rA.b
+    setc al
     
     pop rP
     pop rC

@@ -241,7 +241,7 @@ e1000_read_mac:
     
     ; Extract data
     shr rA, 16
-    mov [rP], rA.w
+    mov [rP], ax
     add rP, 2
     inc rC
     cmp rC, 6
@@ -324,7 +324,7 @@ e1000_send:
     mov [rS], rA
     
     ; Set length
-    mov [rS + 8], rC.w
+    mov [rS + 8], dx
     
     ; Set command flags
     mov byte [rS + 12], E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | E1000_TXD_CMD_RS

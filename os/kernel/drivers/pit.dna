@@ -13,6 +13,7 @@ PIT_CMD         equ 0x43
 PIT_FREQ        equ 1193182
 PIT_HZ          equ 100         ; 100Hz = 10ms tick
 
+.extern scheduler_tick
 .code
 .global pit_init
 .global pit_irq_handler
@@ -38,12 +39,12 @@ pit_init:
     ;   11  = lo/hi byte access
     ;   011 = mode 3 (square wave)
     ;   0   = binary mode
-    out PIT_CMD, 0x36
-    
+    mov al, 0x36
+    out PIT_CMD, al
     ; Send divisor
-    out PIT_CH0_DATA, rA.b  ; Low byte
+    out PIT_CH0_DATA, al  ; Low byte
     shr rA, 8
-    out PIT_CH0_DATA, rA.b  ; High byte
+    out PIT_CH0_DATA, al  ; High byte
     
     ; Reset counters
     mov qword [rel pit_ticks], 0
@@ -119,26 +120,28 @@ pit_beep:
     
     ; Calculate divisor
     mov rG, PIT_FREQ
-    div rG, rA
+    xor rdx, rdx
+    div rA
     
     ; Program channel 2: mode 3 (square wave)
-    out PIT_CMD, 0xB6
-    out PIT_CH2_DATA, rA.b
+    mov al, 0xB6
+    out PIT_CMD, al
+    out PIT_CH2_DATA, al
     shr rA, 8
-    out PIT_CH2_DATA, rA.b
+    out PIT_CH2_DATA, al
     
     ; Enable speaker (set bits 0,1 of port 0x61)
-    in rA.b, 0x61
+    in al, 0x61
     or rA, 3
-    out 0x61, rA.b
+    out 0x61, al
     
     ; Wait
     call pit_sleep_ms
     
     ; Disable speaker
-    in rA.b, 0x61
+    in al, 0x61
     and rA, 0xFC
-    out 0x61, rA.b
+    out 0x61, al
 
 .beep_done:
     pop rG

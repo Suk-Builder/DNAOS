@@ -74,6 +74,7 @@
 ;
 ; ============================================================================
 
+.extern ar_init
 .code
 .global launch_init
 .global launch_run

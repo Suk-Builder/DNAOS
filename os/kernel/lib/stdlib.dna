@@ -60,8 +60,8 @@ memcpy:
     ; Simplified: just do byte copy for remainder
     
 .memcpy_byte:
-    mov rA.b, [rS]
-    mov [rP], rA.b
+    mov al, [rS]
+    mov [rP], al
     inc rP
     inc rS
     dec rC
@@ -95,8 +95,8 @@ memmove:
 .memcopy_backward:
     dec rP
     dec rS
-    mov rA.b, [rS]
-    mov [rP], rA.b
+    mov al, [rS]
+    mov [rP], al
     dec rC
     jnz .memcopy_backward
     jmp .memmove_done
@@ -155,7 +155,7 @@ memset:
     pop rA
     
 .memset_byte:
-    mov [rP], rA.b
+    mov [rP], al
     inc rP
     dec rC
     jnz .memset_byte
@@ -178,9 +178,9 @@ memcmp:
     test rC, rC
     jz .memcmp_equal
     
-    mov rA.b, [rP]
-    mov rG.b, [rS]
-    cmp rA.b, rG.b
+    mov al, [rP]
+    mov bl, [rS]
+    cmp al, bl
     jb .memcmp_less
     ja .memcmp_greater
     
@@ -239,8 +239,8 @@ strcpy:
     push rS
     
 .strcpy_loop:
-    mov rA.b, [rS]
-    mov [rP], rA.b
+    mov al, [rS]
+    mov [rP], al
     test rA, rA
     jz .strcpy_done
     inc rP
@@ -262,9 +262,9 @@ strcmp:
     push rS
     
 .strcmp_loop:
-    mov rA.b, [rP]
-    mov rG.b, [rS]
-    cmp rA.b, rG.b
+    mov al, [rP]
+    mov bl, [rS]
+    cmp al, bl
     jb .strcmp_less
     ja .strcmp_greater
     
@@ -306,9 +306,9 @@ strncmp:
     test rC, rC
     jz .strncmp_equal
     
-    mov rA.b, [rP]
-    mov rG.b, [rS]
-    cmp rA.b, rG.b
+    mov al, [rP]
+    mov bl, [rS]
+    cmp al, bl
     jb .strncmp_less
     ja .strncmp_greater
     
@@ -358,8 +358,8 @@ strcat:
     jmp .strcat_find_end
     
 .strcat_copy:
-    mov rA.b, [rS]
-    mov [rP], rA.b
+    mov al, [rS]
+    mov [rP], al
     test rA, rA
     jz .strcat_done
     inc rP
@@ -380,8 +380,8 @@ strchr:
     push rC
     
 .strchr_loop:
-    mov rC.b, [rP]
-    cmp rC.b, rA.b
+    mov dl, [rP]
+    cmp dl, al
     je .strchr_found
     test rC, rC
     jz .strchr_not_found
@@ -409,8 +409,8 @@ strrchr:
     xor rG, rG            ; Last found position
     
 .strrchr_loop:
-    mov rC.b, [rP]
-    cmp rC.b, rA.b
+    mov dl, [rP]
+    cmp dl, al
     jne .strrchr_next
     mov rG, rP
     
@@ -459,7 +459,7 @@ atoi:
     inc rP
     
 .atoi_digits:
-    mov rA.b, [rP]
+    mov al, [rP]
     sub rA, '0'
     cmp rA, 9
     ja .atoi_done
@@ -531,14 +531,14 @@ itoa:
     
 .itoa_digit_store:
     dec rG
-    mov [rG], rC.b
+    mov [rG], dl
     jmp .itoa_digit_loop
     
 .itoa_reverse:
     ; Copy reversed digits to output
 .itoa_copy:
-    mov rA.b, [rG]
-    mov [rP], rA.b
+    mov al, [rG]
+    mov [rP], al
     test rA, rA
     jz .itoa_done
     inc rP
@@ -570,8 +570,8 @@ htoa:
     rol rA, 4              ; Get next nibble
     push rA
     and rA, 0x0F
-    mov rA.b, [rG + rA]
-    mov [rP], rA.b
+    mov al, [rG + rA]
+    mov [rP], al
     inc rP
     pop rA
     dec rC
@@ -605,15 +605,15 @@ snprintf:
     cmp rA, rC
     jge .snprintf_done
     
-    mov rG.b, [rS]
+    mov bl, [rS]
     test rG, rG
     jz .snprintf_done
     
-    cmp rG.b, '%'
+    cmp bl, '%'
     je .snprintf_format
     
     ; Regular character
-    mov [rP], rG.b
+    mov [rP], bl
     inc rP
     inc rA
     inc rS
@@ -621,26 +621,26 @@ snprintf:
     
 .snprintf_format:
     inc rS                 ; Skip '%'
-    mov rG.b, [rS]
+    mov bl, [rS]
     inc rS
     
-    cmp rG.b, 'd'
+    cmp bl, 'd'
     je .snprintf_int
-    cmp rG.b, 'u'
+    cmp bl, 'u'
     je .snprintf_uint
-    cmp rG.b, 'x'
+    cmp bl, 'x'
     je .snprintf_hex
-    cmp rG.b, 's'
+    cmp bl, 's'
     je .snprintf_string
-    cmp rG.b, 'c'
+    cmp bl, 'c'
     je .snprintf_char
-    cmp rG.b, '%'
+    cmp bl, '%'
     je .snprintf_percent
     
     ; Unknown format - output as-is
     mov byte [rP], '%'
     inc rP
-    mov [rP], rG.b
+    mov [rP], bl
     inc rP
     add rA, 2
     jmp .snprintf_loop
@@ -673,8 +673,8 @@ snprintf:
     ; Get char from variadic args
     mov rG, [rG_vararg]
     add qword [rG_vararg], 8
-    mov rG.b, [rG]
-    mov [rP], rG.b
+    mov bl, [rG]
+    mov [rP], bl
     inc rP
     inc rA
     jmp .snprintf_loop
@@ -873,33 +873,33 @@ encode_atcg:
     jz .encode_done
     
     ; Each byte = 4 ATCG chars (2 bits each)
-    mov rA.b, [rP]
+    mov al, [rP]
     
     ; High nibble first
     shr rA, 6
     and rA, 3
-    mov rA.b, [rG + rA]
-    mov [rS], rA.b
+    mov al, [rG + rA]
+    mov [rS], al
     inc rS
     
-    mov rA.b, [rP]
+    mov al, [rP]
     shr rA, 4
     and rA, 3
-    mov rA.b, [rG + rA]
-    mov [rS], rA.b
+    mov al, [rG + rA]
+    mov [rS], al
     inc rS
     
-    mov rA.b, [rP]
+    mov al, [rP]
     shr rA, 2
     and rA, 3
-    mov rA.b, [rG + rA]
-    mov [rS], rA.b
+    mov al, [rG + rA]
+    mov [rS], al
     inc rS
     
-    mov rA.b, [rP]
+    mov al, [rP]
     and rA, 3
-    mov rA.b, [rG + rA]
-    mov [rS], rA.b
+    mov al, [rG + rA]
+    mov [rS], al
     inc rS
     
     inc rP
@@ -932,29 +932,29 @@ decode_atcg:
     xor rG, rG
     
     ; Char 0 (bits 7-6)
-    mov rA.b, [rP]
+    mov al, [rP]
     call atcg_char_to_val
     shl rA, 6
     or rG, rA
     
     ; Char 1 (bits 5-4)
-    mov rA.b, [rP + 1]
+    mov al, [rP + 1]
     call atcg_char_to_val
     shl rA, 4
     or rG, rA
     
     ; Char 2 (bits 3-2)
-    mov rA.b, [rP + 2]
+    mov al, [rP + 2]
     call atcg_char_to_val
     shl rA, 2
     or rG, rA
     
     ; Char 3 (bits 1-0)
-    mov rA.b, [rP + 3]
+    mov al, [rP + 3]
     call atcg_char_to_val
     or rG, rA
     
-    mov [rS], rG.b
+    mov [rS], bl
     inc rS
     add rP, 4
     sub rC, 4
@@ -971,17 +971,17 @@ decode_atcg:
 ; atcg_char_to_val - Convert ATCG char to 2-bit value
 ; rA = char → rA = value (A=0, T=1, C=2, G=3)
 atcg_char_to_val:
-    cmp rA.b, 'A'
+    cmp al, 'A'
     je .atcg_a
-    cmp rA.b, 'a'
+    cmp al, 'a'
     je .atcg_a
-    cmp rA.b, 'T'
+    cmp al, 'T'
     je .atcg_t
-    cmp rA.b, 't'
+    cmp al, 't'
     je .atcg_t
-    cmp rA.b, 'C'
+    cmp al, 'C'
     je .atcg_c
-    cmp rA.b, 'c'
+    cmp al, 'c'
     je .atcg_c
     ; Default: G
     mov rA, 3
@@ -1033,20 +1033,20 @@ srand:
 ; spinlock_acquire - Acquire spinlock
 ; rP = lock address
 spinlock_acquire:
-    lock bts dword [rP], 0
+    lock bts dword [rdi], 0
     jc .spinlock_wait
     ret
     
 .spinlock_wait:
     pause
-    test dword [rP], 1
+    test dword [rdi], 1
     jnz .spinlock_wait
     jmp spinlock_acquire
 
 ; spinlock_release - Release spinlock
 ; rP = lock address
 spinlock_release:
-    mov dword [rP], 0
+    mov dword [rdi], 0
     ret
 
 ; ============================================================================

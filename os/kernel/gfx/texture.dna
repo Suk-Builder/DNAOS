@@ -57,8 +57,8 @@ tex_create:
     push rC
     
     ; Store dimensions
-    mov [rP], rA.w           ; width
-    mov [rP + 4], rC.w       ; height
+    mov [rP], ax           ; width
+    mov [rP + 4], dx       ; height
     mov dword [rP + 8], FMT_RGBA8
     mov dword [rP + 12], WRAP_REPEAT
     mov dword [rP + 16], WRAP_REPEAT
@@ -345,7 +345,7 @@ tex_generate_mipmaps:
     jmp .tex_mip_loop
 
 .tex_mip_done:
-    mov [rP + 24], rG.w     ; mip_count
+    mov [rP + 24], bx     ; mip_count
     
     pop rG
     pop rC
@@ -383,8 +383,9 @@ tex_create_checker:
     push rC
     mov rC, rA
     dec rC
-    div rC, rS              ; x / grid
-    mov rA_temp, rC
+    xor rdx, rdx
+    div rS              ; x / grid
+    mov r8, rC
     pop rC
     ; ... simplified
     
@@ -496,13 +497,13 @@ tex_load_raw:
 .tex_zero:
     dq 0
 .tex_zero_f:
-    dd 0.0
+    dd 0x00000000
 .tex_one_f:
-    dd 1.0
+    dd 0x3f800000
 .tex_half:
-    dd 0.5
+    dd 0x3f000000
 .tex_inv_255:
-    dd 0.00392156863        ; 1/255
+    dd 0x3b808081        ; 1/255
 .tex_abs_mask:
     dd 0x7FFFFFFF
 

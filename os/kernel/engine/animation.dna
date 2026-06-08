@@ -81,7 +81,7 @@ anim_update:
     jne .anim_update_next
     
     ; Advance time
-    addss [rG + 4], xmm0    ; time += dt
+    ; TODO: addss to memory not supported - use movss load, addss, movss store    ; time += dt
     
     ; Check duration
     comiss xmm0, [rG + 8]   ; time vs duration
@@ -94,7 +94,7 @@ anim_update:
     cvtsi2ss xmm1, rC
     mulss xmm1, [rG + 8]
     subss xmm0, xmm1         ; time = time % duration
-    movss [rG + 4], xmm0
+    movss dword [rG + 4], xmm0
     
 .anim_update_evaluate:
     ; Evaluate this channel
@@ -188,7 +188,7 @@ anim_lerp_vec3:
     subss xmm2, xmm1        ; b.x - a.x
     mulss xmm2, xmm0        ; * t
     addss xmm2, xmm1        ; a.x + ...
-    movss [rP], xmm2
+    movss dword [rP], xmm2
     
     ; ... same for y, z
     ret

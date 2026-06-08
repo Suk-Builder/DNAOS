@@ -24,6 +24,8 @@ UI_INVENTORY     equ 10
 UI_DIALOG        equ 11
 UI_CROSSHAIR     equ 12
 
+.extern font_data
+.extern WM_TITLE_H
 .code
 .global ui_init
 .global ui_begin_frame

@@ -81,6 +81,7 @@ MAX_TCP_CONN     equ 16
 MAX_UDP_SOCKETS  equ 16
 MAX_ARP_ENTRIES  equ 32
 
+.extern pit_ticks
 .code
 .global net_init
 .global net_process_packet
@@ -170,8 +171,8 @@ net_process_packet:
     jl .net_process_done
     
     ; Read EtherType (offset 12-13)
-    mov rA.w, [rS + 12]
-    xchg rA.b, rA.b + 1    ; ntohs - swap bytes
+    mov ax, [rS + 12]
+    rol ax, 8    ; ntohs - swap bytes
     
     ; Dispatch by EtherType
     cmp rA, ETH_TYPE_ARP
@@ -220,8 +221,8 @@ net_arp_process:
     ;             sha(6) spa(4) tha(6) tpa(4)
     
     ; Get operation
-    mov rA.w, [rP + 6]
-    xchg rA.b, rA.b + 1
+    mov ax, [rP + 6]
+    rol ax, 8
     
     ; Check if ARP reply for us
     cmp rA, ARP_REPLY
@@ -271,8 +272,8 @@ net_arp_send_reply:
     ; Dest MAC = requester MAC
     mov rC, 6
 .arp_reply_mac:
-    mov rA.b, [rS]
-    mov [rG], rA.b
+    mov al, [rS]
+    mov [rG], al
     inc rG
     inc rS
     dec rC
@@ -282,8 +283,8 @@ net_arp_send_reply:
     lea rS, [rel net_our_mac]
     mov rC, 6
 .arp_reply_our_mac:
-    mov rA.b, [rS]
-    mov [rG], rA.b
+    mov al, [rS]
+    mov [rG], al
     inc rG
     inc rS
     dec rC
@@ -309,8 +310,8 @@ net_arp_send_reply:
     lea rS, [rel net_our_mac]
     mov rC, 6
 .arp_reply_smac:
-    mov rA.b, [rS]
-    mov [rG], rA.b
+    mov al, [rS]
+    mov [rG], al
     inc rG
     inc rS
     dec rC
@@ -325,8 +326,8 @@ net_arp_send_reply:
     lea rS, [rP + 8]
     mov rC, 6
 .arp_reply_tmac:
-    mov rA.b, [rS]
-    mov [rG], rA.b
+    mov al, [rS]
+    mov [rG], al
     inc rG
     inc rS
     dec rC
@@ -380,8 +381,8 @@ net_arp_cache_add:
     lea rS, [rP + 8]
     mov rC, 6
 .arp_cache_update_mac:
-    mov rA.b, [rS]
-    mov [rG], rA.b
+    mov al, [rS]
+    mov [rG], al
     inc rG
     inc rS
     dec rC
@@ -393,8 +394,8 @@ net_arp_cache_add:
     lea rS, [rP + 8]
     mov rC, 6
 .arp_cache_insert_mac:
-    mov rA.b, [rS]
-    mov [rG], rA.b
+    mov al, [rS]
+    mov [rG], al
     inc rG
     inc rS
     dec rC
@@ -465,8 +466,8 @@ net_arp_send_request:
     lea rS, [rel net_our_mac]
     mov rC, 6
 .arp_req_smac:
-    mov rA.b, [rS]
-    mov [rG + 6], rA.b
+    mov al, [rS]
+    mov [rG + 6], al
     inc rG
     inc rS
     dec rC
@@ -487,8 +488,8 @@ net_arp_send_request:
     lea rS, [rel net_our_mac]
     mov rC, 6
 .arp_req_sender_mac:
-    mov rA.b, [rS]
-    mov [rG + 8], rA.b
+    mov al, [rS]
+    mov [rG + 8], al
     inc rS
     dec rC
     jnz .arp_req_sender_mac
@@ -529,13 +530,13 @@ net_ip_process:
     push rP
     
     ; Verify IP version
-    mov rA.b, [rP]
+    mov al, [rP]
     shr rA, 4
     cmp rA, 4
     jne .ip_done
     
     ; Verify header length
-    mov rA.b, [rP]
+    mov al, [rP]
     and rA, 0x0F
     shl rA, 2              ; IHL * 4 = header bytes
     mov rG, rA             ; Save header length
@@ -546,7 +547,7 @@ net_ip_process:
     jne .ip_done           ; Not for us
     
     ; Get protocol
-    mov rA.b, [rP + 9]
+    mov al, [rP + 9]
     
     ; Dispatch by protocol
     cmp rA, IP_PROTO_ICMP
@@ -605,12 +606,12 @@ net_ip_send:
     mov byte [rG + 15], IP_TOS_DEFAULT ; TOS
     mov rA, rC
     add rA, 20             ; Total length = payload + header
-    mov [rG + 16], rA.w    ; Total length (network byte order)
+    mov [rG + 16], ax    ; Total length (network byte order)
     
     ; Identification
     mov rA, [rel ip_next_id]
     inc qword [rel ip_next_id]
-    mov [rG + 18], rA.w
+    mov [rG + 18], ax
     
     ; Flags + Fragment offset (Don't Fragment)
     mov word [rG + 20], 0x4000
@@ -619,7 +620,7 @@ net_ip_send:
     mov byte [rG + 22], IP_TTL_DEFAULT
     
     ; Protocol
-    mov [rG + 23], rG.b    ; Protocol from parameter
+    mov [rG + 23], bl    ; Protocol from parameter
     
     ; Checksum (0 for now, calculate later)
     mov word [rG + 24], 0
@@ -636,7 +637,7 @@ net_ip_send:
     lea rP, [rG + 14]     ; IP header start
     mov rC, 20
     call net_checksum
-    mov [rG + 24], rA.w
+    mov [rG + 24], ax
     
     ; Copy payload
     add rG, 34             ; After IP header
@@ -660,7 +661,7 @@ net_icmp_process:
     push rA
     
     ; Get ICMP type
-    mov rA.b, [rP]
+    mov al, [rP]
     
     cmp rA, ICMP_ECHO_REQ
     je .icmp_echo_req
@@ -700,7 +701,7 @@ net_icmp_send_reply:
     mov word [rP + 2], 0
     mov rC, 64             ; ICMP length
     call net_checksum
-    mov [rP + 2], rA.w
+    mov [rP + 2], ax
     
     ; Send via IP
     ; (would call net_ip_send)
@@ -733,12 +734,12 @@ net_ping:
     ; Identifier
     mov rA, [rel pit_ticks]
     and rA, 0xFFFF
-    mov [rG + 4], rA.w
+    mov [rG + 4], ax
     
     ; Sequence number
     mov rA, [rel net_ping_seq]
     inc qword [rel net_ping_seq]
-    mov [rG + 6], rA.w
+    mov [rG + 6], ax
     
     ; Data = "DNAOS" + padding
     mov dword [rG + 8], 0x534F414E  ; "NAOS"
@@ -748,7 +749,7 @@ net_ping:
     lea rP, [rG]
     mov rC, 64
     call net_checksum
-    mov [rG + 2], rA.w
+    mov [rG + 2], ax
     
     ; Record send time
     mov qword [rel net_ping_sent], 1
@@ -774,12 +775,12 @@ net_tcp_process:
     push rP
     
     ; Get source port
-    mov rA.w, [rP]
-    xchg rA.b, rA.b + 1    ; ntohs
+    mov ax, [rP]
+    rol ax, 8    ; ntohs - swap bytes
     
     ; Get destination port
-    mov rC.w, [rP + 2]
-    xchg rC.b, rC.b + 1
+    mov dx, [rP + 2]
+    rol dx, 8
     
     ; Find matching connection
     call net_tcp_find_conn
@@ -787,7 +788,7 @@ net_tcp_process:
     jz .tcp_process_done
     
     ; Get TCP flags
-    mov rA.b, [rP + 13]
+    mov al, [rP + 13]
     
     ; State machine
     cmp qword [rG + 48], TCP_SYN_RECV
@@ -812,7 +813,7 @@ net_tcp_process:
     
     ; Process data (copy to receive buffer)
     ; Get data offset
-    mov rA.b, [rP + 12]
+    mov al, [rP + 12]
     shr rA, 4
     shl rA, 2              ; Data offset in bytes
     
@@ -994,16 +995,16 @@ net_udp_process:
     push rP
     
     ; Get source port
-    mov rA.w, [rP]
-    xchg rA.b, rA.b + 1
+    mov ax, [rP]
+    rol ax, 8
     
     ; Get dest port
-    mov rC.w, [rP + 2]
-    xchg rC.b, rC.b + 1
+    mov dx, [rP + 2]
+    rol dx, 8
     
     ; Get length
-    mov rG.w, [rP + 4]
-    xchg rG.b, rG.b + 1
+    mov bx, [rP + 4]
+    rol bx, 8
     
     ; Check if DHCP response (port 68)
     cmp rC, DHCP_PORT_CLIENT
@@ -1040,15 +1041,15 @@ net_udp_send:
     
     ; Source port
     mov rA, [rel net_udp_src_port]
-    mov [rG], rA.w
+    mov [rG], ax
     
     ; Dest port
-    mov [rG + 2], rC.w
+    mov [rG + 2], dx
     
     ; Length
     mov rA, rS
     add rA, UDP_HEADER_LEN
-    mov [rG + 4], rA.w
+    mov [rG + 4], ax
     
     ; Checksum = 0 (optional for UDP)
     mov word [rG + 6], 0
@@ -1105,8 +1106,8 @@ net_dhcp_discover:
     lea rP, [rel net_our_mac]
     mov rC, 6
 .dhcp_mac:
-    mov rA.b, [rP]
-    mov [rG + 28], rA.b
+    mov al, [rP]
+    mov [rG + 28], al
     inc rG
     inc rP
     dec rC
@@ -1131,8 +1132,8 @@ net_dhcp_discover:
     lea rP, [rel net_our_mac]
     mov rC, 6
 .dhcp_cid_mac:
-    mov rA.b, [rP]
-    mov [rG + 246], rA.b
+    mov al, [rP]
+    mov [rG + 246], al
     inc rG
     inc rP
     dec rC
@@ -1165,7 +1166,7 @@ net_dhcp_process:
     jne .dhcp_process_done
     
     ; Get message type
-    mov rA.b, [rP + 242]
+    mov al, [rP + 242]
     
     cmp rA, DHCP_OFFER
     je .dhcp_offer
@@ -1230,8 +1231,8 @@ net_dns_resolve:
     ; Transaction ID
     mov rA, [rel dns_next_id]
     inc qword [rel dns_next_id]
-    mov [rG], rA.w
-    mov [rel dns_current_id], rA.w
+    mov [rG], ax
+    mov [rel dns_current_id], ax
     
     ; Flags: standard query, recursion desired
     mov word [rG + 2], DNS_FLAG_RD
@@ -1250,7 +1251,7 @@ net_dns_resolve:
     mov rC, 0              ; Label length counter
     
 .dns_encode_loop:
-    mov rA.b, [rS]
+    mov al, [rS]
     test rA, rA
     jz .dns_encode_done
     cmp rA, '.'
@@ -1258,13 +1259,13 @@ net_dns_resolve:
     
     ; Regular character
     inc rC
-    mov [rG + rC], rA.b
+    mov [rG + rC], al
     inc rS
     jmp .dns_encode_loop
     
 .dns_encode_dot:
     ; Write label length
-    mov [rG], rC.b
+    mov [rG], dl
     add rG, rC
     inc rG
     mov rC, 0
@@ -1273,7 +1274,7 @@ net_dns_resolve:
     
 .dns_encode_done:
     ; Write final label length
-    mov [rG], rC.b
+    mov [rG], dl
     add rG, rC
     inc rG
     mov byte [rG], 0       ; Root label
@@ -1321,7 +1322,7 @@ net_checksum:
     je .checksum_odd
     
     ; Add 16-bit word
-    mov rA.w, [rP]
+    mov ax, [rP]
     add rG, rA
     add rP, 2
     sub rC, 2
@@ -1329,7 +1330,7 @@ net_checksum:
     
 .checksum_odd:
     ; Add last byte (padded with 0)
-    mov rA.b, [rP]
+    mov al, [rP]
     and rA, 0xFF
     add rG, rA
     

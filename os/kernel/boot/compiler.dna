@@ -5,10 +5,6 @@
 ; This is the DNAsm compiler, written IN DNAsm.
 ; It compiles .dna source files to x86_64 machine code.
 ; 
-* Phase 1: Tokenizer (source → tokens)
-* Phase 2: Parser (tokens → AST)
-* Phase 3: Code generator (AST → x86_64 machine code)
-* Phase 4: ELF64 writer (machine code → executable)
 ; 
 ; When this compiler can compile itself, DNAOS is self-hosting.
 ; ============================================================================
@@ -141,7 +137,7 @@ compiler_tokenize:
 .tokenize_loop:
     ; Skip whitespace
 .tokenize_space:
-    cmp byte [rG], ' '
+    cmp byte [rG], 0x20
     je .tokenize_skip
     cmp byte [rG], 9       ; Tab
     je .tokenize_skip
@@ -157,7 +153,7 @@ compiler_tokenize:
     je .tokenize_eof
     
     ; Check for comment
-    cmp byte [rG], ';'
+    cmp byte [rG], 0x3B
     je .tokenize_comment
     
     ; Check for newline
@@ -165,41 +161,41 @@ compiler_tokenize:
     je .tokenize_newline
     
     ; Check for string literal
-    cmp byte [rG], '"'
+    cmp byte [rG], 0x22
     je .tokenize_string
     
     ; Check for number
-    cmp byte [rG], '0'
+    cmp byte [rG], 0x30
     jb .tokenize_not_number
-    cmp byte [rG], '9'
+    cmp byte [rG], 0x39
     jbe .tokenize_number
     
     ; Check for hex number
-    cmp byte [rG], '0'     ; 0x prefix
+    cmp byte [rG], 0x30     ; 0x prefix
     jne .tokenize_not_hex
-    cmp byte [rG + 1], 'x'
+    cmp byte [rG + 1], 0x78
     je .tokenize_hex
     
 .tokenize_not_hex:
 .tokenize_not_number:
     ; Check for directive
-    cmp byte [rG], '.'
+    cmp byte [rG], 0x2e
     je .tokenize_directive
     
     ; Check for symbol
-    cmp byte [rG], ','
+    cmp byte [rG], 0x2c
     je .tokenize_symbol
-    cmp byte [rG], '['
+    cmp byte [rG], 0x5b
     je .tokenize_symbol
-    cmp byte [rG], ']'
+    cmp byte [rG], 0x5d
     je .tokenize_symbol
-    cmp byte [rG], '+'
+    cmp byte [rG], 0x2b
     je .tokenize_symbol
-    cmp byte [rG], '-'
+    cmp byte [rG], 0x2d
     je .tokenize_symbol
-    cmp byte [rG], '*'
+    cmp byte [rG], 0x2a
     je .tokenize_symbol
-    cmp byte [rG], ':'
+    cmp byte [rG], 0x3a
     je .tokenize_colon
     
     ; Must be identifier (instruction, register, label, etc.)
@@ -239,7 +235,7 @@ compiler_tokenize:
     add rS, 8
     
 .tokenize_string_loop:
-    cmp byte [rG], '"'
+    cmp byte [rG], 0x22
     je .tokenize_string_end
     cmp byte [rG], 0
     je .tokenize_done      ; Unterminated string
@@ -259,13 +255,13 @@ compiler_tokenize:
     xor rA, rA
     
 .tokenize_number_loop:
-    cmp byte [rG], '0'
+    cmp byte [rG], 0x30
     jb .tokenize_number_end
-    cmp byte [rG], '9'
+    cmp byte [rG], 0x39
     ja .tokenize_number_end
     imul rA, 10
-    mov rC.b, [rG]
-    sub rC, '0'
+    mov dl, [rG]
+    sub rC, 0x30
     add rA, rC
     inc rG
     jmp .tokenize_number_loop
@@ -284,28 +280,28 @@ compiler_tokenize:
     xor rA, rA
     
 .tokenize_hex_loop:
-    mov rC.b, [rG]
-    cmp rC, '0'
+    mov dl, [rG]
+    cmp rC, 0x30
     jb .tokenize_hex_end
-    cmp rC, '9'
+    cmp rC, 0x39
     jbe .tokenize_hex_digit
-    cmp rC, 'A'
+    cmp rC, 0x41
     jb .tokenize_hex_end
-    cmp rC, 'F'
+    cmp rC, 0x46
     jbe .tokenize_hex_upper
-    cmp rC, 'a'
+    cmp rC, 0x61
     jb .tokenize_hex_end
-    cmp rC, 'f'
+    cmp rC, 0x66
     ja .tokenize_hex_end
-    sub rC, 'a' - 10
+    sub rC, 0x61 - 10
     jmp .tokenize_hex_add
     
 .tokenize_hex_upper:
-    sub rC, 'A' - 10
+    sub rC, 0x41 - 10
     jmp .tokenize_hex_add
     
 .tokenize_hex_digit:
-    sub rC, '0'
+    sub rC, 0x30
     
 .tokenize_hex_add:
     shl rA, 4
@@ -327,7 +323,7 @@ compiler_tokenize:
     add rS, 8
     
 .tokenize_directive_loop:
-    cmp byte [rG], ' '
+    cmp byte [rG], 0x20
     je .tokenize_directive_end
     cmp byte [rG], 10
     je .tokenize_directive_end
@@ -344,7 +340,7 @@ compiler_tokenize:
 .tokenize_symbol:
     mov qword [rS], TOK_SYMBOL
     add rS, 8
-    mov rA.b, [rG]
+    mov al, [rG]
     mov [rS], rA
     add rS, 8
     inc rG
@@ -366,15 +362,15 @@ compiler_tokenize:
     add rS, 8
     
 .tokenize_ident_loop:
-    cmp byte [rG], ' '
+    cmp byte [rG], 0x20
     je .tokenize_ident_end
     cmp byte [rG], 10
     je .tokenize_ident_end
-    cmp byte [rG], ':'
+    cmp byte [rG], 0x3a
     je .tokenize_ident_end
-    cmp byte [rG], ','
+    cmp byte [rG], 0x2c
     je .tokenize_ident_end
-    cmp byte [rG], '['
+    cmp byte [rG], 0x5b
     je .tokenize_ident_end
     cmp byte [rG], 0
     je .tokenize_ident_end
@@ -818,30 +814,30 @@ compiler_encode_atcg:
     xor rG, rG
     
     ; Char 0
-    mov rC.b, [rA]
+    mov dl, [rA]
     call atcg_char_to_val
     shl rA, 6
     or rG, rA
     
     ; Char 1
-    mov rC.b, [rA + 1]
+    mov dl, [rA + 1]
     call atcg_char_to_val
     shl rA, 4
     or rG, rA
     
     ; Char 2
-    mov rC.b, [rA + 2]
+    mov dl, [rA + 2]
     call atcg_char_to_val
     shl rA, 2
     or rG, rA
     
     ; Char 3
-    mov rC.b, [rA + 3]
+    mov dl, [rA + 3]
     call atcg_char_to_val
     or rG, rA
     
     ; Store byte
-    mov [rS], rG.b
+    mov [rS], bl
     inc rS
     add rA, 4
     

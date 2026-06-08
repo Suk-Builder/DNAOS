@@ -9,9 +9,9 @@
 ; hello.dna - Hello World
 ; ============================================================================
 .code
-.global _start
+.global hello_start
 
-_start:
+hello_start:
     ; Print hello message using write syscall
     mov rA, 0x01           ; sys_write
     mov rC, 1              ; fd = stdout
@@ -31,9 +31,9 @@ hello_msg:
 ; atcg_encode.dna - ATCG Encoder Tool
 ; ============================================================================
 .code
-.global _start
+.global atcg_encode_start
 
-_start:
+atcg_encode_start:
     ; Read input string from command line
     ; Encode to ATCG
     ; Print result
@@ -82,9 +82,9 @@ atcg_result:
 ; quat_calc.dna - Quaternary Calculator
 ; ============================================================================
 .code
-.global _start
+.global quat_calc_start
 
-_start:
+quat_calc_start:
     ; Print menu
     mov rA, 0x01
     mov rC, 1
@@ -172,9 +172,9 @@ result_str:
 ; net_test.dna - Network Test Tool
 ; ============================================================================
 .code
-.global _start
+.global net_test_start
 
-_start:
+net_test_start:
     ; Get our IP
     mov rA, 0x0B           ; sys_atp_query (reuse for net info)
     int 0x80
@@ -202,9 +202,9 @@ ip_msg:
 ; dna_paint.dna - Simple Paint Program
 ; ============================================================================
 .code
-.global _start
+.global dna_paint_start
 
-_start:
+dna_paint_start:
     ; Create window
     mov rA, 0x15           ; sys_wm_create
     lea rP, [rel win_title]

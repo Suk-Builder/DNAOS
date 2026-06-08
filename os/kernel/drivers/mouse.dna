@@ -18,43 +18,43 @@ mouse_init:
     ; Enable auxiliary device
     call mouse_wait_ctrl
     mov rA, 0xA8           ; Enable aux
-    out 0x64, rA.b
+    out 0x64, al
     
     ; Enable IRQ12 in PS/2 controller
     call mouse_wait_ctrl
     mov rA, 0x20           ; Read config
-    out 0x64, rA.b
+    out 0x64, al
     call mouse_wait_data
-    in rA.b, 0x60
+    in al, 0x60
     or rA, 0x03            ; Enable IRQ1 + IRQ12
     push rA
     call mouse_wait_ctrl
     mov rA, 0x60           ; Write config
-    out 0x64, rA.b
+    out 0x64, al
     call mouse_wait_ctrl
     pop rA
-    out 0x60, rA.b
+    out 0x60, al
     
     ; Set defaults
     call mouse_send_cmd
     mov rA, 0xF6           ; Set defaults
-    out 0x60, rA.b
+    out 0x60, al
     call mouse_read_ack
     
     ; Enable streaming
     call mouse_send_cmd
     mov rA, 0xF4           ; Enable streaming
-    out 0x60, rA.b
+    out 0x60, al
     call mouse_read_ack
     
     ; Set sample rate (for scroll wheel detection)
     call mouse_send_cmd
     mov rA, 0xF3           ; Set sample rate
-    out 0x60, rA.b
+    out 0x60, al
     call mouse_read_ack
     call mouse_send_cmd
     mov rA, 200            ; 200 samples/sec
-    out 0x60, rA.b
+    out 0x60, al
     call mouse_read_ack
     
     ; Initialize state
@@ -77,7 +77,7 @@ mouse_irq_handler:
     push rC
     
     ; Read byte from mouse
-    in rA.b, 0x60
+    in al, 0x60
     
     ; First byte must have bit 3 set
     mov rC, [rel mouse_packet_idx]
@@ -90,7 +90,7 @@ mouse_irq_handler:
     ; Store in packet buffer
     lea rC, [rel mouse_packet]
     add rC, [rel mouse_packet_idx]
-    mov [rC], rA.b
+    mov [rC], al
     inc qword [rel mouse_packet_idx]
     
     ; Check if we have complete packet (3 bytes)
@@ -104,9 +104,9 @@ mouse_irq_handler:
     ; Parse packet
     mov rC, [rel mouse_packet]      ; flags
     mov rA, [rel mouse_packet + 1]  ; dx (signed byte)
-    movsx rA, rA.b                  ; Sign extend
+    movsx rA, al                  ; Sign extend
     mov rG, [rel mouse_packet + 2]  ; dy (signed byte)
-    movsx rG, rG.b
+    movsx rG, bl
     
     ; Apply overflow
     test rC, 0x40           ; X overflow
@@ -190,7 +190,7 @@ mouse_get_state:
 mouse_wait_ctrl:
     push rA
 .mouse_wait_ctrl_loop:
-    in rA.b, 0x64
+    in al, 0x64
     test rA, 0x02
     jnz .mouse_wait_ctrl_loop
     pop rA
@@ -199,7 +199,7 @@ mouse_wait_ctrl:
 mouse_wait_data:
     push rA
 .mouse_wait_data_loop:
-    in rA.b, 0x64
+    in al, 0x64
     test rA, 0x01
     jz .mouse_wait_data_loop
     pop rA
@@ -210,7 +210,7 @@ mouse_send_cmd:
 .mouse_send_cmd_loop:
     call mouse_wait_ctrl
     mov rA, 0xD4           ; Send to mouse
-    out 0x64, rA.b
+    out 0x64, al
     pop rA
     ret
 
@@ -218,8 +218,8 @@ mouse_read_ack:
     push rA
 .mouse_read_ack_loop:
     call mouse_wait_data
-    in rA.b, 0x60
-    cmp rA.b, 0xFA         ; ACK
+    in al, 0x60
+    cmp al, 0xFA         ; ACK
     jne .mouse_read_ack_loop
     pop rA
     ret

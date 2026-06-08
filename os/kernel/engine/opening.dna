@@ -72,6 +72,7 @@ PHASE_SILENCE     equ 7    ; 静寂 — 八千代's monologue
 PHASE_COMPLETION  equ 8    ; 完成 — 月読 is whole
 PHASE_WELCOME     equ 9    ; 歓迎 — title screen
 
+.extern worldgen_init
 .code
 .global opening_init
 .global opening_start
@@ -543,11 +544,11 @@ opening_skip:
 .data
 
 op_yachiyo_x:
-    dd 0.0
+    dd 0x00000000
 op_yachiyo_y:
-    dd 50.0
+    dd 0x42480000
 op_yachiyo_z:
-    dd 0.0
+    dd 0x00000000
 
 ; 八千代's monologue during bridge
 op_monologue_1:

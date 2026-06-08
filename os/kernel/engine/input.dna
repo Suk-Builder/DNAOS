@@ -52,7 +52,7 @@ input_init:
     mov rC, 128
     xor rA, rA
 .input_init_keys:
-    mov [rG], rA.b
+    mov [rG], al
     inc rG
     dec rC
     jnz .input_init_keys
@@ -70,7 +70,7 @@ input_init:
     mov rC, MAX_ACTIONS * 8
     xor rA, rA
 .input_init_actions:
-    mov [rG], rA.b
+    mov [rG], al
     inc rG
     dec rC
     jnz .input_init_actions
@@ -158,11 +158,16 @@ input_bind_key:
     
     ; Add binding
     mov rG, [rel input_binding_count]
-    lea rG, [rel input_bindings + rG*12]  ; Each binding = 12 bytes
+    lea rG, [rel input_bindings]
+    push rA
+    mov rA, rG
+    imul rA, 12
+    add rG, rA
+    pop rA  ; Each binding = 12 bytes
     
     mov dword [rG], SRC_KEYBOARD  ; source_type
-    mov dword [rG + 4], rA.w      ; source_id (scancode)
-    mov dword [rG + 8], rC.w      ; action_id
+    mov word [rG + 4], ax      ; source_id (scancode)
+    mov word [rG + 8], dx      ; action_id
     
     inc qword [rel input_binding_count]
     
@@ -177,11 +182,16 @@ input_bind_mouse:
     push rG
     
     mov rG, [rel input_binding_count]
-    lea rG, [rel input_bindings + rG*12]
+    lea rG, [rel input_bindings]
+    push rA
+    mov rA, rG
+    imul rA, 12
+    add rG, rA
+    pop rA
     
     mov dword [rG], SRC_MOUSE_BTN
-    mov dword [rG + 4], rA.w
-    mov dword [rG + 8], rC.w
+    mov word [rG + 4], ax
+    mov word [rG + 8], dx
     
     inc qword [rel input_binding_count]
     
@@ -196,11 +206,16 @@ input_bind_gamepad:
     push rP
     
     mov rP, [rel input_binding_count]
-    lea rP, [rel input_bindings + rP*12]
+    lea rP, [rel input_bindings]
+    push rA
+    mov rA, rP
+    imul rA, 12
+    add rP, rA
+    pop rA
     
-    mov dword [rP], rS.w     ; source_type (SRC_GAMEPAD_BTN or SRC_GAMEPAD_AXIS)
-    mov dword [rP + 4], rC.w ; button/axis
-    mov dword [rP + 8], rG.w ; action_id
+    mov [rP], rS     ; source_type
+    mov word [rP + 4], dx  ; button/axis
+    mov word [rP + 8], bx  ; action_id
     
     inc qword [rel input_binding_count]
     
@@ -315,7 +330,7 @@ input_playback:
 .data
 
 .mouse_sensitivity:
-    dd 0.002                ; Mouse sensitivity for axis mapping
+    dd 0x3b03126f                ; Mouse sensitivity for axis mapping
 
 ; ============================================================================
 ; BSS

@@ -328,11 +328,11 @@ voice_freq_to_note:
 align 4
 
 .note_g5:
-    dd 783.99
+    dd 0x4443ff5c
 .note_b5:
-    dd 987.77
+    dd 0x4476f148
 .note_c6:
-    dd 1046.50
+    dd 0x4482d000
 
 ; Note name table (for display)
 note_names:
@@ -350,12 +350,12 @@ voice_state_names:
     db "Breath", 0, 0
 
 ; Frequency → color mapping (key points)
-freq_color_d2:  dd 0.0, 0.5, 0.8, 1.0     ; Deep red-orange (RGBA)
-freq_color_c4:  dd 0.2, 0.7, 0.4, 1.0     ; Green
-freq_color_a4:  dd 0.3, 0.4, 0.9, 1.0     ; Blue
-freq_color_c5:  dd 0.6, 0.2, 0.8, 1.0     ; Purple
-freq_color_g5:  dd 0.9, 0.3, 0.7, 1.0     ; Pink
-freq_color_c6:  dd 1.0, 0.95, 0.8, 1.0    ; White-gold
+freq_color_d2:  dd 0x00000000, 0.5, 0.8, 1.0     ; Deep red-orange (RGBA)
+freq_color_c4:  dd 0x3e4ccccd, 0.7, 0.4, 1.0     ; Green
+freq_color_a4:  dd 0x3e99999a, 0.4, 0.9, 1.0     ; Blue
+freq_color_c5:  dd 0x3f19999a, 0.2, 0.8, 1.0     ; Purple
+freq_color_g5:  dd 0x3f666666, 0.3, 0.7, 1.0     ; Pink
+freq_color_c6:  dd 0x3f800000, 0.95, 0.8, 1.0    ; White-gold
 
 ; ============================================================================
 ; BSS

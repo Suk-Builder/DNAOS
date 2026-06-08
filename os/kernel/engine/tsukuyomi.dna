@@ -4,15 +4,6 @@
 ; 超时空輝夜姫の月読 — The game engine for building virtual worlds.
 ;
 ; Architecture:
-*   ECS (Entity Component System) - entity.dna
-*   Software 3D Renderer (CPU仿GPU) - rasterizer.dna
-*   Physics Engine - physics.dna
-*   Audio Engine - audio.dna
-*   Input System - input.dna
-*   Scene Graph - scene.dna
-*   Scripting (DNAsm VM) - below
-*   World Management - below
-*   Network (multiplayer) - tcpip.dna
 ; 
 ; This file ties everything together into a game engine.
 ; ============================================================================
@@ -117,7 +108,7 @@ tsukuyomi_init:
     
     ; Set default time of day (noon)
     movss xmm0, [rel .float_half]
-    movss [rel tsuku_time_of_day], xmm0
+    movss dword [rel tsuku_time_of_day], xmm0
     
     ; Set default weather (clear)
     mov dword [rel tsuku_weather], 0
@@ -133,8 +124,8 @@ tsukuyomi_init:
     ; Initialize frame counter
     mov qword [rel tsuku_frame_count], 0
     movss xmm0, [rel .float_zero]
-    movss [rel tsuku_fps], xmm0
-    movss [rel tsuku_frame_time], xmm0
+    movss dword [rel tsuku_fps], xmm0
+    movss dword [rel tsuku_frame_time], xmm0
     
     ; Transition to running
     mov qword [rel tsuku_state], ENGINE_RUNNING
@@ -207,12 +198,12 @@ tsukuyomi_run:
     call pit_get_ticks
     sub rA, [rel tsuku_frame_start]
     cvtsi2ss xmm0, rA
-    movss [rel tsuku_frame_time], xmm0
+    movss dword [rel tsuku_frame_time], xmm0
     
     ; FPS calculation
     movss xmm1, [rel .float_1000]
     divss xmm1, xmm0        ; 1000 / frame_time_ms
-    movss [rel tsuku_fps], xmm1
+    movss dword [rel tsuku_fps], xmm1
     
     inc qword [rel tsuku_frame_count]
     
@@ -481,7 +472,7 @@ tsukuyomi_spawn_particle_system:
 ; xmm0 = time [0..1] (0=midnight, 0.5=noon)
 ; ============================================================================
 tsukuyomi_set_time_of_day:
-    movss [rel tsuku_time_of_day], xmm0
+    movss dword [rel tsuku_time_of_day], xmm0
     ret
 
 ; ============================================================================
@@ -524,49 +515,49 @@ tsukuyomi_execute_script:
     jz .tsuku_vm_done
     
     ; Fetch opcode
-    movzx rA_temp, byte [rP]
+    movzx r8, byte [rP]
     inc rP
     
     ; Dispatch
-    cmp rA_temp, OP_HALT
+    cmp r8, OP_HALT
     je .tsuku_vm_halt
-    cmp rA_temp, OP_PUSH
+    cmp r8, OP_PUSH
     je .tsuku_vm_push
-    cmp rA_temp, OP_ADD
+    cmp r8, OP_ADD
     je .tsuku_vm_add
-    cmp rA_temp, OP_SUB
+    cmp r8, OP_SUB
     je .tsuku_vm_sub
-    cmp rA_temp, OP_MUL
+    cmp r8, OP_MUL
     je .tsuku_vm_mul
-    cmp rA_temp, OP_JMP
+    cmp r8, OP_JMP
     je .tsuku_vm_jmp
-    cmp rA_temp, OP_JZ
+    cmp r8, OP_JZ
     je .tsuku_vm_jz
-    cmp rA_temp, OP_CALL
+    cmp r8, OP_CALL
     je .tsuku_vm_call
-    cmp rA_temp, OP_RET
+    cmp r8, OP_RET
     je .tsuku_vm_ret
-    cmp rA_temp, OP_SYSCALL
+    cmp r8, OP_SYSCALL
     je .tsuku_vm_syscall
-    cmp rA_temp, OP_QAND
+    cmp r8, OP_QAND
     je .tsuku_vm_qand
-    cmp rA_temp, OP_QOR
+    cmp r8, OP_QOR
     je .tsuku_vm_qor
-    cmp rA_temp, OP_QNOT
+    cmp r8, OP_QNOT
     je .tsuku_vm_qnot
-    cmp rA_temp, OP_QADD
+    cmp r8, OP_QADD
     je .tsuku_vm_qadd
-    cmp rA_temp, OP_SPAWN
+    cmp r8, OP_SPAWN
     je .tsuku_vm_spawn
-    cmp rA_temp, OP_DESTROY
+    cmp r8, OP_DESTROY
     je .tsuku_vm_destroy
-    cmp rA_temp, OP_PLAY_SND
+    cmp r8, OP_PLAY_SND
     je .tsuku_vm_play_snd
-    cmp rA_temp, OP_GET_INPUT
+    cmp r8, OP_GET_INPUT
     je .tsuku_vm_get_input
-    cmp rA_temp, OP_RAYCAST
+    cmp r8, OP_RAYCAST
     je .tsuku_vm_raycast
-    cmp rA_temp, OP_LOAD_WORLD
+    cmp r8, OP_LOAD_WORLD
     je .tsuku_vm_load_world
     
     ; Unknown opcode → halt
@@ -574,9 +565,9 @@ tsukuyomi_execute_script:
 
 .tsuku_vm_push:
     ; Push 8-byte immediate value
-    mov rA_temp, [rP]
+    mov r8, [rP]
     add rP, 8
-    mov [rS], rA_temp
+    mov [rS], r8
     add rS, 8
     dec rA
     jmp .tsuku_vm_loop
@@ -584,29 +575,29 @@ tsukuyomi_execute_script:
 .tsuku_vm_add:
     ; Pop two values, push sum
     sub rS, 8
-    mov rA_temp, [rS]
+    mov r8, [rS]
     sub rS, 8
-    add rA_temp, [rS]
-    mov [rS], rA_temp
+    add r8, [rS]
+    mov [rS], r8
     add rS, 8
     dec rA
     jmp .tsuku_vm_loop
 
 .tsuku_vm_sub:
     sub rS, 8
-    mov rA_temp, [rS]
+    mov r8, [rS]
     sub rS, 8
-    sub [rS], rA_temp
+    sub [rS], r8
     add rS, 8
     dec rA
     jmp .tsuku_vm_loop
 
 .tsuku_vm_mul:
     sub rS, 8
-    mov rA_temp, [rS]
+    mov r8, [rS]
     sub rS, 8
-    imul rA_temp, [rS]
-    mov [rS], rA_temp
+    imul r8, [rS]
+    mov [rS], r8
     add rS, 8
     dec rA
     jmp .tsuku_vm_loop
@@ -620,8 +611,8 @@ tsukuyomi_execute_script:
 .tsuku_vm_jz:
     ; Pop value, if zero jump
     sub rS, 8
-    mov rA_temp, [rS]
-    test rA_temp, rA_temp
+    mov r8, [rS]
+    test r8, r8
     jnz .tsuku_vm_jz_skip
     mov rP, [rP]
     dec rA
@@ -637,8 +628,8 @@ tsukuyomi_execute_script:
     add rS, 8
     add rP, 8               ; Skip address bytes
     ; Actually: call address is the operand
-    mov rA_temp, [rP - 8]   ; Get call target
-    mov rP, rA_temp
+    mov r8, [rP - 8]   ; Get call target
+    mov rP, r8
     dec rA
     jmp .tsuku_vm_loop
 
@@ -654,7 +645,7 @@ tsukuyomi_execute_script:
     ; Pop syscall number and args from stack
     ; Execute, push result
     sub rS, 8
-    mov rA_temp, [rS]       ; syscall number
+    mov r8, [rS]       ; syscall number
     ; ... dispatch to engine functions
     dec rA
     jmp .tsuku_vm_loop
@@ -662,9 +653,9 @@ tsukuyomi_execute_script:
 .tsuku_vm_qand:
     ; Quaternary AND = min(a, b) per 2-bit pair
     sub rS, 8
-    mov rA_temp, [rS]
+    mov r8, [rS]
     sub rS, 8
-    ; call qand(rA_temp, [rS])
+    ; call qand(r8, [rS])
     ; ... (would call kernel qand)
     dec rA
     jmp .tsuku_vm_loop
@@ -752,7 +743,7 @@ tsukuyomi_frame:
     jb .tsuku_frame_time_ok
     subss xmm0, xmm1        ; Wrap around
 .tsuku_frame_time_ok:
-    movss [rel tsuku_time_of_day], xmm0
+    movss dword [rel tsuku_time_of_day], xmm0
     
     ; Update weather particles (rain/snow)
     ; ... (would update particle systems)
@@ -766,15 +757,15 @@ tsukuyomi_frame:
 .data
 
 .float_zero:
-    dd 0.0
+    dd 0x00000000
 .float_one:
-    dd 1.0
+    dd 0x3f800000
 .float_half:
-    dd 0.5
+    dd 0x3f000000
 .float_1000:
-    dd 1000.0
+    dd 0x447a0000
 .time_speed:
-    dd 0.000007             ; ~24 min per day cycle at 60fps
+    dd 0x36eae18b             ; ~24 min per day cycle at 60fps
 
 ; Engine name strings
 tsuku_name:
