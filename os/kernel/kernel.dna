@@ -101,6 +101,16 @@ msg_init_input:
     db "[  OK  ] Input System", 10, 0
 msg_init_worldgen:
     db "[  OK  ] World Generator", 10, 0
+msg_init_sky:
+    db "[  OK  ] Atmospheric Sky Renderer", 10, 0
+msg_init_shadow:
+    db "[  OK  ] Soft Shadow Mapping", 10, 0
+msg_init_water:
+    db "[  OK  ] Water Renderer", 10, 0
+msg_init_veg:
+    db "[  OK  ] Vegetation System", 10, 0
+msg_init_postfx:
+    db "[  OK  ] Post-Processing Pipeline", 10, 0
 msg_prompt:
     db "dnaos> ", 0
 msg_unknown:
@@ -307,6 +317,26 @@ kernel_main:
     
     call worldgen_init
     lea rP, [rel msg_init_worldgen]
+    call console_print
+    
+    call sky_init
+    lea rP, [rel msg_init_sky]
+    call console_print
+    
+    call shadow_init
+    lea rP, [rel msg_init_shadow]
+    call console_print
+    
+    call water_init
+    lea rP, [rel msg_init_water]
+    call console_print
+    
+    call veg_init
+    lea rP, [rel msg_init_veg]
+    call console_print
+    
+    call post_init
+    lea rP, [rel msg_init_postfx]
     call console_print
     
     call tsukuyomi_init

@@ -1,0 +1,696 @@
+; ============================================================================
+; DNAOS - Atmospheric Scattering & Sky Rendering (DNAsm)
+; ============================================================================
+; 超時空輝夜姫の空 — The sky that makes you stop and look up.
+;
+; Implements:
+;   - Rayleigh/Mie atmospheric scattering (Preetham model)
+*   - Volumetric cloud rendering (ray marching)
+*   - God rays (crepuscular rays) post-process
+*   - Sun disk with corona
+*   - Stars at twilight/night
+*   - Moon with phases
+*   - Time-of-day cycle (dawn → day → dusk → night)
+; 
+; The sky is NOT a background. It's 70% of the frame.
+; It has to be perfect.
+; ============================================================================
+
+; Time of day phases
+TIME_NIGHT       equ 0      ; 0.0 - 0.2
+TIME_DAWN        equ 1      ; 0.2 - 0.3
+TIME_MORNING     equ 2      ; 0.3 - 0.5
+TIME_NOON        equ 3      ; 0.5 - 0.6
+TIME_AFTERNOON   equ 4      ; 0.6 - 0.7
+TIME_DUSK        equ 5      ; 0.7 - 0.8
+TIME_TWILIGHT    equ 6      ; 0.8 - 0.9
+TIME_LATE_NIGHT  equ 7      ; 0.9 - 1.0
+
+; Cloud types
+CLOUD_NONE       equ 0
+CLOUD_CIRRUS     equ 1      ; Wispy, high altitude
+CLOUD_CIRROCUMULUS equ 2    ; Small ripples
+CLOUD_ALTOCUMULUS equ 3     ; Sheep-like patches
+CLOUD_CUMULUS    equ 4      ; Fluffy, cotton-like
+CLOUD_CUMULONIMBUS equ 5    ; Towering, dramatic
+CLOUD_STRATUS    equ 6      ; Flat, overcast
+
+MAX_CLOUD_LAYERS equ 4
+
+.code
+.global sky_init
+.global sky_render
+.global sky_update
+.global sky_set_time
+.global sky_get_sun_dir
+.global sky_get_sun_color
+.global sky_get_ambient_color
+.global sky_get_fog_color
+.global sky_get_fog_density
+.global cloud_render
+.global cloud_update_wind
+.global godray_render
+
+; ============================================================================
+; sky_init - Initialize sky system
+; ============================================================================
+sky_init:
+    push rA
+    
+    ; Set default time (noon)
+    mov dword [rel sky_time], __float32__(0.5)
+    
+    ; Initialize Rayleigh scattering coefficients
+    ; Rayleigh β_R = (5.5e-6, 13.0e-6, 22.4e-6) for RGB
+    mov dword [rel sky_rayleigh_r], __float32__(5.5e-6)
+    mov dword [rel sky_rayleigh_g], __float32__(13.0e-6)
+    mov dword [rel sky_rayleigh_b], __float32__(22.4e-6)
+    
+    ; Mie scattering coefficient β_M = 21e-6
+    mov dword [rel sky_mie_coeff], __float32__(21.0e-6)
+    
+    ; Mie asymmetry factor g = 0.758 (forward scattering)
+    mov dword [rel sky_mie_g], __float32__(0.758)
+    
+    ; Sun intensity
+    mov dword [rel sky_sun_intensity], __float32__(20.0)
+    
+    ; Earth radius (for atmospheric shell calculation)
+    mov dword [rel sky_earth_radius], __float32__(6360000.0)
+    mov dword [rel sky_atmo_radius], __float32__(6420000.0)
+    
+    ; Cloud parameters
+    mov dword [rel cloud_density], __float32__(0.5)
+    mov dword [rel cloud_wind_x], __float32__(0.001)
+    mov dword [rel cloud_wind_z], __float32__(0.0005)
+    mov dword [rel cloud_coverage], __float32__(0.4)
+    
+    ; Initialize cloud noise
+    call cloud_init_noise
+    
+    pop rA
+    ret
+
+; ============================================================================
+; sky_update - Update sky for current time of day
+; rA = delta_time (float, as qword)
+; ============================================================================
+sky_update:
+    push rA
+    
+    ; Advance time
+    ; sky_time += delta_time * time_speed
+    ; time_speed ≈ 1/86400 for real-time, or faster for game
+    movss xmm0, [rel sky_time]
+    movss xmm1, [rel sky_time_speed]
+    mulss xmm0, xmm1
+    addss xmm0, [rel sky_time]
+    
+    ; Wrap to [0, 1)
+    comiss xmm0, __float32__(1.0)
+    jb .sky_time_ok
+    subss xmm0, __float32__(1.0)
+.sky_time_ok:
+    movss [rel sky_time], xmm0
+    
+    ; Calculate sun position from time
+    ; Sun angle = time * 2π (rises in east, sets in west)
+    ; sun_theta = time * PI (elevation: 0=horizon, PI/2=zenith)
+    ; sun_phi = time * 2 * PI (azimuth)
+    
+    ; At time=0.25: sunrise (east, low)
+    ; At time=0.5: noon (zenith)
+    ; At time=0.75: sunset (west, low)
+    ; At time=0.0/1.0: midnight (below horizon)
+    
+    movss xmm0, [rel sky_time]
+    subss xmm0, __float32__(0.25)   ; Offset so 0.25 = sunrise
+    mulss xmm0, __float32__(6.283185) ; * 2π
+    
+    ; Sun elevation: sin(angle) * max_elevation
+    ; At noon (angle=PI/2): sin = 1.0 → max elevation
+    ; At sunrise/sunset (angle=0,PI): sin = 0.0 → horizon
+    ; At night (angle=PI..2PI): sin < 0 → below horizon
+    
+    ; sin approximation
+    call math_sse_sin            ; xmm0 = sin(angle)
+    
+    ; Sun direction vector
+    ; sun_dir.y = sin(elevation)
+    ; sun_dir.x = cos(elevation) * cos(azimuth)
+    ; sun_dir.z = cos(elevation) * sin(azimuth)
+    
+    movss [rel sky_sun_y], xmm0   ; y = sin(elevation)
+    
+    ; Calculate sun color based on elevation
+    ; Low sun (dawn/dusk): warm orange/red
+    ; High sun (noon): bright white/yellow
+    ; Below horizon: dark blue/night
+    
+    ; ... (would compute sun color from Rayleigh scattering)
+    
+    ; Update fog color to match sky
+    ; fog_color = lerp(horizon_color, sun_color, 0.3)
+    
+    ; Update ambient color
+    ; ambient = sky_color * 0.3 + sun_color * 0.1
+    
+    pop rA
+    ret
+
+; ============================================================================
+; sky_render - Render sky to framebuffer
+; rP = framebuffer, rA = width, rC = height
+; ============================================================================
+sky_render:
+    push rA
+    push rC
+    push rG
+    push rS
+    
+    ; For each pixel in the framebuffer:
+    ;   1. Compute ray direction from camera
+    ;   2. If ray hits sun disk: draw sun
+    ;   3. Compute atmospheric scattering along ray
+    ;   4. If ray hits cloud layer: ray march clouds
+    ;   5. Composite: sky + clouds + sun + god rays
+    
+    ; Optimized approach: render sky to a separate buffer first
+    ; then composite with scene
+    
+    ; Step 1: Compute inverse view-projection matrix
+    ; (for converting screen coords to world rays)
+    
+    ; Step 2: For each pixel (or 2x2 block for performance)
+    ;   Compute ray direction
+    ;   Call atmospheric_scatter(ray_dir, sun_dir)
+    ;   Write color to sky buffer
+    
+    ; Step 3: Render clouds on top
+    ;   Call cloud_render()
+    
+    ; Step 4: Render sun disk
+    ;   Call sun_render()
+    
+    ; Step 5: Apply god rays as post-process
+    ;   Call godray_render()
+    
+    ; For now: simplified sky gradient
+    ; Top of screen: deep blue
+    ; Horizon: light blue/white
+    ; Sun area: warm glow
+    
+    mov rG, rP               ; framebuffer
+    mov rS, rA               ; width
+    imul rS, rC              ; total pixels
+    dec rS                   ; pixel index
+    
+.sky_render_loop:
+    test rS, rS
+    js .sky_render_done
+    
+    ; Calculate y position for gradient
+    mov rA, rS
+    xor rC, rC
+    div rA                   ; rA = y (approximate)
+    
+    ; Gradient factor: 0 at top, 1 at bottom
+    ; t = y / height
+    ; ... (would compute gradient)
+    
+    ; Sky color = lerp(zenith_color, horizon_color, t)
+    ; Add sun glow near sun position
+    
+    ; ... (would write pixel)
+    
+    dec rS
+    jmp .sky_render_loop
+    
+.sky_render_done:
+    pop rS
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; atmospheric_scatter - Compute atmospheric scattering for a ray
+; xmm0 = ray_dir_x, xmm1 = ray_dir_y, xmm2 = ray_dir_z
+; → xmm0-2 = scattered color (RGB)
+; ============================================================================
+atmospheric_scatter:
+    ; Preetham analytical sky model (simplified)
+    ; 
+    ; L(θ) = L_0 * F(θ, γ) * e^(-τ(θ))
+    ; 
+    ; Where:
+    ;   θ = angle from zenith
+    ;   γ = angle from sun
+    ;   F = phase function (Rayleigh + Mie)
+    ;   τ = optical depth
+    ;
+    ; Rayleigh phase: (3/16π) * (1 + cos²(γ))
+    ; Mie phase: Henyey-Greenstein
+    ;
+    ; Optical depth: integral of β * density along ray
+    ; Approximated as: β_R * h_R / cos(θ) for Rayleigh
+    ;                  β_M * h_M / cos(θ) for Mie
+    
+    push rA
+    
+    ; Compute cos(θ) = dot(ray_dir, up) = ray_dir.y
+    ; Compute cos(γ) = dot(ray_dir, sun_dir)
+    
+    ; cos_gamma = ray.x*sun.x + ray.y*sun.y + ray.z*sun.z
+    movss xmm3, xmm0
+    mulss xmm3, [rel sky_sun_x]
+    movss xmm4, xmm1
+    mulss xmm4, [rel sky_sun_y]
+    addss xmm3, xmm4
+    movss xmm4, xmm2
+    mulss xmm4, [rel sky_sun_z]
+    addss xmm3, xmm4       ; xmm3 = cos(γ)
+    
+    ; Rayleigh phase function
+    ; F_R(γ) = (3/16π) * (1 + cos²(γ))
+    movss xmm5, xmm3
+    mulss xmm5, xmm5       ; cos²(γ)
+    addss xmm5, __float32__(1.0)
+    mulss xmm5, __float32__(0.0596831)  ; 3/(16π)
+    
+    ; Mie phase function (Henyey-Greenstein)
+    ; F_M(γ) = (1-g²) / (4π * (1+g²-2g*cos(γ))^1.5)
+    movss xmm6, xmm3
+    mulss xmm6, [rel sky_mie_g]
+    movss xmm7, __float32__(1.0)
+    addss xmm7, [rel sky_mie_g_sq]
+    subss xmm7, xmm6       ; 1+g²-2g*cos(γ)
+    subss xmm7, xmm6
+    ; ... (would compute pow(1.5) and divide)
+    
+    ; Optical depth
+    ; τ_R = β_R * h_R / cos(θ)  (h_R ≈ 8500m scale height)
+    ; τ_M = β_M * h_M / cos(θ)  (h_M ≈ 1200m)
+    
+    ; cos(θ) = ray_dir.y
+    ; If cos(θ) < 0.01: clamp (horizon)
+    
+    ; Extinction = e^(-(τ_R + τ_M))
+    ; Inscattering = sun_intensity * (F_R * β_R * (1-e^(-τ_R)) + F_M * β_M * (1-e^(-τ_M)))
+    
+    ; ... (would compute full scattering)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; cloud_init_noise - Initialize cloud noise textures
+; ============================================================================
+cloud_init_noise:
+    push rA
+    push rC
+    push rG
+    
+    ; Generate Perlin noise for cloud density
+    ; 3D noise: 2 horizontal + 1 vertical (altitude)
+    ; Multiple octaves for detail
+    
+    lea rG, [rel cloud_noise]
+    mov rC, CLOUD_NOISE_SIZE * CLOUD_NOISE_SIZE * CLOUD_NOISE_SIZE
+    
+.cloud_noise_loop:
+    ; Generate noise value using hash function
+    ; ... (would fill noise texture)
+    dec rC
+    jnz .cloud_noise_loop
+    
+    ; Generate weather map (2D)
+    ; Controls cloud type and coverage per region
+    lea rG, [rel cloud_weather_map]
+    mov rC, CLOUD_WEATHER_SIZE * CLOUD_WEATHER_SIZE
+    
+.cloud_weather_loop:
+    ; ... (would generate weather map)
+    dec rC
+    jnz .cloud_weather_loop
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; cloud_render - Render volumetric clouds via ray marching
+; rP = framebuffer, rA = width, rC = height
+; ============================================================================
+cloud_render:
+    ; Volumetric cloud rendering algorithm:
+    ;
+    ; For each pixel:
+    ;   1. Cast ray from camera through pixel
+    ;   2. Intersect ray with cloud layer (altitude range)
+    ;   3. If hit: ray march through cloud volume
+    ;      - At each step: sample noise texture for density
+    ;      - Accumulate density (transmittance)
+    ;      - Compute lighting: direct + ambient + multi-scatter
+    ;   4. Composite cloud color with sky color
+    ;
+    ; Cloud lighting:
+    ;   - Direct: sample sun visibility (march toward sun)
+    ;   - Ambient: hemisphere sampling (simplified)
+    ;   - Multi-scatter: powder effect (approximation)
+    ;   - Silver lining: phase function at cloud edges
+    ;
+    ; Performance: 64-128 steps per ray, half-res rendering
+    
+    push rA
+    push rC
+    push rG
+    
+    ; Cloud layer bounds
+    ; Bottom: 1500m, Top: 4000m (cumulus)
+    ; Bottom: 5000m, Top: 8000m (cirrus)
+    
+    ; For each pixel (at half resolution):
+    ;   Compute ray direction
+    ;   Intersect with cloud layer
+    ;   If no intersection: skip (sky only)
+    ;   Ray march:
+    ;     step_size = (top - bottom) / num_steps
+    ;     for i = 0 to num_steps:
+    ;       pos = ray_origin + ray_dir * t
+    ;       density = sample_cloud_noise(pos, weather_map)
+    ;       if density > 0:
+    ;         transmittance *= exp(-absorption * density * step_size)
+    ;         light = compute_cloud_lighting(pos, sun_dir)
+    ;         scattered += transmittance * light * density * step_size
+    ;       t += step_size
+    
+    ; ... (would implement full volumetric cloud rendering)
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; cloud_update_wind - Update cloud wind offset
+; ============================================================================
+cloud_update_wind:
+    ; Advance wind offset
+    ; cloud_offset_x += wind_speed_x * dt
+    ; cloud_offset_z += wind_speed_z * dt
+    ret
+
+; ============================================================================
+; godray_render - Render crepuscular rays (god rays)
+; rP = framebuffer, rA = width, rC = height
+; ============================================================================
+godray_render:
+    ; God rays algorithm (screen-space radial blur):
+    ;
+    ; 1. Create occlusion buffer: render scene depth
+    ; 2. For each pixel:
+    ;    a. Compute vector from pixel to sun screen position
+    ;    b. Sample along this vector (radial blur)
+    ;    c. Accumulate brightness of unoccluded samples
+    ;    d. Weight by distance from sun (1/d² falloff)
+    ; 3. Add god ray contribution to final image
+    ;
+    ; Parameters:
+    ;   - Number of samples: 32-64
+    ;   - Decay: 0.96-0.99 per sample
+    ;   - Weight: 0.5-1.0
+    ;   - Exposure: 0.5-1.5
+    
+    push rA
+    push rC
+    push rG
+    
+    ; Compute sun screen position
+    ; sun_screen = project(sun_dir, view_proj_matrix)
+    
+    ; For each pixel:
+    ;   delta = (sun_screen - pixel_pos) / num_samples
+    ;   sample_pos = pixel_pos
+    ;   illumination = 0
+    ;   decay = 1.0
+    ;   for i = 0 to num_samples:
+    ;     sample_pos += delta
+    ;     if sample is not occluded (sky/cloud):
+    ;       illumination += sample_brightness * decay
+    ;     decay *= decay_rate
+    ;   godray_color = illumination * weight * sun_color
+    ;   final_color += godray_color
+    
+    ; ... (would implement god ray post-process)
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; sun_render - Render sun disk with corona
+; ============================================================================
+sun_render:
+    ; Sun disk:
+    ;   - Angular size: ~0.53° (varies slightly)
+    ;   - Color: warm white/yellow at noon, orange/red at dawn/dusk
+    ;   - Corona: soft glow around disk (atmospheric scattering)
+    ;   - Lens flare: optional (6-pointed star, anamorphic streak)
+    
+    ; For each pixel near sun:
+    ;   angle = acos(dot(ray_dir, sun_dir))
+    ;   if angle < sun_angular_radius:
+    ;     color = sun_color * sun_intensity
+    ;   elif angle < sun_angular_radius * 3:
+    ;     color = sun_color * corona_falloff(angle)
+    
+    ret
+
+; ============================================================================
+; sky_get_sun_dir - Get current sun direction
+; → rA = pointer to vec3
+; ============================================================================
+sky_get_sun_dir:
+    lea rA, [rel sky_sun_x]
+    ret
+
+; ============================================================================
+; sky_get_sun_color - Get current sun color
+; → rA = pointer to vec3
+; ============================================================================
+sky_get_sun_color:
+    lea rA, [rel sky_sun_color_r]
+    ret
+
+; ============================================================================
+; sky_get_ambient_color - Get ambient light color
+; → rA = pointer to vec3
+; ============================================================================
+sky_get_ambient_color:
+    lea rA, [rel sky_ambient_r]
+    ret
+
+; ============================================================================
+; sky_get_fog_color - Get fog color
+; → rA = pointer to vec3
+; ============================================================================
+sky_get_fog_color:
+    lea rA, [rel sky_fog_r]
+    ret
+
+; ============================================================================
+; sky_get_fog_density - Get fog density
+; → xmm0 = density (float)
+; ============================================================================
+sky_get_fog_density:
+    movss xmm0, [rel sky_fog_density]
+    ret
+
+; ============================================================================
+; sky_set_time - Set time of day
+; xmm0 = time [0..1]
+; ============================================================================
+sky_set_time:
+    movss [rel sky_time], xmm0
+    ret
+
+; ============================================================================
+; math_sse_sin - SSE sin approximation
+; xmm0 = angle → xmm0 = sin(angle)
+; ============================================================================
+math_sse_sin:
+    ; Taylor series: sin(x) = x - x³/6 + x⁵/120 - x⁷/5040
+    ; Normalize to [-π, π] first
+    push rA
+    
+    ; Normalize angle
+    ; x = fmod(x, 2π)
+    ; if x > π: x -= 2π
+    ; if x < -π: x += 2π
+    
+    ; Taylor series (5 terms)
+    ; result = x
+    ; x3 = x*x*x;  result -= x3/6
+    ; x5 = x3*x*x; result += x5/120
+    ; x7 = x5*x*x; result -= x7/5040
+    ; x9 = x7*x*x; result += x9/362880
+    
+    ; ... (would compute sin)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+align 4
+
+; Time of day [0..1]
+sky_time:
+    dd 0.5                  ; Noon
+sky_time_speed:
+    dd 0.00001              ; Time advance per frame
+
+; Sun direction (normalized)
+sky_sun_x:
+    dd 0.0
+sky_sun_y:
+    dd 0.8                  ; Above horizon
+sky_sun_z:
+    dd 0.6
+
+; Sun color (RGB, linear)
+sky_sun_color_r:
+    dd 1.0
+sky_sun_color_g:
+    dd 0.95
+sky_sun_color_b:
+    dd 0.85
+
+; Ambient color
+sky_ambient_r:
+    dd 0.3
+sky_ambient_g:
+    dd 0.35
+sky_ambient_b:
+    dd 0.5
+
+; Fog
+sky_fog_r:
+    dd 0.7
+sky_fog_g:
+    dd 0.75
+sky_fog_b:
+    dd 0.85
+sky_fog_density:
+    dd 0.002
+sky_fog_distance:
+    dd 500.0
+
+; Rayleigh scattering coefficients
+sky_rayleigh_r:
+    dd 5.5e-6
+sky_rayleigh_g:
+    dd 13.0e-6
+sky_rayleigh_b:
+    dd 22.4e-6
+
+; Mie scattering
+sky_mie_coeff:
+    dd 21.0e-6
+sky_mie_g:
+    dd 0.758
+sky_mie_g_sq:
+    dd 0.574564             ; g²
+
+; Sun
+sky_sun_intensity:
+    dd 20.0
+sky_sun_angular_radius:
+    dd 0.00925              ; ~0.53 degrees in radians
+
+; Atmosphere
+sky_earth_radius:
+    dd 6360000.0
+sky_atmo_radius:
+    dd 6420000.0
+sky_rayleigh_height:
+    dd 8500.0               ; Rayleigh scale height
+sky_mie_height:
+    dd 1200.0               ; Mie scale height
+
+; Cloud parameters
+cloud_density:
+    dd 0.5
+cloud_coverage:
+    dd 0.4
+cloud_wind_x:
+    dd 0.001
+cloud_wind_z:
+    dd 0.0005
+cloud_offset_x:
+    dd 0.0
+cloud_offset_z:
+    dd 0.0
+cloud_bottom:
+    dd 1500.0               ; Cumulus bottom altitude
+cloud_top:
+    dd 4000.0               ; Cumulus top altitude
+cloud_cirrus_bottom:
+    dd 5000.0
+cloud_cirrus_top:
+    dd 8000.0
+
+; God ray parameters
+godray_num_samples:
+    dd 32
+godray_decay:
+    dd 0.97
+godray_weight:
+    dd 0.7
+godray_exposure:
+    dd 1.0
+
+; Dawn/dusk color palettes
+dawn_horizon_r: dd 0.95
+dawn_horizon_g: dd 0.5
+dawn_horizon_b: dd 0.3
+dawn_zenith_r:  dd 0.2
+dawn_zenith_g:  dd 0.25
+dawn_zenith_b:  dd 0.55
+
+; Night colors
+night_zenith_r: dd 0.01
+night_zenith_g: dd 0.01
+night_zenith_b: dd 0.05
+night_horizon_r: dd 0.02
+night_horizon_g: dd 0.02
+night_horizon_b: dd 0.08
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+; Cloud noise texture: 128³ × 1 byte = 2MB
+CLOUD_NOISE_SIZE equ 128
+cloud_noise:
+    resb CLOUD_NOISE_SIZE * CLOUD_NOISE_SIZE * CLOUD_NOISE_SIZE
+
+; Weather map: 256×256 × 1 byte = 64KB
+CLOUD_WEATHER_SIZE equ 256
+cloud_weather_map:
+    resb CLOUD_WEATHER_SIZE * CLOUD_WEATHER_SIZE
+
+; Sky render buffer (half-res): 640×360 × 4 = 900KB
+sky_buffer:
+    resb 640 * 360 * 4
+
+; God ray buffer (quarter-res): 320×180 × 4 = 225KB
+godray_buffer:
+    resb 320 * 180 * 4

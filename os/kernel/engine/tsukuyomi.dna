@@ -106,6 +106,11 @@ tsukuyomi_init:
     call audio_init          ; Audio
     call input_init          ; Input
     call rast_init           ; Rasterizer
+    call sky_init            ; Atmospheric sky
+    call shadow_init         ; Soft shadows
+    call water_init          ; Water rendering
+    call veg_init            ; Vegetation system
+    call post_init           ; Post-processing
     
     ; Set engine state
     mov qword [rel tsuku_state], ENGINE_INIT
@@ -229,39 +234,90 @@ tsukuyomi_render:
     push rC
     push rG
     
-    ; ---- Clear ----
-    ; Sky gradient based on time of day
-    movss xmm0, [rel tsuku_time_of_day]
-    ; Compute sky color from time
-    ; 0.0 = midnight (dark), 0.25 = sunrise, 0.5 = noon, 0.75 = sunset
-    ; ... (would compute sky color and clear framebuffer)
+    ; ================================================================
+    ; 月読 Rendering Pipeline — 超時空輝夜姫の光
+    ; ================================================================
+    ; The rendering order matters. Every frame:
+    ;
+    ; 1. SKY        — The sky is 70% of the frame. Render it first.
+    ;                 Rayleigh scattering, volumetric clouds, sun/moon.
+    ;                 This sets the mood for everything else.
+    ;
+    ; 2. SHADOWS    — Render shadow maps from sun's perspective.
+    ;                 Cascaded shadow maps for the park scene.
+    ;                 PCSS for soft tree shadows (dappled light).
+    ;
+    ; 3. OPAQUE     — Terrain, paths, walls, tree trunks.
+    ;                 Front-to-back for early Z rejection.
+    ;                 Sample shadow map for each pixel.
+    ;
+    ; 4. VEGETATION — Trees (canopy), grass, flowers.
+    ;                 Wind animation, alpha test for leaves.
+    ;                 This is where the dappled light lives.
+    ;
+    ; 5. WATER      — Ponds, streams, puddles.
+    ;                 Planar reflection of the sky.
+    ;                 Fresnel blend, ripples, caustics.
+    ;
+    ; 6. TRANSPARENT — Glass, particle effects, fog volumes.
+    ;                  Back-to-front sorting.
+    ;
+    ; 7. POST-PROCESS — The magic that makes it feel real.
+    ;                    Bloom (sun glow through leaves)
+    ;                    Depth of field (soft background)
+    ;                    Tone mapping (ACES filmic)
+    ;                    Color grading (warm afternoon)
+    ;                    Vignette (subtle)
+    ;                    FXAA (smooth edges)
+    ; ================================================================
     
-    ; ---- Frustum culling ----
-    ; Get camera frustum
-    ; Test each renderable entity against frustum
-    ; Only render visible entities
+    ; ---- 1. SKY ----
+    ; Render sky to full framebuffer
+    ; sky_render computes atmospheric scattering per-pixel
+    ; Volumetric clouds via ray marching
+    ; Sun disk with corona and god rays
+    call sky_render
     
-    ; ---- Sort renderables ----
-    ; Sort by: opaque first (front to back), then transparent (back to front)
+    ; ---- 2. SHADOWS ----
+    ; Render cascaded shadow maps from sun direction
+    ; Only render shadow casters (trees, buildings, player)
+    call shadow_render
     
-    ; ---- Render opaque objects ----
-    ; For each visible renderable entity:
-    ;   1. Get transform (position, rotation, scale)
-    ;   2. Set model matrix
-    ;   3. Set material (texture, shader)
-    ;   4. Draw mesh (rast_draw_mesh)
+    ; ---- 3. OPAQUE ----
+    ; Frustum culling
+    call scene_cull
+    ; Sort opaque: front to back
+    ; For each visible opaque entity:
+    ;   Set model matrix, material, shader
+    ;   Rasterize with shadow sampling
+    ; ... (would iterate render list)
     
-    ; ---- Render transparent objects ----
-    ; Same but with alpha blending enabled
+    ; ---- 4. VEGETATION ----
+    ; Trees: trunk (opaque), canopy (alpha test)
+    ; Grass: billboard blades with wind
+    ; Flowers: small colored billboards
+    ; Dappled light from tree canopy shadows
+    call veg_render
     
-    ; ---- Render particles ----
-    ; Billboard particles facing camera
+    ; ---- 5. WATER ----
+    ; Render water surface with reflection/refraction
+    ; Calm park pond, gentle ripples
+    call water_render
     
-    ; ---- Render UI ----
-    ; 2D overlay: health bar, minimap, inventory, dialog
+    ; ---- 6. TRANSPARENT ----
+    ; Sort back to front
+    ; Render with alpha blending
+    ; ... (would render transparent objects)
     
-    ; ---- Render debug ----
-    ; If debug mode: wireframe, collision shapes, FPS counter
+    ; ---- 7. POST-PROCESS ----
+    ; The final polish
+    call post_process
+    
+    ; ---- 8. UI ----
+    ; Minimal UI — just what's needed
+    ; Small health indicator, subtle minimap
+    ; Most of the time: nothing on screen
+    ; The world speaks for itself
     
     pop rG
     pop rC

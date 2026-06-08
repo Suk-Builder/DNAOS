@@ -1,0 +1,161 @@
+; ============================================================================
+; DNAOS - Water Rendering (DNAsm)
+; ============================================================================
+; 超時空輝夜姫の水 — Water that reflects the sky.
+;
+; Planar reflection, refraction, Fresnel, caustics, ripples.
+; For park ponds, streams, rain puddles.
+; ============================================================================
+
+.code
+.global water_init
+.global water_render
+.global water_update
+.global water_add_ripple
+
+; ============================================================================
+; water_init - Initialize water system
+; ============================================================================
+water_init:
+    push rA
+    
+    ; Default parameters
+    mov dword [rel water_color_r], __float32__(0.1)
+    mov dword [rel water_color_g], __float32__(0.3)
+    mov dword [rel water_color_b], __float32__(0.4)
+    mov dword [rel water_fresnel_power], __float32__(5.0)
+    mov dword [rel water_wave_speed], __float32__(0.5)
+    mov dword [rel water_wave_height], __float32__(0.05)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; water_render - Render water surface
+; rP = framebuffer, rA = width, rC = height
+; ============================================================================
+water_render:
+    ; Water rendering pipeline:
+    ;
+    ; 1. Render reflection (flip camera, render scene)
+    ; 2. Render refraction (render scene through water)
+    ; 3. For each water pixel:
+    ;    a. Compute wave displacement (sum of sine waves)
+    ;    b. Compute normal from displacement derivatives
+    ;    c. Compute Fresnel term: F = F0 + (1-F0)*(1-cos(θ))^5
+    ;    d. Sample reflection texture (distorted by normal)
+    ;    e. Sample refraction texture (distorted by normal)
+    ;    f. Blend: color = lerp(refraction, reflection, Fresnel)
+    ;    g. Add specular highlight from sun
+    ;    h. Add foam at edges
+    ;    i. Add caustics on underwater surfaces
+    ;
+    ; For 超時空輝夜姫:
+    ;   - Calm water (park pond, not ocean)
+    ;   - Gentle ripples from wind
+    ;   - Beautiful sky reflection
+    ;   - Subtle depth fade (shallow = transparent, deep = dark)
+    ;   - Lily pads, fallen leaves floating
+    
+    push rA
+    push rC
+    push rG
+    
+    ; Step 1: Render reflection
+    ; Flip camera Y around water plane
+    ; Render entire scene to reflection buffer
+    ; Clip geometry below water plane
+    
+    ; Step 2: Render refraction
+    ; Render scene normally but only below water
+    ; Apply blue tint and depth-based absorption
+    
+    ; Step 3: Composite water surface
+    ; For each water pixel:
+    ;   wave = sum_sines(position, time)
+    ;   normal = normalize(cross(dx_wave, dy_wave))
+    ;   fresnel = schlick_fresnel(view_dir, normal, F0=0.02)
+    ;   reflection_color = sample(reflection_buf, uv + normal_offset)
+    ;   refraction_color = sample(refraction_buf, uv + normal_offset)
+    ;   refraction_color *= water_absorption(depth)
+    ;   water_color = lerp(refraction_color, reflection_color, fresnel)
+    ;   water_color += sun_specular(normal, sun_dir, view_dir)
+    ;   water_color += foam(edge_factor)
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; water_update - Update water simulation
+; rA = delta_time
+; ============================================================================
+water_update:
+    ; Advance wave time
+    ; Update ripple simulation
+    ; ... (would update water state)
+    ret
+
+; ============================================================================
+; water_add_ripple - Add a ripple at position
+; rA = x, rC = z, rG = strength
+; ============================================================================
+water_add_ripple:
+    ; Add circular ripple to ripple buffer
+    ; Ripples propagate outward and decay
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+align 4
+
+water_color_r:
+    dd 0.1
+water_color_g:
+    dd 0.3
+water_color_b:
+    dd 0.4
+water_fresnel_power:
+    dd 5.0
+water_fresnel_f0:
+    dd 0.02
+water_wave_speed:
+    dd 0.5
+water_wave_height:
+    dd 0.05
+water_absorption_r:
+    dd 0.5                  ; Red absorbed quickly
+water_absorption_g:
+    dd 0.1                  ; Green absorbed slowly
+water_absorption_b:
+    dd 0.05                 ; Blue absorbed very slowly
+
+; Wave parameters (4 wave layers)
+wave_dir_x:
+    dd 1.0, 0.7, -0.5, 0.3
+wave_dir_z:
+    dd 0.0, 0.7, 0.8, -0.9
+wave_freq:
+    dd 0.5, 1.0, 2.0, 3.0
+wave_amp:
+    dd 0.05, 0.02, 0.01, 0.005
+wave_speed:
+    dd 0.5, 0.7, 1.0, 1.5
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+water_time:
+    resb 4                   ; float
+water_reflection_buf:
+    resb 640 * 360 * 4      ; Half-res reflection
+water_refraction_buf:
+    resb 640 * 360 * 4      ; Half-res refraction
+water_ripple_buf:
+    resb 256 * 256 * 4      ; Ripple simulation buffer

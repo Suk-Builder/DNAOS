@@ -57,7 +57,12 @@ DNA_SRCS = kernel/kernel.dna \
            kernel/engine/animation.dna \
            kernel/engine/ui.dna \
            kernel/engine/particles.dna \
-           kernel/engine/scriptvm.dna
+           kernel/engine/scriptvm.dna \
+           kernel/gfx/sky.dna \
+           kernel/gfx/shadow.dna \
+           kernel/gfx/water.dna \
+           kernel/gfx/post/postfx.dna \
+           kernel/engine/vegetation/vegetation.dna
 
 # Assembly source files (hardware-required, not DNAsm)
 ASM_SRCS = kernel/boot.S \
@@ -94,7 +99,9 @@ $(BUILDDIR):
         mkdir -p $(BUILDDIR)/lib
         mkdir -p $(BUILDDIR)/boot
         mkdir -p $(BUILDDIR)/gfx
+        mkdir -p $(BUILDDIR)/gfx/post
         mkdir -p $(BUILDDIR)/engine
+        mkdir -p $(BUILDDIR)/engine/vegetation
 
 # ============================================================================
 # Compile DNAsm → NASM → ELF64

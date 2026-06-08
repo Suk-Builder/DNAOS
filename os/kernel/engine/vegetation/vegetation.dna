@@ -1,0 +1,370 @@
+; ============================================================================
+; DNAOS - Vegetation & Foliage System (DNAsm)
+; ============================================================================
+; 超時空輝夜姫の木々 — The trees that make you feel the wind.
+;
+; Trees, grass, flowers, hedges. The soul of the park scenes.
+; Wind animation, dappled light, seasonal variation.
+; ============================================================================
+
+MAX_TREE_TYPES   equ 16
+MAX_GRASS_PATCHES equ 256
+MAX_INSTANCES    equ 4096
+
+; Tree types
+TREE_DECIDUOUS   equ 0     ; Broad-leaf (like the park trees)
+TREE_CONIFER     equ 1     ; Pine/spruce
+TREE_SAKURA      equ 2     ; Cherry blossom
+TREE_PALM        equ 3
+TREE_BAMBOO      equ 4
+TREE_WILLOW      equ 5     ; Weeping willow
+
+; Seasons
+SEASON_SPRING    equ 0
+SEASON_SUMMER    equ 1
+SEASON_AUTUMN    equ 2
+SEASON_WINTER    equ 3
+
+.code
+.global veg_init
+.global veg_render
+.global veg_update
+.global veg_create_tree
+.global veg_create_grass
+.global veg_wind_update
+.global veg_set_season
+
+; ============================================================================
+; veg_init - Initialize vegetation system
+; ============================================================================
+veg_init:
+    push rA
+    
+    ; Set default season
+    mov qword [rel veg_season], SEASON_SUMMER
+    
+    ; Wind parameters
+    mov dword [rel veg_wind_strength], __float32__(0.3)
+    mov dword [rel veg_wind_freq], __float32__(0.8)
+    mov dword [rel veg_wind_gust], __float32__(0.5)
+    
+    ; Initialize grass billboard data
+    call veg_init_grass
+    
+    pop rA
+    ret
+
+; ============================================================================
+; veg_create_tree - Create a tree instance
+; rA = type, rC = x, rS = y, rG = z, r0 = scale
+; → rA = tree_id
+; ============================================================================
+veg_create_tree:
+    push rC
+    push rG
+    
+    ; Get next tree slot
+    mov rC, [rel veg_tree_count]
+    cmp rC, MAX_INSTANCES
+    jge .veg_tree_full
+    
+    ; Store tree data
+    lea rG, [rel veg_trees]
+    shl rC, 7              ; * 128 bytes per tree
+    add rG, rC
+    
+    ; type
+    mov [rG], rA
+    ; position
+    mov [rG + 8], rC
+    mov [rG + 16], rS
+    mov [rG + 24], rG
+    ; scale
+    mov [rG + 32], r0
+    ; wind phase (random)
+    ; ... (would compute random phase offset)
+    
+    inc qword [rel veg_tree_count]
+    mov rA, rC
+    shr rA, 7              ; tree_id
+    
+    pop rG
+    pop rC
+    ret
+
+.veg_tree_full:
+    xor rA, rA
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; veg_render - Render all vegetation
+; ============================================================================
+veg_render:
+    ; Rendering approach:
+    ;
+    ; Trees:
+    ;   - Trunk: cylinder mesh with bark texture
+    ;   - Canopy: multiple billboard clusters or low-poly sphere
+    ;   - Wind animation: vertex displacement based on height
+    ;   - Dappled light: project shadow map through canopy
+    ;   - LOD: close = high poly, far = billboard
+    ;
+    ; Grass:
+    ;   - Billboard grass blades (cross-quads)
+    ;   - Wind animation: sinusoidal displacement
+    ;   - Color variation: random hue shift per blade
+    ;   - Distance fade: alpha out at far range
+    ;
+    ; Flowers:
+    ;   - Small colored billboards
+    ;   - Sway in wind
+    ;   - Seasonal: bloom in spring, fade in autumn
+    
+    push rA
+    push rC
+    push rG
+    
+    ; Render trees (back to front for transparency)
+    ; Sort by distance from camera
+    call veg_sort_trees
+    
+    ; For each tree:
+    ;   Determine LOD based on distance
+    ;   Set wind parameters
+    ;   Render trunk (opaque)
+    ;   Render canopy (alpha test / alpha blend)
+    ;   Apply dappled shadow
+    
+    lea rG, [rel veg_trees]
+    mov rC, [rel veg_tree_count]
+    
+.veg_render_tree_loop:
+    test rC, rC
+    jz .veg_render_trees_done
+    
+    ; Get tree type and position
+    ; Compute distance to camera
+    ; Select LOD
+    ; Apply wind animation to vertices
+    ; Render
+    
+    add rG, 128
+    dec rC
+    jmp .veg_render_tree_loop
+
+.veg_render_trees_done:
+    
+    ; Render grass (instanced billboards)
+    call veg_render_grass
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; veg_render_grass - Render grass billboards
+; ============================================================================
+veg_render_grass:
+    ; Grass rendering:
+    ; - Each grass blade is a quad (2 triangles)
+    ; - Oriented to face camera (billboard)
+    ; - Wind displacement: sin(time * freq + phase) * strength
+    ; - Color: base green + random variation
+    ; - Alpha: fade out at distance
+    ;
+    ; Instanced rendering:
+    ; - Upload all grass positions to vertex buffer
+    ; - Single draw call with instance data
+    ; - Vertex shader applies wind + billboard rotation
+    
+    push rA
+    push rC
+    push rG
+    
+    ; For each grass patch:
+    ;   Compute camera-facing rotation
+    ;   Apply wind displacement
+    ;   Set color with variation
+    ;   Set alpha based on distance
+    ;   Draw quad
+    
+    ; ... (would render grass)
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; veg_update - Update vegetation (wind, growth, season)
+; rA = delta_time (float as qword)
+; ============================================================================
+veg_update:
+    push rA
+    
+    ; Update wind
+    call veg_wind_update
+    
+    ; Update seasonal colors
+    ; Spring: light green, cherry blossoms
+    ; Summer: deep green, full canopy
+    ; Autumn: orange/red/yellow, falling leaves
+    ; Winter: bare branches, snow on limbs
+    
+    ; ... (would update seasonal state)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; veg_wind_update - Update wind animation
+; ============================================================================
+veg_wind_update:
+    ; Wind model:
+    ;   base_wind = sin(time * freq) * strength
+    ;   gust = sin(time * gust_freq) * gust_strength * max(0, sin(time * 0.3))
+    ;   total_wind = base_wind + gust
+    ;
+    ; Per-vertex displacement:
+    ;   offset_x = total_wind * vertex_height * wind_sensitivity
+    ;   offset_y = total_wind * 0.1 * vertex_height (slight vertical bounce)
+    ;
+    ; For trees: trunk barely moves, canopy sways
+    ; For grass: whole blade sways
+    ; For leaves: individual flutter
+    
+    push rA
+    
+    ; Advance wind time
+    movss xmm0, [rel veg_wind_time]
+    addss xmm0, __float32__(0.016)  ; ~60fps delta
+    movss [rel veg_wind_time], xmm0
+    
+    ; Compute base wind
+    ; sin(time * freq) * strength
+    mulss xmm0, [rel veg_wind_freq]
+    call math_sse_sin
+    mulss xmm0, [rel veg_wind_strength]
+    movss [rel veg_wind_current], xmm0
+    
+    ; Compute gust
+    ; ... (would compute gust component)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; veg_set_season - Set current season
+; rA = season (0-3)
+; ============================================================================
+veg_set_season:
+    mov [rel veg_season], rA
+    
+    ; Update color palette based on season
+    ; ... (would update vegetation colors)
+    
+    ret
+
+; ============================================================================
+; veg_sort_trees - Sort trees by distance (back to front)
+; ============================================================================
+veg_sort_trees:
+    ; Simple insertion sort (small N)
+    ; Sort veg_tree_distances[] and rearrange veg_trees[]
+    ret
+
+; ============================================================================
+; veg_init_grass - Initialize grass billboard data
+; ============================================================================
+veg_init_grass:
+    ; Generate grass blade positions
+    ; Random placement within grass patches
+    ; Random phase for wind animation
+    ; Random color variation
+    ret
+
+; ============================================================================
+; math_sse_sin - SSE sin approximation (local copy)
+; xmm0 = angle → xmm0 = sin(angle)
+; ============================================================================
+math_sse_sin:
+    ; Taylor series approximation
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+align 4
+
+; Wind parameters
+veg_wind_strength:
+    dd 0.3
+veg_wind_freq:
+    dd 0.8
+veg_wind_gust:
+    dd 0.5
+veg_wind_time:
+    dd 0.0
+veg_wind_current:
+    dd 0.0
+
+; Season colors (canopy color per season)
+; Spring: light green
+veg_spring_r: dd 0.4
+veg_spring_g: dd 0.8
+veg_spring_b: dd 0.3
+; Summer: deep green
+veg_summer_r: dd 0.2
+veg_summer_g: dd 0.6
+veg_summer_b: dd 0.15
+; Autumn: orange
+veg_autumn_r: dd 0.8
+veg_autumn_g: dd 0.5
+veg_autumn_b: dd 0.15
+; Winter: brown/grey
+veg_winter_r: dd 0.4
+veg_winter_g: dd 0.35
+veg_winter_b: dd 0.3
+
+; Grass colors
+grass_base_r: dd 0.25
+grass_base_g: dd 0.65
+grass_base_b: dd 0.2
+grass_variation: dd 0.1   ; Hue shift range
+
+; Tree LOD distances
+tree_lod0_dist: dd 30.0   ; Full mesh
+tree_lod1_dist: dd 80.0   ; Reduced mesh
+tree_lod2_dist: dd 200.0  ; Billboard
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+veg_season:
+    resq 1
+veg_tree_count:
+    resq 1
+veg_grass_count:
+    resq 1
+
+; Tree instances: 4096 × 128 bytes
+; type(4) + pad(4) + pos(12) + scale(4) + wind_phase(4) + 
+; canopy_color(12) + trunk_color(12) + lod(4) + pad(72) = 128
+veg_trees:
+    resb MAX_INSTANCES * 128
+
+; Grass instances: 4096 × 32 bytes
+; pos(12) + phase(4) + color(12) + height(4) = 32
+veg_grass:
+    resb MAX_INSTANCES * 32
+
+; Sorted tree indices for rendering
+veg_tree_sort_buf:
+    resq MAX_INSTANCES

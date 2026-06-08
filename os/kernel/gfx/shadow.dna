@@ -1,0 +1,239 @@
+; ============================================================================
+; DNAOS - Soft Shadow Mapping (DNAsm)
+; ============================================================================
+; 超時空輝夜姫の影 — The shadows that feel like afternoon.
+;
+; Soft shadow mapping with PCF (Percentage Closer Filtering).
+; Cascaded shadow maps for large outdoor scenes.
+; Dappled light through tree canopies.
+; ============================================================================
+
+SHADOW_MAP_SIZE  equ 2048
+SHADOW_CASCADES  equ 4
+PCF_SAMPLES      equ 16
+
+.code
+.global shadow_init
+.global shadow_render
+.global shadow_sample
+.global shadow_sample_pcf
+.global shadow_sample_pcss
+.global shadow_compute_cascades
+
+; ============================================================================
+; shadow_init - Initialize shadow mapping
+; ============================================================================
+shadow_init:
+    push rA
+    
+    ; Allocate shadow map textures
+    ; 4 cascades × 2048×2048 × 1 byte (depth only) = 16MB
+    ; In practice, we'd use pmm_alloc_pages
+    
+    ; Set default parameters
+    mov dword [rel shadow_bias], __float32__(0.001)
+    mov dword [rel shadow_normal_bias], __float32__(0.02)
+    mov dword [rel shadow_softness], __float32__(1.0)
+    mov dword [rel shadow_cascade_split_0], __float32__(0.05)
+    mov dword [rel shadow_cascade_split_1], __float32__(0.15)
+    mov dword [rel shadow_cascade_split_2], __float32__(0.4)
+    mov dword [rel shadow_cascade_split_3], __float32__(1.0)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; shadow_render - Render shadow map from sun's perspective
+; ============================================================================
+shadow_render:
+    ; For each cascade:
+    ;   1. Compute light-space frustum for this cascade
+    ;   2. Set up orthographic projection from sun direction
+    ;   3. Render scene depth to shadow map
+    ;   4. Store light-view-projection matrix for sampling
+    
+    push rA
+    push rC
+    push rG
+    
+    ; Compute cascade splits
+    call shadow_compute_cascades
+    
+    ; For each cascade (0..3):
+    mov rC, 0
+.shadow_cascade_loop:
+    cmp rC, SHADOW_CASCADES
+    jge .shadow_cascade_done
+    
+    ; Compute light view matrix
+    ; Look-at from sun position toward scene center
+    ; Up vector: perpendicular to sun direction
+    
+    ; Compute light projection matrix
+    ; Orthographic: bounds from frustum corners
+    
+    ; Render scene to shadow map
+    ; Depth-only pass (no color output)
+    ; For each visible object:
+    ;   Transform vertex by light VP matrix
+    ;   Write depth to shadow map
+    
+    inc rC
+    jmp .shadow_cascade_loop
+
+.shadow_cascade_done:
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; shadow_sample_pcf - Sample shadow map with PCF filtering
+; xmm0 = shadow_coord_u, xmm1 = shadow_coord_v, xmm2 = shadow_coord_z
+; xmm3 = cascade_index
+; → xmm0 = shadow factor (0=shadow, 1=lit)
+; ============================================================================
+shadow_sample_pcf:
+    ; PCF (Percentage Closer Filtering):
+    ; Sample shadow map at multiple offsets around the texel
+    ; Average the comparison results
+    ;
+    ; 4×4 PCF grid (16 samples):
+    ; for dx = -1.5 to 1.5 step 1.0:
+    ;   for dy = -1.5 to 1.5 step 1.0:
+    ;     sample_depth = texture(shadow_map, uv + offset * texel_size)
+    ;     if sample_depth < z: shadow += 1.0
+    ; shadow_factor = 1.0 - shadow / 16.0
+    ;
+    ; This gives soft shadow edges.
+    ; More samples = softer but slower.
+    
+    push rA
+    
+    ; Get cascade shadow map
+    ; Compute texel size = 1.0 / SHADOW_MAP_SIZE
+    
+    ; 4×4 PCF kernel
+    ; offsets: [-1.5, -0.5, 0.5, 1.5] × texel_size
+    
+    ; For each sample:
+    ;   sample_uv = uv + offset
+    ;   sample_depth = shadow_map[sample_uv]
+    ;   if sample_depth < z - bias:
+    ;     accumulation += 1.0
+    ;   else:
+    ;     accumulation += 0.0
+    
+    ; shadow_factor = 1.0 - accumulation / 16.0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; shadow_sample_pcss - Percentage-Closer Soft Shadows
+; ============================================================================
+shadow_sample_pcss:
+    ; PCSS: Variable-width penumbra based on blocker distance
+    ;
+    ; Step 1: Blocker search
+    ;   Find average depth of shadow casters in a region
+    ;   blocker_depth = average of samples where depth < z
+    ;
+    ; Step 2: Compute penumbra width
+    ;   penumbra = (z - blocker_depth) * light_size / blocker_depth
+    ;
+    ; Step 3: PCF with adaptive kernel width
+    ;   Use penumbra width as filter size
+    ;   More samples for wider penumbra
+    ;
+    ; Result: Hard shadows near contact, soft shadows far from caster
+    ; This is what makes tree shadows look realistic:
+    ;   - Hard shadow at trunk base
+    ;   - Soft, wide shadow at canopy edge
+    ;   - Dappled light where leaves overlap
+    
+    push rA
+    
+    ; Blocker search (8 samples in a wide region)
+    ; ...
+    
+    ; Compute penumbra width
+    ; ...
+    
+    ; PCF with adaptive width
+    ; ...
+    
+    pop rA
+    ret
+
+; ============================================================================
+; shadow_compute_cascades - Compute cascade split positions
+; ============================================================================
+shadow_compute_cascades:
+    ; Compute cascade split distances based on camera near/far
+    ; Use logarithmic + linear split scheme:
+    ;   split_i = near * (far/near)^(i/N) * λ + (near + i*(far-near)/N) * (1-λ)
+    ;   λ = 0.75 (practical split factor)
+    
+    push rA
+    
+    ; ... (would compute cascade splits)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+align 4
+
+shadow_bias:
+    dd 0.001
+shadow_normal_bias:
+    dd 0.02
+shadow_softness:
+    dd 1.0
+shadow_cascade_split_0:
+    dd 0.05
+shadow_cascade_split_1:
+    dd 0.15
+shadow_cascade_split_2:
+    dd 0.4
+shadow_cascade_split_3:
+    dd 1.0
+shadow_texel_size:
+    dd 0.00048828125        ; 1/2048
+
+; PCF offsets (4×4 grid)
+pcf_offsets:
+    dd -1.5, -1.5
+    dd -0.5, -1.5
+    dd  0.5, -1.5
+    dd  1.5, -1.5
+    dd -1.5, -0.5
+    dd -0.5, -0.5
+    dd  0.5, -0.5
+    dd  1.5, -0.5
+    dd -1.5,  0.5
+    dd -0.5,  0.5
+    dd  0.5,  0.5
+    dd  1.5,  0.5
+    dd -1.5,  1.5
+    dd -0.5,  1.5
+    dd  0.5,  1.5
+    dd  1.5,  1.5
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+; Shadow map buffers: 4 cascades × 2048×2048 × 4 bytes (float depth)
+shadow_map_buf:
+    resb SHADOW_CASCADES * SHADOW_MAP_SIZE * SHADOW_MAP_SIZE * 4
+
+; Light VP matrices: 4 cascades × 64 bytes (mat4)
+shadow_light_vp:
+    resb SHADOW_CASCADES * 64
