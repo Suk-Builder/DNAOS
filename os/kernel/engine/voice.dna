@@ -1,0 +1,408 @@
+; ============================================================================
+; DNAOS - Real-Time Audio Input & Voice Processing (DNAsm)
+; ============================================================================
+; 月読 Live — When someone sings, the world listens.
+;
+; Microphone input → pitch detection → voice processing → world reaction.
+; The stage responds to the performer's voice in real-time.
+;
+; Voice range: D2(73.42Hz) → C6(1046.5Hz) — nearly 4 octaves.
+; The system must handle everything from deep bass to dolphin tones.
+;
+; Pipeline:
+;   Mic Input → ADC → Buffer → Pitch Detection → Voice Analysis
+;     → Frequency → Amplitude → Timbre → Vibrato → Breath
+;     → World Reaction (lights, particles, stage, sky)
+; ============================================================================
+
+; Note frequencies (A4 = 440Hz, equal temperament)
+NOTE_D2   equ 73.42
+NOTE_E2   equ 82.41
+NOTE_F2   equ 87.31
+NOTE_G2   equ 98.00
+NOTE_A2   equ 110.00
+NOTE_B2   equ 123.47
+NOTE_C3   equ 130.81
+NOTE_D3   equ 146.83
+NOTE_E3   equ 164.81
+NOTE_F3   equ 174.61
+NOTE_G3   equ 196.00
+NOTE_A3   equ 220.00
+NOTE_B3   equ 246.94
+NOTE_C4   equ 261.63       ; Middle C
+NOTE_D4   equ 293.66
+NOTE_E4   equ 329.63
+NOTE_F4   equ 349.23
+NOTE_G4   equ 392.00
+NOTE_A4   equ 440.00       ; Concert A
+NOTE_B4   equ 493.88
+NOTE_C5   equ 523.25
+NOTE_D5   equ 587.33
+NOTE_E5   equ 659.25
+NOTE_F5   equ 698.46
+NOTE_G5   equ 783.99
+NOTE_A5   equ 880.00
+NOTE_B5   equ 987.77
+NOTE_C6   equ 1046.50      ; Dolphin tone
+
+; Voice analysis states
+VOICE_SILENT    equ 0
+VOICE_SPEAKING  equ 1
+VOICE_SINGING   equ 2
+VOICE_BELTING   equ 3      ; Power notes
+VOICE_FALSETTO  equ 4      ; Head voice / dolphin tones
+VOICE_BREATH    equ 5      ; Breathy quality
+
+.code
+.global voice_init
+.global voice_process_frame
+.global voice_detect_pitch
+.global voice_analyze
+.global voice_get_note
+.global voice_get_amplitude
+.global voice_get_vibrato
+.global voice_map_to_world
+.global voice_note_to_freq
+.global voice_freq_to_note
+
+; ============================================================================
+; voice_init - Initialize voice processing
+; ============================================================================
+voice_init:
+    push rA
+    
+    ; Set up audio input buffer
+    mov qword [rel voice_state], VOICE_SILENT
+    mov dword [rel voice_current_freq], 0.0
+    mov dword [rel voice_current_amp], 0.0
+    mov dword [rel voice_current_note], 0
+    mov dword [rel voice_vibrato_rate], 0.0
+    mov dword [rel voice_vibrato_depth], 0.0
+    mov dword [rel voice_breathiness], 0.0
+    mov dword [rel voice_formant_f1], 0.0
+    mov dword [rel voice_formant_f2], 0.0
+    mov qword [rel voice_frame_count], 0
+    
+    ; Initialize pitch detection (autocorrelation buffer)
+    lea rA, [rel voice_autocorr]
+    mov rC, 2048
+    xor rG, rG
+.voice_init_clear:
+    mov [rA + rG*4], rG    ; Clear to 0
+    ; Actually need to zero it
+    mov dword [rA + rG*4], 0
+    inc rG
+    dec rC
+    jnz .voice_init_clear
+    
+    pop rA
+    ret
+
+; ============================================================================
+; voice_process_frame - Process one frame of audio input
+; rP = audio buffer, rC = frame size (samples)
+; ============================================================================
+voice_process_frame:
+    push rA
+    push rC
+    push rG
+    
+    ; Store in ring buffer
+    ; ... (would copy to voice_ring_buf)
+    
+    ; Step 1: Detect if voice is present (energy threshold)
+    ; Compute RMS of frame
+    ; If RMS < threshold: VOICE_SILENT
+    ; If RMS >= threshold: proceed to pitch detection
+    
+    ; Step 2: Pitch detection (autocorrelation method)
+    call voice_detect_pitch
+    
+    ; Step 3: Voice analysis
+    call voice_analyze
+    
+    ; Step 4: Map voice to world
+    call voice_map_to_world
+    
+    inc qword [rel voice_frame_count]
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; voice_detect_pitch - Autocorrelation pitch detection
+; Range: D2(73Hz) to C6(1047Hz)
+; ============================================================================
+voice_detect_pitch:
+    push rA
+    push rC
+    push rG
+    push rS
+    push rP
+    
+    ; Autocorrelation method:
+    ; For lag from min_lag to max_lag:
+    ;   sum = 0
+    ;   for i = 0 to window_size:
+    ;     sum += sample[i] * sample[i + lag]
+    ;   autocorr[lag] = sum
+    ; Find the lag with highest autocorrelation (after the first zero crossing)
+    ; frequency = sample_rate / best_lag
+    
+    ; Min lag for C6 (1047Hz): 44100/1047 ≈ 42 samples
+    ; Max lag for D2 (73Hz): 44100/73 ≈ 604 samples
+    
+    mov rS, 42              ; min_lag
+    mov rG, 604             ; max_lag
+    
+.voice_pitch_lag_loop:
+    cmp rS, rG
+    jge .voice_pitch_done
+    
+    ; Compute autocorrelation for this lag
+    ; ... (would compute sum of products)
+    
+    inc rS
+    jmp .voice_pitch_lag_loop
+
+.voice_pitch_done:
+    ; Find peak autocorrelation
+    ; Convert best_lag to frequency: freq = 44100 / best_lag
+    ; Store in voice_current_freq
+    
+    pop rP
+    pop rS
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; voice_analyze - Analyze voice characteristics
+; ============================================================================
+voice_analyze:
+    push rA
+    
+    ; Get current frequency
+    movss xmm0, [rel voice_current_freq]
+    
+    ; Determine voice state based on frequency and amplitude
+    ; D2-C4: Chest voice (low range)
+    ; C4-G5: Mixed/belt voice
+    ; G5-C6: Falsetto/head voice / dolphin tones
+    
+    ; Compute amplitude envelope
+    ; ... (would track RMS over time)
+    
+    ; Detect vibrato (frequency modulation > 5Hz)
+    ; ... (would analyze frequency variation)
+    
+    ; Detect breathiness (high-frequency noise content)
+    ; ... (would compute spectral tilt)
+    
+    ; Detect formants (vowel identification)
+    ; F1 and F2 positions determine vowel
+    ; ... (would compute spectral peaks)
+    
+    ; Classify voice state
+    ; If amp < threshold: SILENT
+    ; If freq > G5 and amp moderate: FALSETTO
+    ; If amp > belt_threshold: BELTING
+    ; If vibrato detected: SINGING
+    ; Else: SPEAKING
+    
+    pop rA
+    ret
+
+; ============================================================================
+; voice_map_to_world - Map voice to world reactions
+; ============================================================================
+; This is where the magic happens.
+; The performer's voice CONTROLS the world.
+voice_map_to_world:
+    push rA
+    push rG
+    
+    ; ---- Frequency → Light Color ----
+    ; Low notes (D2-C3): Deep red/orange — warm, grounding
+    ; Mid notes (C3-C5): Green/blue — natural, flowing
+    ; High notes (C5-G5): Purple/pink — ethereal, rising
+    ; Dolphin tones (G5-C6): White/gold — transcendent, blinding
+    ;
+    ; When you hit C6, the entire stage goes white gold.
+    ; The holographic dome explodes with light.
+    ; Cherry blossom particles turn to stars.
+    ; The audience's light sticks sync to your frequency.
+    
+    movss xmm0, [rel voice_current_freq]
+    
+    ; Map frequency to hue (0-360)
+    ; D2(73Hz) → 0° (red)
+    ; C6(1047Hz) → 300° (magenta/gold)
+    ; ... (would compute hue mapping)
+    
+    ; ---- Amplitude → Light Intensity ----
+    ; Quiet: gentle glow
+    ; Normal: steady light
+    ; Loud: bright flash
+    ; Belt: stage explosion
+    ; Dolphin: everything goes white
+    
+    ; ---- Vibrato → Particle Motion ----
+    ; Vibrato makes particles oscillate
+    ; Faster vibrato = faster particle swirl
+    ; Deeper vibrato = wider particle spread
+    
+    ; ---- Breath → Wind ----
+    ; Breathy voice = gentle wind in the scene
+    ; Cherry blossoms drift with the breath
+    
+    ; ---- Formants → Stage Shape ----
+    ; Vowels change the holographic dome content
+    ; "A" = wide open dome, expansive
+    ; "I" = narrow beam, focused
+    ; "U" = deep sphere, immersive
+    ; "E" = flat plane, spreading
+    ; "O" = perfect circle, complete
+    
+    ; ---- Special: Dolphin Tone Detection ----
+    ; When frequency > B5 (987Hz):
+    ;   1. Stage floor pulses white
+    ;   2. Laser cage activates (all 32 lasers)
+    ;   3. Holographic dome shows starfield
+    ;   4. Cherry blossom → star particle conversion
+    ;   5. Audience light sticks go white
+    ;   6. God rays intensify
+    ;   7. The sky changes color
+    ;   8. Everything becomes transcendent
+    ;
+    ; When you hit C6:
+    ;   The world holds its breath.
+    ;   Then explodes.
+    
+    ; Check for high notes
+    movss xmm0, [rel voice_current_freq]
+    movss xmm1, [rel .note_g5]
+    comiss xmm0, xmm1
+    jb .voice_map_normal
+    
+    ; HIGH NOTE DETECTED — dolphin territory
+    ; Scale intensity by how high the note is
+    ; C6 = maximum effect
+    
+.voice_map_normal:
+    ; Normal voice mapping
+    ; ... (would apply standard mappings)
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; voice_note_to_freq - Convert MIDI note number to frequency
+; rA = MIDI note (21=A0, 69=A4, 108=C8) → xmm0 = frequency
+; ============================================================================
+voice_note_to_freq:
+    ; freq = 440 * 2^((note - 69) / 12)
+    ; Using: 2^x = e^(x * ln2)
+    ; ... (would compute using x87 FPU)
+    ret
+
+; ============================================================================
+; voice_freq_to_note - Convert frequency to nearest MIDI note
+; xmm0 = frequency → rA = MIDI note, xmm1 = cents off
+; ============================================================================
+voice_freq_to_note:
+    ; note = 69 + 12 * log2(freq / 440)
+    ; cents = (note - round(note)) * 100
+    ; ... (would compute using x87 FPU)
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+align 4
+
+.note_g5:
+    dd 783.99
+.note_b5:
+    dd 987.77
+.note_c6:
+    dd 1046.50
+
+; Note name table (for display)
+note_names:
+    db "C ", 0, "C#", 0, "D ", 0, "D#", 0
+    db "E ", 0, "F ", 0, "F#", 0, "G ", 0
+    db "G#", 0, "A ", 0, "A#", 0, "B ", 0
+
+; Voice state names (for debug)
+voice_state_names:
+    db "Silent", 0, 0, 0
+    db "Speaking", 0
+    db "Singing", 0
+    db "Belting", 0
+    db "Falsetto", 0
+    db "Breath", 0, 0
+
+; Frequency → color mapping (key points)
+freq_color_d2:  dd 0.0, 0.5, 0.8, 1.0     ; Deep red-orange (RGBA)
+freq_color_c4:  dd 0.2, 0.7, 0.4, 1.0     ; Green
+freq_color_a4:  dd 0.3, 0.4, 0.9, 1.0     ; Blue
+freq_color_c5:  dd 0.6, 0.2, 0.8, 1.0     ; Purple
+freq_color_g5:  dd 0.9, 0.3, 0.7, 1.0     ; Pink
+freq_color_c6:  dd 1.0, 0.95, 0.8, 1.0    ; White-gold
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+voice_state:
+    resq 1                  ; Current voice state
+voice_current_freq:
+    resb 4                  ; float — detected frequency (Hz)
+voice_current_amp:
+    resb 4                  ; float — current amplitude [0..1]
+voice_current_note:
+    resq 1                  ; Nearest MIDI note number
+voice_cents_off:
+    resb 4                  ; float — cents deviation from note
+voice_vibrato_rate:
+    resb 4                  ; float — vibrato speed (Hz)
+voice_vibrato_depth:
+    resb 4                  ; float — vibrato depth (cents)
+voice_breathiness:
+    resb 4                  ; float — breath noise level [0..1]
+voice_formant_f1:
+    resb 4                  ; float — first formant frequency
+voice_formant_f2:
+    resb 4                  ; float — second formant frequency
+voice_frame_count:
+    resq 1
+
+; Audio ring buffer: 8192 samples × 2 bytes (16-bit mono)
+voice_ring_buf:
+    resb 16384
+voice_ring_write:
+    resq 1
+voice_ring_read:
+    resq 1
+
+; Autocorrelation buffer: 2048 floats
+voice_autocorr:
+    resb 2048 * 4
+
+; Frequency history (for vibrato detection): 64 floats
+voice_freq_history:
+    resb 64 * 4
+voice_freq_history_pos:
+    resq 1
+
+; Amplitude history (for envelope): 64 floats
+voice_amp_history:
+    resb 64 * 4

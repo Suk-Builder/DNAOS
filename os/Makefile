@@ -66,7 +66,9 @@ DNA_SRCS = kernel/kernel.dna \
            kernel/engine/arch/architecture.dna \
            kernel/engine/arch/hologram.dna \
            kernel/engine/arch/kassen.dna \
-           kernel/engine/arch/live.dna
+           kernel/engine/arch/live.dna \
+           kernel/engine/voice.dna \
+           kernel/engine/lyrics.dna
 
 # Assembly source files (hardware-required, not DNAsm)
 ASM_SRCS = kernel/boot.S \

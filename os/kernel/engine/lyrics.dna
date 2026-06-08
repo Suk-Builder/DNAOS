@@ -1,0 +1,241 @@
+; ============================================================================
+; DNAOS - Lyrics Display System (DNAsm)
+; ============================================================================
+; 月読 Live — 歌词随歌声飘.
+;
+; Lyrics appear as floating holographic text in the air.
+; Current line glows bright, past lines fade like cherry blossoms.
+; Future lines are dim, waiting.
+;
+; When the singer hits a high note, the lyrics SHATTER into particles
+; and reassemble for the next line.
+; ============================================================================
+
+MAX_LYRIC_LINES  equ 128
+MAX_LINE_LENGTH  equ 64
+
+; Lyric display modes
+LYRIC_HOLOGRAM   equ 0     ; Floating holographic text
+LYRIC_PARTICLE   equ 1     ; Text made of particles
+LYRIC_CALLIGRAPHY equ 2    ; Brush stroke animation
+LYRIC_FLOATING   equ 3     ; Text floats up like lanterns
+
+.code
+.global lyrics_init
+.global lyrics_load
+.global lyrics_update
+.global lyrics_render
+.global lyrics_advance
+.global lyrics_shatter
+
+; ============================================================================
+; lyrics_init - Initialize lyrics system
+; ============================================================================
+lyrics_init:
+    push rA
+    
+    mov qword [rel lyrics_current_line], 0
+    mov qword [rel lyrics_total_lines], 0
+    mov dword [rel lyrics_display_mode], LYRIC_HOLOGRAM
+    mov dword [rel lyrics_fade_progress], 0.0
+    mov dword [rel lyrics_shatter_active], 0
+    mov dword [rel lyrics_time], 0.0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; lyrics_load - Load lyrics from memory
+; rP = pointer to lyrics data, rC = number of lines
+; ============================================================================
+lyrics_load:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    mov [rel lyrics_total_lines], rC
+    lea rG, [rel lyrics_buffer]
+    mov rS, rP
+    
+.lyrics_copy_loop:
+    test rC, rC
+    jz .lyrics_copy_done
+    
+    ; Copy one line (up to 64 bytes)
+    push rC
+    mov rC, MAX_LINE_LENGTH
+.lyrics_line_copy:
+    mov rA.b, [rS]
+    mov [rG], rA.b
+    inc rS
+    inc rG
+    dec rC
+    jnz .lyrics_line_copy
+    pop rC
+    
+    dec rC
+    jmp .lyrics_copy_loop
+
+.lyrics_copy_done:
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; lyrics_update - Update lyrics animation
+; rA = delta time (float in xmm0)
+; ============================================================================
+lyrics_update:
+    push rA
+    
+    ; Advance time
+    ; addss [rel lyrics_time], xmm0
+    
+    ; If shatter animation active, update particles
+    ; Each character becomes a particle with velocity
+    ; Particles drift upward and fade
+    ; When all particles faded, advance to next line
+    
+    ; Auto-advance based on voice silence detection
+    ; If voice silent for > 2 seconds after a line, advance
+    
+    pop rA
+    ret
+
+; ============================================================================
+; lyrics_render - Render lyrics as holographic text
+; ============================================================================
+lyrics_render:
+    push rA
+    push rG
+    
+    ; Render 3 lines: previous (fading), current (bright), next (dim)
+    
+    ; Previous line: alpha decreasing, slight upward drift
+    ; Color: white → transparent, with cherry blossom pink tint
+    ; Position: slightly above center, drifting up
+    
+    ; Current line: full brightness, holographic effect
+    ; Color: white with scan lines and RGB split
+    ; Position: center of holographic dome
+    ; Special: if high note detected, text GLOWS
+    ;          if dolphin tone, text SHATTERS
+    
+    ; Next line: very dim, barely visible
+    ; Color: 20% alpha white
+    ; Position: slightly below center
+    
+    ; Holographic text rendering:
+    ; 1. Draw text with font_data
+    ; 2. Add scan line effect (horizontal lines at 2px intervals)
+    ; 3. Add RGB chromatic split (offset R left, B right)
+    ; 4. Add glow (blur and add)
+    ; 5. Add subtle jitter (1-2px random offset per frame)
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; lyrics_advance - Move to next line
+; ============================================================================
+lyrics_advance:
+    push rA
+    
+    mov rA, [rel lyrics_current_line]
+    inc rA
+    cmp rA, [rel lyrics_total_lines]
+    jl .lyrics_advance_ok
+    ; Loop back to beginning (or stop if not looping)
+    xor rA, rA
+.lyrics_advance_ok:
+    mov [rel lyrics_current_line], rA
+    mov dword [rel lyrics_fade_progress], 0.0
+    mov dword [rel lyrics_shatter_active], 0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; lyrics_shatter - Shatter current line into particles
+; Triggered by high notes / dolphin tones
+; ============================================================================
+lyrics_shatter:
+    push rA
+    
+    ; Each character in the current line becomes a particle
+    ; Particle properties:
+    ;   - Position: character's screen position
+    ;   - Velocity: random upward + outward
+    ;   - Color: character's current color
+    ;   - Life: 1.0 → 0.0 over 2 seconds
+    ;   - Rotation: random spin
+    ;   - Size: starts at font size, shrinks to 0
+    
+    ; The shatter effect:
+    ; 1. Characters explode outward from center
+    ; 2. They rotate and tumble
+    ; 3. They fade from white → cherry blossom pink → transparent
+    ; 4. Some particles become cherry blossom petals
+    ; 5. After 2 seconds, next line assembles from particles
+    
+    mov dword [rel lyrics_shatter_active], 1
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+align 4
+
+lyrics_color_current:
+    dd 0xFFFFFFFF           ; White, full alpha
+lyrics_color_previous:
+    dd 0xFFCC99AA           ; Fading pink
+lyrics_color_next:
+    dd 0x33FFFFFF           ; Dim white
+lyrics_color_shatter:
+    dd 0xFFFF88CC           ; Cherry blossom pink
+
+lyrics_scanline_alpha:
+    dd 0.15                 ; Scan line overlay opacity
+lyrics_rgb_split:
+    dd 2.0                  ; Chromatic aberration pixels
+lyrics_jitter:
+    dd 1.5                  ; Holographic jitter pixels
+lyrics_glow_radius:
+    dd 8.0                  ; Text glow radius
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+lyrics_current_line:
+    resq 1
+lyrics_total_lines:
+    resq 1
+lyrics_display_mode:
+    resq 1
+lyrics_fade_progress:
+    resb 4                  ; float
+lyrics_shatter_active:
+    resq 1
+lyrics_time:
+    resb 4                  ; float
+
+; Lyrics buffer: 128 lines × 64 bytes
+lyrics_buffer:
+    resb MAX_LYRIC_LINES * MAX_LINE_LENGTH
+
+; Shatter particles: 64 chars × 32 bytes each
+lyrics_shatter_particles:
+    resb 64 * 32

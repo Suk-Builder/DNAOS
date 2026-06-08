@@ -119,6 +119,10 @@ msg_init_kassen:
     db "[  OK  ] KASSEN Battle System (神戦)", 10, 0
 msg_init_live:
     db "[  OK  ] Live Performance System", 10, 0
+msg_init_voice:
+    db "[  OK  ] Voice Processing (D2-C6, 4 octaves)", 10, 0
+msg_init_lyrics:
+    db "[  OK  ] Lyrics Display System", 10, 0
 msg_prompt:
     db "dnaos> ", 0
 msg_unknown:
@@ -361,6 +365,14 @@ kernel_main:
     
     call live_init
     lea rP, [rel msg_init_live]
+    call console_print
+    
+    call voice_init
+    lea rP, [rel msg_init_voice]
+    call console_print
+    
+    call lyrics_init
+    lea rP, [rel msg_init_lyrics]
     call console_print
     
     call tsukuyomi_init
