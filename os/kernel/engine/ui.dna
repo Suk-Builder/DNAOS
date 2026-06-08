@@ -1,0 +1,397 @@
+; ============================================================================
+; DNAOS - UI System (DNAsm)
+; ============================================================================
+; Immediate-mode GUI for game HUD, menus, dialogs, inventory.
+; No retained widget tree — everything is drawn each frame.
+; Inspired by Dear ImGui but in DNAsm.
+; ============================================================================
+
+MAX_UI_VERTICES  equ 8192
+MAX_UI_INDICES   equ 16384
+
+; UI element IDs
+UI_WINDOW        equ 0
+UI_BUTTON        equ 1
+UI_TEXT          equ 2
+UI_IMAGE         equ 3
+UI_SLIDER        equ 4
+UI_CHECKBOX      equ 5
+UI_INPUT_TEXT    equ 6
+UI_PROGRESS      equ 7
+UI_HEALTH_BAR    equ 8
+UI_MINIMAP       equ 9
+UI_INVENTORY     equ 10
+UI_DIALOG        equ 11
+UI_CROSSHAIR     equ 12
+
+.code
+.global ui_init
+.global ui_begin_frame
+.global ui_end_frame
+.global ui_window_begin
+.global ui_window_end
+.global ui_button
+.global ui_text
+.global ui_image
+.global ui_slider
+.global ui_checkbox
+.global ui_input_text
+.global ui_progress_bar
+.global ui_health_bar
+.global ui_minimap
+.global ui_inventory
+.global ui_dialog
+.global ui_crosshair
+.global ui_render
+
+; ============================================================================
+; ui_init - Initialize UI system
+; ============================================================================
+ui_init:
+    push rA
+    
+    ; Reset draw lists
+    mov qword [rel ui_vert_count], 0
+    mov qword [rel ui_idx_count], 0
+    
+    ; Set default style
+    mov dword [rel ui_font_size], 16
+    mov dword [rel ui_window_rounding], 4
+    mov dword [rel ui_button_rounding], 4
+    
+    ; Default colors
+    mov dword [rel ui_color_window], 0xE01A1F2E
+    mov dword [rel ui_color_titlebar], 0xE02D333B
+    mov dword [rel ui_color_button], 0xE030414D
+    mov dword [rel ui_color_button_hover], 0xE03D4F5C
+    mov dword [rel ui_color_button_active], 0xE04A5C6A
+    mov dword [rel ui_color_text], 0xFFC9D1D9
+    mov dword [rel ui_color_accent], 0xFF00CC66
+    
+    ; Cursor position
+    mov qword [rel ui_cursor_x], 8
+    mov qword [rel ui_cursor_y], 8
+    
+    pop rA
+    ret
+
+; ============================================================================
+; ui_begin_frame - Start new UI frame
+; ============================================================================
+ui_begin_frame:
+    ; Reset draw lists
+    mov qword [rel ui_vert_count], 0
+    mov qword [rel ui_idx_count], 0
+    mov qword [rel ui_cursor_x], 8
+    mov qword [rel ui_cursor_y], 8
+    ret
+
+; ============================================================================
+; ui_end_frame - End UI frame
+; ============================================================================
+ui_end_frame:
+    ret
+
+; ============================================================================
+; ui_window_begin - Begin a UI window
+; rP = title, rA = x, rC = y, rG = w, rS = h
+; ============================================================================
+ui_window_begin:
+    push rA
+    push rC
+    push rG
+    push rS
+    
+    ; Draw window background
+    ; Rounded rectangle with shadow
+    
+    ; Draw title bar
+    ; Title text
+    
+    ; Set cursor inside window
+    add rA, 4
+    add rC, WM_TITLE_H + 4
+    mov [rel ui_cursor_x], rA
+    mov [rel ui_cursor_y], rC
+    
+    ; Save window bounds for clipping
+    mov [rel ui_window_x], rA
+    mov [rel ui_window_y], rC
+    mov [rel ui_window_w], rG
+    mov [rel ui_window_h], rS
+    
+    pop rS
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ui_window_end - End window
+; ============================================================================
+ui_window_end:
+    ret
+
+; ============================================================================
+; ui_button - Draw a button, return 1 if clicked
+; rP = label, rG = w, rS = h → rA = 1 if clicked
+; ============================================================================
+ui_button:
+    push rC
+    push rP
+    
+    ; Get button bounds
+    mov rA, [rel ui_cursor_x]
+    mov rC, [rel ui_cursor_y]
+    
+    ; Check if mouse is hovering
+    ; mouse_x > button_x && mouse_x < button_x + w
+    ; mouse_y > button_y && mouse_y < button_y + h
+    
+    ; Draw button background
+    ; If hovering: use hover color
+    ; If pressed: use active color
+    ; Otherwise: use normal color
+    
+    ; Draw button text (centered)
+    
+    ; Advance cursor
+    add [rel ui_cursor_y], rS
+    add [rel ui_cursor_y], 4
+    
+    ; Return click state
+    xor rA, rA
+    ; ... (would check mouse click)
+    
+    pop rP
+    pop rC
+    ret
+
+; ============================================================================
+; ui_text - Draw text
+; rP = text string
+; ============================================================================
+ui_text:
+    push rA
+    push rC
+    push rP
+    
+    ; Draw each character using font_data
+    ; Position at cursor
+    ; Color = ui_color_text
+    
+    ; Advance cursor by text width
+    ; ... (would render text)
+    
+    pop rP
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ui_image - Draw an image
+; rP = texture, rA = x, rC = y, rG = w, rS = h
+; ============================================================================
+ui_image:
+    ; Draw textured quad
+    ret
+
+; ============================================================================
+; ui_slider - Draw a slider
+; rP = label, xmm0 = value, xmm1 = min, xmm2 = max → xmm0 = new value
+; ============================================================================
+ui_slider:
+    ; Draw slider track
+    ; Draw slider handle at value position
+    ; If dragging, update value
+    ret
+
+; ============================================================================
+; ui_checkbox - Draw a checkbox
+; rP = label, rA = checked → rA = new checked state
+; ============================================================================
+ui_checkbox:
+    ; Draw checkbox square
+    ; If checked, draw checkmark
+    ; Handle click
+    ret
+
+; ============================================================================
+; ui_input_text - Text input field
+; rP = buffer, rC = max_length → rA = 1 if changed
+; ============================================================================
+ui_input_text:
+    ; Draw input box
+    ; Handle keyboard input
+    ; Show cursor
+    ret
+
+; ============================================================================
+; ui_progress_bar - Progress bar
+; xmm0 = progress [0..1], rG = width, rS = height
+; ============================================================================
+ui_progress_bar:
+    ; Draw background
+    ; Draw filled portion
+    ret
+
+; ============================================================================
+; ui_health_bar - Game health bar
+; xmm0 = current, xmm1 = max
+; ============================================================================
+ui_health_bar:
+    push rA
+    push rC
+    
+    ; Draw at top of screen
+    ; Background: dark red
+    ; Fill: bright red/green based on health percentage
+    ; Text: "HP: current/max"
+    
+    ; ... (would render health bar)
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ui_minimap - Minimap overlay
+; rP = player position, rC = player rotation
+; ============================================================================
+ui_minimap:
+    ; Draw in corner of screen
+    ; Circular minimap
+    ; Show terrain colors
+    ; Show player position and direction
+    ; Show nearby entities as dots
+    ret
+
+; ============================================================================
+; ui_inventory - Inventory grid
+; rP = inventory data, rC = slot count
+; ============================================================================
+ui_inventory:
+    ; Draw grid of inventory slots
+    ; Each slot: icon + count
+    ; Drag and drop support
+    ; Tooltip on hover
+    ret
+
+; ============================================================================
+; ui_dialog - Dialog box
+; rP = speaker name, rS = text, rC = portrait texture
+; ============================================================================
+ui_dialog:
+    push rA
+    push rC
+    
+    ; Draw dialog box at bottom of screen
+    ; Portrait on left
+    ; Speaker name above text
+    ; Text with typewriter effect
+    ; "Press Enter to continue"
+    
+    ; ... (would render dialog)
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ui_crosshair - Draw crosshair at screen center
+; ============================================================================
+ui_crosshair:
+    push rA
+    push rC
+    
+    ; Draw crosshair at center of screen
+    ; Simple + shape, 2 pixels wide, 12 pixels long
+    ; Color: white with slight transparency
+    
+    mov rA, 640             ; 1280 / 2
+    mov rC, 360             ; 720 / 2
+    
+    ; Horizontal line
+    ; fb_draw_line(rA-6, rC, rA+6, rC, 0xCCFFFFFF)
+    ; Vertical line
+    ; fb_draw_line(rA, rC-6, rA, rC+6, 0xCCFFFFFF)
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ui_render - Render all UI elements
+; ============================================================================
+ui_render:
+    push rA
+    push rC
+    push rG
+    
+    ; Switch to 2D rendering mode
+    ; Disable depth test
+    ; Set orthographic projection
+    
+    ; Draw all UI vertices from draw list
+    lea rG, [rel ui_vertices]
+    mov rA, [rel ui_vert_count]
+    mov rC, [rel ui_idx_count]
+    
+    ; ... (would render UI draw list)
+    
+    ; Re-enable depth test
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+ui_vertices:
+    resb MAX_UI_VERTICES * 36  ; 36 bytes per vertex (pos + uv + color)
+ui_indices:
+    resb MAX_UI_INDICES * 4
+ui_vert_count:
+    resq 1
+ui_idx_count:
+    resq 1
+ui_cursor_x:
+    resq 1
+ui_cursor_y:
+    resq 1
+ui_font_size:
+    resq 1
+ui_window_rounding:
+    resq 1
+ui_button_rounding:
+    resq 1
+
+; Colors (ARGB)
+ui_color_window:
+    resq 1
+ui_color_titlebar:
+    resq 1
+ui_color_button:
+    resq 1
+ui_color_button_hover:
+    resq 1
+ui_color_button_active:
+    resq 1
+ui_color_text:
+    resq 1
+ui_color_accent:
+    resq 1
+
+; Window bounds
+ui_window_x:
+    resq 1
+ui_window_y:
+    resq 1
+ui_window_w:
+    resq 1
+ui_window_h:
+    resq 1

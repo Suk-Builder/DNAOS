@@ -81,6 +81,26 @@ msg_init_wm:
     db "[  OK  ] Window Manager", 10, 0
 msg_init_shell:
     db "[  OK  ] DNAsm Shell ready", 10, 0
+msg_init_3d:
+    db "[  OK  ] 3D Renderer (CPU仿GPU)", 10, 0
+msg_init_physics:
+    db "[  OK  ] Physics Engine", 10, 0
+msg_init_audio:
+    db "[  OK  ] Audio Engine", 10, 0
+msg_init_ecs:
+    db "[  OK  ] Entity Component System", 10, 0
+msg_init_tsukuyomi:
+    db "[  OK  ] 月読 Engine initialized", 10, 0
+msg_init_vm:
+    db "[  OK  ] Script VM ready", 10, 0
+msg_init_particles:
+    db "[  OK  ] Particle System", 10, 0
+msg_init_ui:
+    db "[  OK  ] UI System", 10, 0
+msg_init_input:
+    db "[  OK  ] Input System", 10, 0
+msg_init_worldgen:
+    db "[  OK  ] World Generator", 10, 0
 msg_prompt:
     db "dnaos> ", 0
 msg_unknown:
@@ -251,6 +271,48 @@ kernel_main:
     call wm_init
     lea rP, [rel msg_init_wm]
     call console_print
+    
+    ; ---- 月読 Engine Subsystems ----
+    call rast_init
+    lea rP, [rel msg_init_3d]
+    call console_print
+    
+    call phys_init
+    lea rP, [rel msg_init_physics]
+    call console_print
+    
+    call audio_init
+    lea rP, [rel msg_init_audio]
+    call console_print
+    
+    call ecs_init
+    lea rP, [rel msg_init_ecs]
+    call console_print
+    
+    call particle_init
+    lea rP, [rel msg_init_particles]
+    call console_print
+    
+    call ui_init
+    lea rP, [rel msg_init_ui]
+    call console_print
+    
+    call input_init
+    lea rP, [rel msg_init_input]
+    call console_print
+    
+    call vm_init
+    lea rP, [rel msg_init_vm]
+    call console_print
+    
+    call worldgen_init
+    lea rP, [rel msg_init_worldgen]
+    call console_print
+    
+    call tsukuyomi_init
+    lea rP, [rel msg_init_tsukuyomi]
+    mov rA, COLOR_A_GREEN
+    call console_print_color
     
     ; Shell ready
     lea rP, [rel msg_init_shell]

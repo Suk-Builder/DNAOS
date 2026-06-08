@@ -1,0 +1,232 @@
+; ============================================================================
+; DNAOS - Animation System (DNAsm)
+; ============================================================================
+; Skeletal animation, morph targets, procedural animation.
+; Supports: idle, walk, run, jump, attack, emote animations.
+; Blend tree for smooth transitions.
+; ============================================================================
+
+MAX_BONES        equ 64
+MAX_ANIMS        equ 32
+MAX_ANIM_CHANNELS equ 256
+MAX_BLEND_TREE   equ 8
+
+; Animation channel types
+CHAN_TRANSLATION equ 0
+CHAN_ROTATION    equ 1
+CHAN_SCALE       equ 2
+
+; Blend modes
+BLEND_LINEAR     equ 0
+BLEND_ADDITIVE   equ 1
+
+.code
+.global anim_init
+.global anim_update
+.global anim_play
+.global anim_stop
+.global anim_set_speed
+.global anim_blend
+.global anim_evaluate
+.global anim_sample
+.global anim_lerp_vec3
+.global anim_slerp_quat
+
+; ============================================================================
+; anim_init - Initialize animation system
+; ============================================================================
+anim_init:
+    push rA
+    push rG
+    
+    ; Clear animation state
+    lea rG, [rel anim_channels]
+    mov rA, MAX_ANIM_CHANNELS * 32
+    xor rC, rC
+.anim_init_clear:
+    mov byte [rG], 0
+    inc rG
+    dec rA
+    jnz .anim_init_clear
+    
+    mov qword [rel anim_active_count], 0
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; anim_update - Update all active animations
+; xmm0 = delta_time
+; ============================================================================
+anim_update:
+    push rA
+    push rG
+    
+    ; For each active animation:
+    ;   Advance time by delta_time * speed
+    ;   If time > duration: loop or stop
+    ;   Evaluate all channels at current time
+    ;   Apply to skeleton
+    
+    lea rG, [rel anim_channels]
+    mov rA, [rel anim_active_count]
+    
+.anim_update_loop:
+    test rA, rA
+    jz .anim_update_done
+    
+    ; Check if active
+    cmp dword [rG], 1
+    jne .anim_update_next
+    
+    ; Advance time
+    addss [rG + 4], xmm0    ; time += dt
+    
+    ; Check duration
+    comiss xmm0, [rG + 8]   ; time vs duration
+    jb .anim_update_evaluate
+    
+    ; Loop
+    movss xmm1, [rG + 8]    ; duration
+    divss xmm0, xmm1         ; time / duration
+    cvttss2si rC, xmm0       ; integer part
+    cvtsi2ss xmm1, rC
+    mulss xmm1, [rG + 8]
+    subss xmm0, xmm1         ; time = time % duration
+    movss [rG + 4], xmm0
+    
+.anim_update_evaluate:
+    ; Evaluate this channel
+    call anim_evaluate
+    
+.anim_update_next:
+    add rG, 32
+    dec rA
+    jmp .anim_update_loop
+
+.anim_update_done:
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; anim_play - Start playing an animation
+; rA = animation ID, xmm0 = speed, rC = loop (0=once, 1=loop)
+; ============================================================================
+anim_play:
+    push rG
+    
+    ; Find free channel
+    ; Set up channel with animation data
+    ; Set active flag
+    
+    ; ... (would set up animation channel)
+    
+    pop rG
+    ret
+
+; ============================================================================
+; anim_stop - Stop an animation
+; rA = animation ID
+; ============================================================================
+anim_stop:
+    ; Find channel, set inactive
+    ret
+
+; ============================================================================
+; anim_set_speed - Set animation playback speed
+; rA = animation ID, xmm0 = speed
+; ============================================================================
+anim_set_speed:
+    ; Find channel, set speed
+    ret
+
+; ============================================================================
+; anim_blend - Blend between two animations
+; rA = anim_a, rC = anim_b, xmm0 = blend_factor [0..1]
+; ============================================================================
+anim_blend:
+    ; For each bone:
+    ;   position = lerp(anim_a.position, anim_b.position, blend_factor)
+    ;   rotation = slerp(anim_a.rotation, anim_b.rotation, blend_factor)
+    ;   scale = lerp(anim_a.scale, anim_b.scale, blend_factor)
+    ret
+
+; ============================================================================
+; anim_evaluate - Evaluate animation at current time
+; rG = channel pointer
+; ============================================================================
+anim_evaluate:
+    ; Sample keyframes at current time
+    ; Interpolate between keyframes
+    ; Apply to bone transforms
+    ret
+
+; ============================================================================
+; anim_sample - Sample animation at specific time
+; rA = animation ID, xmm0 = time → output to bone array
+; ============================================================================
+anim_sample:
+    ; For each channel in animation:
+    ;   Find surrounding keyframes
+    ;   Interpolate
+    ;   Write to output bone transform
+    ret
+
+; ============================================================================
+; anim_lerp_vec3 - Linear interpolation between two vec3
+; rP = output, rS = a, rG = b, xmm0 = t
+; ============================================================================
+anim_lerp_vec3:
+    ; output.x = a.x + (b.x - a.x) * t
+    ; output.y = a.y + (b.y - a.y) * t
+    ; output.z = a.z + (b.z - a.z) * t
+    
+    movss xmm1, [rS]        ; a.x
+    movss xmm2, [rG]        ; b.x
+    subss xmm2, xmm1        ; b.x - a.x
+    mulss xmm2, xmm0        ; * t
+    addss xmm2, xmm1        ; a.x + ...
+    movss [rP], xmm2
+    
+    ; ... same for y, z
+    ret
+
+; ============================================================================
+; anim_slerp_quat - Spherical linear interpolation between two quaternions
+; rP = output, rS = a, rG = b, xmm0 = t
+; ============================================================================
+anim_slerp_quat:
+    ; dot = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w
+    ; if dot < 0: negate b, dot = -dot
+    ; if dot > 0.9995: lerp instead
+    ; theta = acos(dot)
+    ; sin_theta = sin(theta)
+    ; wa = sin((1-t)*theta) / sin_theta
+    ; wb = sin(t*theta) / sin_theta
+    ; result = wa*a + wb*b
+    
+    ; ... (would compute slerp)
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+; Animation channels: 256 × 32 bytes
+anim_channels:
+    resb MAX_ANIM_CHANNELS * 32
+anim_active_count:
+    resq 1
+
+; Skeleton: 64 bones × 64 bytes (position + rotation + scale + world_matrix)
+anim_skeleton:
+    resb MAX_BONES * 64
+anim_bone_count:
+    resq 1
+
+; Animation clips: 32 × 128 bytes (metadata, keyframe offsets)
+anim_clips:
+    resb MAX_ANIMS * 128

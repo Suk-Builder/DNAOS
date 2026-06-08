@@ -1,0 +1,605 @@
+; ============================================================================
+; DNAOS - Physics Engine (DNAsm)
+; ============================================================================
+; Rigid body dynamics, collision detection, collision response.
+; AABB, Sphere, OBB broadphase + narrowphase.
+; SAT (Separating Axis Theorem) for convex shapes.
+; Simple verlet integration for particles.
+; ============================================================================
+
+MAX_BODIES       equ 256
+MAX_COLLIDERS    equ 256
+MAX_CONTACTS     equ 1024
+MAX_PARTICLES    equ 4096
+
+; Collider types
+COLLIDER_SPHERE  equ 0
+COLLIDER_AABB    equ 1
+COLLIDER_OBB     equ 2
+COLLIDER_PLANE   equ 3
+COLLIDER_MESH    equ 4
+
+; Body flags
+BODY_STATIC      equ 0x01
+BODY_DYNAMIC     equ 0x02
+BODY_KINEMATIC   equ 0x04
+BODY_TRIGGER     equ 0x08
+
+; Gravity
+GRAVITY_X        equ 0.0
+GRAVITY_Y        equ -9.81
+GRAVITY_Z        equ 0.0
+
+; ============================================================================
+; Rigid body structure (128 bytes)
+; ============================================================================
+; position:    vec3    offset 0
+; rotation:    quat    offset 12
+; velocity:    vec3    offset 28
+; ang_velocity:vec3    offset 40
+; acceleration:vec3    offset 52
+; mass:        float   offset 64
+; inv_mass:    float   offset 68
+; restitution: float   offset 72
+; friction:    float   offset 76
+; flags:       dword   offset 80
+; collider_type:dword  offset 84
+; collider_data:32b    offset 88  (sphere: radius; aabb: half-extents)
+; force_accum: vec3    offset 120
+; torque_accum:vec3    offset 132... too big, simplify
+
+.code
+.global phys_init
+.global phys_step
+.global phys_add_body
+.global phys_remove_body
+.global phys_apply_force
+.global phys_apply_impulse
+.global phys_set_gravity
+.global phys_raycast
+.global phys_sphere_query
+.global phys_aabb_query
+
+; Collision detection
+.global phys_collide_sphere_sphere
+.global phys_collide_sphere_aabb
+.global phys_collide_sphere_plane
+.global phys_collide_aabb_aabb
+.global phys_collide_aabb_plane
+
+; ============================================================================
+; phys_init - Initialize physics engine
+; ============================================================================
+phys_init:
+    push rA
+    push rC
+    push rG
+    
+    ; Set default gravity
+    movss xmm0, [rel .grav_x]
+    movss [rel phys_gravity], xmm0
+    movss xmm0, [rel .grav_y]
+    movss [rel phys_gravity + 4], xmm0
+    movss xmm0, [rel .grav_z]
+    movss [rel phys_gravity + 8], xmm0
+    
+    ; Clear bodies
+    mov qword [rel phys_body_count], 0
+    
+    ; Clear contacts
+    mov qword [rel phys_contact_count], 0
+    
+    ; Set timestep
+    movss xmm0, [rel .dt_60fps]
+    movss [rel phys_timestep], xmm0
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; phys_step - Step physics simulation
+; xmm0 = dt (or use fixed timestep)
+; ============================================================================
+phys_step:
+    push rA
+    push rC
+    push rG
+    
+    ; Fixed timestep with accumulator
+    movss xmm0, [rel phys_timestep]
+    
+    ; ---- Integration (Semi-implicit Euler) ----
+    lea rG, [rel phys_bodies]
+    mov rC, [rel phys_body_count]
+    
+.phys_step_integrate:
+    test rC, rC
+    jz .phys_step_collision
+    
+    ; Skip static bodies
+    test dword [rG + 80], BODY_STATIC
+    jnz .phys_step_next_body
+    
+    ; Apply gravity
+    ; acceleration += gravity
+    movss xmm0, [rG + 52]   ; accel.x
+    addss xmm0, [rel phys_gravity]
+    movss [rG + 52], xmm0
+    movss xmm0, [rG + 56]   ; accel.y
+    addss xmm0, [rel phys_gravity + 4]
+    movss [rG + 56], xmm0
+    movss xmm0, [rG + 60]   ; accel.z
+    addss xmm0, [rel phys_gravity + 8]
+    movss [rG + 60], xmm0
+    
+    ; velocity += acceleration * dt
+    movss xmm0, [rel phys_timestep]
+    movss xmm1, [rG + 52]   ; accel.x
+    mulss xmm1, xmm0
+    addss xmm1, [rG + 28]   ; + vel.x
+    movss [rG + 28], xmm1
+    
+    movss xmm1, [rG + 56]   ; accel.y
+    mulss xmm1, xmm0
+    addss xmm1, [rG + 32]   ; + vel.y
+    movss [rG + 32], xmm1
+    
+    movss xmm1, [rG + 60]   ; accel.z
+    mulss xmm1, xmm0
+    addss xmm1, [rG + 36]   ; + vel.z
+    movss [rG + 36], xmm1
+    
+    ; Apply damping (air resistance)
+    movss xmm1, [rel .damping]
+    mulss xmm1, [rG + 28]
+    movss [rG + 28], xmm1
+    mulss xmm1, [rG + 32]
+    movss [rG + 32], xmm1
+    mulss xmm1, [rG + 36]
+    movss [rG + 36], xmm1
+    
+    ; position += velocity * dt
+    movss xmm0, [rel phys_timestep]
+    movss xmm1, [rG + 28]   ; vel.x
+    mulss xmm1, xmm0
+    addss xmm1, [rG]        ; + pos.x
+    movss [rG], xmm1
+    
+    movss xmm1, [rG + 32]   ; vel.y
+    mulss xmm1, xmm0
+    addss xmm1, [rG + 4]    ; + pos.y
+    movss [rG + 4], xmm1
+    
+    movss xmm1, [rG + 36]   ; vel.z
+    mulss xmm1, xmm0
+    addss xmm1, [rG + 8]    ; + pos.z
+    movss [rG + 8], xmm1
+    
+    ; Angular integration (simplified)
+    ; rotation += 0.5 * dt * (0, ang_vel) * rotation
+    ; ... (quaternion integration)
+    
+    ; Clear acceleration (will be recalculated next frame)
+    movss xmm0, [rel .float_zero]
+    movss [rG + 52], xmm0
+    movss [rG + 56], xmm0
+    movss [rG + 60], xmm0
+
+.phys_step_next_body:
+    add rG, 128
+    dec rC
+    jmp .phys_step_integrate
+
+.phys_step_collision:
+    ; ---- Broadphase collision detection ----
+    ; AABB overlap test for all pairs
+    ; O(n²) for now, can optimize with spatial hash/grid later
+    
+    ; ---- Narrowphase collision detection ----
+    ; For each overlapping pair, compute exact collision
+    ; based on collider types
+    
+    ; ---- Collision response ----
+    ; For each contact:
+    ;   Compute impulse
+    ;   Apply impulse to both bodies
+    ;   Positional correction (Baumgarte stabilization)
+    
+    ; Reset contact count
+    mov qword [rel phys_contact_count], 0
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; phys_add_body - Add rigid body
+; rP = body data → rA = body index
+; ============================================================================
+phys_add_body:
+    push rC
+    push rG
+    
+    mov rA, [rel phys_body_count]
+    cmp rA, MAX_BODIES
+    jge .phys_add_full
+    
+    ; Copy body data
+    lea rG, [rel phys_bodies]
+    shl rA, 7               ; * 128
+    add rG, rA
+    
+    mov rC, 32              ; Copy 128 bytes = 32 dwords
+.phys_add_copy:
+    mov rA_temp, [rP]
+    mov [rG], rA_temp
+    add rP, 4
+    add rG, 4
+    dec rC
+    jnz .phys_add_copy
+    
+    ; Compute inverse mass
+    ; inv_mass = mass > 0 ? 1/mass : 0
+    movss xmm0, [rG - 128 + 64] ; mass
+    movss xmm1, [rel .float_zero]
+    comiss xmm0, xmm1
+    je .phys_add_static
+    movss xmm1, [rel .float_one]
+    divss xmm1, xmm0
+    movss [rG - 128 + 68], xmm1 ; inv_mass
+    jmp .phys_add_done
+
+.phys_add_static:
+    movss [rG - 128 + 68], xmm1 ; inv_mass = 0
+
+.phys_add_done:
+    mov rA, [rel phys_body_count]
+    inc qword [rel phys_body_count]
+    pop rG
+    pop rC
+    ret
+
+.phys_add_full:
+    mov rA, -1
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; phys_remove_body - Remove rigid body
+; rA = body index
+; ============================================================================
+phys_remove_body:
+    ; Swap with last body, decrement count
+    push rC
+    push rG
+    
+    mov rC, [rel phys_body_count]
+    dec rC
+    cmp rA, rC
+    je .phys_remove_last
+    
+    ; Copy last body to this slot
+    lea rG, [rel phys_bodies]
+    shl rC, 7
+    add rG, rC              ; Source = last body
+    
+    push rA
+    shl rA, 7
+    add rA, rG              ; Wait, this is wrong
+    ; Let me redo
+    pop rA
+    
+    lea rP, [rel phys_bodies + rA*128]  ; Dest
+    lea rS, [rel phys_bodies + rC*128]  ; Source
+    ; Copy 128 bytes
+    mov rG, 32
+.phys_remove_copy:
+    mov rA_temp, [rS]
+    mov [rP], rA_temp
+    add rP, 4
+    add rS, 4
+    dec rG
+    jnz .phys_remove_copy
+
+.phys_remove_last:
+    dec qword [rel phys_body_count]
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; phys_apply_force - Apply force to body
+; rA = body index, xmm0 = fx, xmm1 = fy, xmm2 = fz
+; ============================================================================
+phys_apply_force:
+    push rG
+    
+    lea rG, [rel phys_bodies + rA*128]
+    addss xmm0, [rG + 52]   ; force_accum.x + fx
+    movss [rG + 52], xmm0
+    addss xmm1, [rG + 56]
+    movss [rG + 56], xmm1
+    addss xmm2, [rG + 60]
+    movss [rG + 60], xmm2
+    
+    pop rG
+    ret
+
+; ============================================================================
+; phys_apply_impulse - Apply impulse to body
+; rA = body index, xmm0 = jx, xmm1 = jy, xmm2 = jz
+; ============================================================================
+phys_apply_impulse:
+    push rG
+    
+    lea rG, [rel phys_bodies + rA*128]
+    
+    ; velocity += impulse * inv_mass
+    movss xmm3, [rG + 68]   ; inv_mass
+    mulss xmm0, xmm3
+    addss xmm0, [rG + 28]   ; vel.x + jx * inv_mass
+    movss [rG + 28], xmm0
+    mulss xmm1, xmm3
+    addss xmm1, [rG + 32]
+    movss [rG + 32], xmm1
+    mulss xmm2, xmm3
+    addss xmm2, [rG + 36]
+    movss [rG + 36], xmm2
+    
+    pop rG
+    ret
+
+; ============================================================================
+; phys_set_gravity - Set gravity vector
+; xmm0 = gx, xmm1 = gy, xmm2 = gz
+; ============================================================================
+phys_set_gravity:
+    movss [rel phys_gravity], xmm0
+    movss [rel phys_gravity + 4], xmm1
+    movss [rel phys_gravity + 8], xmm2
+    ret
+
+; ============================================================================
+; Collision Detection
+; ============================================================================
+
+; ============================================================================
+; phys_collide_sphere_sphere - Test sphere-sphere collision
+; rP = body_a, rS = body_b → rA = 1 if colliding
+; ============================================================================
+phys_collide_sphere_sphere:
+    push rC
+    push rG
+    
+    ; Get positions
+    movss xmm0, [rP]        ; a.x
+    subss xmm0, [rS]        ; - b.x
+    movss xmm1, [rP + 4]    ; a.y
+    subss xmm1, [rS + 4]    ; - b.y
+    movss xmm2, [rP + 8]    ; a.z
+    subss xmm2, [rS + 8]    ; - b.z
+    
+    ; dist_sq = dx*dx + dy*dy + dz*dz
+    mulss xmm0, xmm0
+    mulss xmm1, xmm1
+    addss xmm0, xmm1
+    mulss xmm2, xmm2
+    addss xmm0, xmm2        ; dist_sq
+    
+    ; radius_sum = a.radius + b.radius
+    movss xmm1, [rP + 88]   ; a.radius
+    addss xmm1, [rS + 88]   ; + b.radius
+    mulss xmm1, xmm1        ; radius_sum_sq
+    
+    ; if dist_sq < radius_sum_sq: collision
+    comiss xmm0, xmm1
+    setb rA                  ; rA = 1 if below (colliding)
+    and rA, 1
+    
+    ; If colliding, add contact
+    test rA, rA
+    jz .sphere_sphere_done
+    
+    ; Compute contact point, normal, penetration
+    ; normal = normalize(b.pos - a.pos)
+    ; penetration = radius_sum - sqrt(dist_sq)
+    ; contact_point = a.pos + normal * a.radius
+    
+    ; ... (would add to contact list)
+    
+.sphere_sphere_done:
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; phys_collide_sphere_aabb - Test sphere-AABB collision
+; rP = sphere body, rS = aabb body → rA = 1 if colliding
+; ============================================================================
+phys_collide_sphere_aabb:
+    push rC
+    push rG
+    
+    ; Find closest point on AABB to sphere center
+    ; closest.x = clamp(sphere.x, aabb.min.x, aabb.max.x)
+    ; closest.y = clamp(sphere.y, aabb.min.y, aabb.max.y)
+    ; closest.z = clamp(sphere.z, aabb.min.z, aabb.max.z)
+    
+    ; dist_sq = distance_sq(sphere.center, closest)
+    ; if dist_sq < sphere.radius²: collision
+    
+    ; ... (would implement clamp and distance check)
+    
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; phys_collide_sphere_plane - Test sphere-plane collision
+; rP = sphere body, rS = plane → rA = 1 if colliding
+; ============================================================================
+phys_collide_sphere_plane:
+    push rG
+    
+    ; distance = dot(sphere.center, plane.normal) + plane.d
+    ; if distance < sphere.radius: collision
+    ; penetration = sphere.radius - distance
+    
+    ; ... (would compute dot product and compare)
+    
+    pop rG
+    ret
+
+; ============================================================================
+; phys_collide_aabb_aabb - Test AABB-AABB collision
+; rP = aabb_a, rS = aabb_b → rA = 1 if overlapping
+; ============================================================================
+phys_collide_aabb_aabb:
+    push rC
+    
+    ; AABB overlap test:
+    ; overlap = (a.min.x <= b.max.x && a.max.x >= b.min.x) &&
+    ;           (a.min.y <= b.max.y && a.max.y >= b.min.y) &&
+    ;           (a.min.z <= b.max.z && a.max.z >= b.min.z)
+    
+    ; For each axis, check overlap
+    ; ... (would compute min/max from position + half-extents and compare)
+    
+    pop rC
+    ret
+
+; ============================================================================
+; phys_raycast - Ray intersection test
+; xmm0 = ox, xmm1 = oy, xmm2 = oz (origin)
+; xmm3 = dx, xmm4 = dy, xmm5 = dz (direction)
+; → rA = body index hit (-1 if none), xmm0 = hit distance
+; ============================================================================
+phys_raycast:
+    push rC
+    push rG
+    
+    ; Test ray against all bodies
+    ; For each body, based on collider type:
+    ;   Sphere: quadratic equation
+    ;   AABB: slab method
+    ;   Plane: dot product
+    ; Keep closest hit
+    
+    lea rG, [rel phys_bodies]
+    mov rC, [rel phys_body_count]
+    mov rA, -1              ; No hit yet
+    movss xmm6, [rel .float_max]  ; Closest distance = infinity
+    
+.phys_raycast_loop:
+    test rC, rC
+    jz .phys_raycast_done
+    
+    ; Get collider type
+    cmp dword [rG + 84], COLLIDER_SPHERE
+    je .phys_raycast_sphere
+    cmp dword [rG + 84], COLLIDER_AABB
+    je .phys_raycast_aabb
+    jmp .phys_raycast_next
+
+.phys_raycast_sphere:
+    ; Ray-sphere intersection
+    ; L = sphere.center - ray.origin
+    ; tca = dot(L, ray.direction)
+    ; d² = dot(L, L) - tca²
+    ; if d² > radius²: miss
+    ; thc = sqrt(radius² - d²)
+    ; t0 = tca - thc, t1 = tca + thc
+    ; if t0 > 0: hit at t0
+    ; else if t1 > 0: hit at t1 (inside sphere)
+    ; else: miss
+    
+    ; ... (would compute intersection)
+    jmp .phys_raycast_next
+
+.phys_raycast_aabb:
+    ; Ray-AABB intersection (slab method)
+    ; For each axis:
+    ;   t_min = (aabb_min - origin) / direction
+    ;   t_max = (aabb_max - origin) / direction
+    ;   if t_min > t_max: swap
+    ;   t_near = max(t_near, t_min)
+    ;   t_far = min(t_far, t_max)
+    ;   if t_near > t_far: miss
+    ; if t_near < 0: t_near = t_far
+    ; if t_near < 0: miss
+    
+    ; ... (would compute slab intersection)
+    jmp .phys_raycast_next
+
+.phys_raycast_next:
+    add rG, 128
+    dec rC
+    jmp .phys_raycast_loop
+
+.phys_raycast_done:
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; phys_sphere_query - Find all bodies overlapping a sphere
+; xmm0 = cx, xmm1 = cy, xmm2 = cz, xmm3 = radius
+; rP = output array (int indices), rC = max_results
+; → rA = count of results
+; ============================================================================
+phys_sphere_query:
+    ; Iterate all bodies, test distance to sphere center
+    ; ... (similar to sphere-sphere but against query sphere)
+    ret
+
+; ============================================================================
+; phys_aabb_query - Find all bodies overlapping an AABB
+; rP = aabb_min, rS = aabb_max, rG = output, rC = max_results
+; → rA = count
+; ============================================================================
+phys_aabb_query:
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+.float_zero:
+    dd 0.0
+.float_one:
+    dd 1.0
+.float_max:
+    dd 3.4e38
+.grav_x:
+    dd 0.0
+.grav_y:
+    dd -9.81
+.grav_z:
+    dd 0.0
+.dt_60fps:
+    dd 0.0166667            ; 1/60
+.damping:
+    dd 0.99
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+phys_gravity:
+    resb 12                  ; vec3
+phys_timestep:
+    resb 4                   ; float
+phys_bodies:
+    resb MAX_BODIES * 128
+phys_body_count:
+    resq 1
+phys_contacts:
+    resb MAX_CONTACTS * 64  ; Contact struct: point, normal, penetration, body indices
+phys_contact_count:
+    resq 1

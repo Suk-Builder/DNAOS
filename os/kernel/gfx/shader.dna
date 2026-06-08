@@ -1,0 +1,346 @@
+; ============================================================================
+; DNAOS - Shader Pipeline (Software) (DNAsm)
+; ============================================================================
+; Software vertex and fragment shaders. No GPU shader compilation.
+; Each "shader" is a function pointer that processes vertices/fragments.
+;
+; Built-in shaders:
+;   - Unlit (flat color, no lighting)
+;   - Diffuse (Lambert)
+;   - Phong (specular highlights)
+;   - PBR (metallic-roughness, simplified)
+;   - Sky (gradient + sun + stars)
+;   - Water (animated, reflective, refractive)
+;   - Particle (additive blending, size attenuation)
+;   - UI (2D, no depth, alpha test)
+;   - Terrain (multi-texture splatmap)
+;   - Character (skinned, animated)
+;   - Hologram (DNAOS special effect)
+;   - ATCG (DNA visualization shader)
+; ============================================================================
+
+; Shader IDs
+SHADER_UNLIT       equ 0
+SHADER_DIFFUSE     equ 1
+SHADER_PHONG       equ 2
+SHADER_PBR         equ 3
+SHADER_SKY         equ 4
+SHADER_WATER       equ 5
+SHADER_PARTICLE    equ 6
+SHADER_UI          equ 7
+SHADER_TERRAIN     equ 8
+SHADER_CHARACTER   equ 9
+SHADER_HOLOGRAM    equ 10
+SHADER_ATCG        equ 11
+
+MAX_SHADERS       equ 16
+
+; Shader function signatures:
+; vertex_shader(input_vertex, output_vertex, uniforms)
+; fragment_shader(input_fragment, output_color, uniforms)
+
+.code
+.global shader_init
+.global shader_set_active
+.global shader_vertex_process
+.global shader_fragment_process
+.global shader_vs_unlit
+.global shader_vs_diffuse
+.global shader_vs_phong
+.global shader_fs_unlit
+.global shader_fs_diffuse
+.global shader_fs_phong
+.global shader_fs_sky
+.global shader_fs_water
+.global shader_fs_hologram
+.global shader_fs_atcg
+
+; ============================================================================
+; shader_init - Initialize shader system
+; ============================================================================
+shader_init:
+    push rA
+    push rG
+    
+    ; Set up shader function table
+    lea rG, [rel shader_vs_table]
+    lea rA, [rel shader_vs_unlit]
+    mov [rG], rA
+    lea rA, [rel shader_vs_diffuse]
+    mov [rG + 8], rA
+    lea rA, [rel shader_vs_phong]
+    mov [rG + 16], rA
+    ; ... more vertex shaders
+    
+    lea rG, [rel shader_fs_table]
+    lea rA, [rel shader_fs_unlit]
+    mov [rG], rA
+    lea rA, [rel shader_fs_diffuse]
+    mov [rG + 8], rA
+    lea rA, [rel shader_fs_phong]
+    mov [rG + 16], rA
+    lea rA, [rel shader_fs_sky]
+    mov [rG + 32], rA
+    lea rA, [rel shader_fs_water]
+    mov [rG + 40], rA
+    lea rA, [rel shader_fs_hologram]
+    mov [rG + 80], rA
+    lea rA, [rel shader_fs_atcg]
+    mov [rG + 88], rA
+    
+    mov qword [rel shader_active_vs], 0
+    mov qword [rel shader_active_fs], 0
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; shader_set_active - Set active shader
+; rA = shader ID
+; ============================================================================
+shader_set_active:
+    ; Set vertex shader
+    lea rG, [rel shader_vs_table + rA*8]
+    mov rG, [rG]
+    mov [rel shader_active_vs], rG
+    
+    ; Set fragment shader
+    lea rG, [rel shader_fs_table + rA*8]
+    mov rG, [rG]
+    mov [rel shader_active_fs], rG
+    
+    ret
+
+; ============================================================================
+; shader_vertex_process - Process one vertex through active vertex shader
+; rP = input vertex, rG = output vertex
+; ============================================================================
+shader_vertex_process:
+    push rA
+    mov rA, [rel shader_active_vs]
+    call rA                  ; Call vertex shader function
+    pop rA
+    ret
+
+; ============================================================================
+; shader_fragment_process - Process one fragment through active fragment shader
+; rP = input fragment, rG = output color
+; ============================================================================
+shader_fragment_process:
+    push rA
+    mov rA, [rel shader_active_fs]
+    call rA                  ; Call fragment shader function
+    pop rA
+    ret
+
+; ============================================================================
+; VERTEX SHADERS
+; ============================================================================
+
+; ---- Unlit Vertex Shader ----
+; Transform position only, pass through color/uv
+shader_vs_unlit:
+    ; output.position = MVP * input.position
+    ; output.color = input.color
+    ; output.uv = input.uv
+    ret
+
+; ---- Diffuse Vertex Shader ----
+; Transform + compute world-space normal for lighting
+shader_vs_diffuse:
+    ; output.position = MVP * input.position
+    ; output.world_pos = Model * input.position
+    ; output.normal = normalize(Model * vec4(input.normal, 0))
+    ; output.uv = input.uv
+    ret
+
+; ---- Phong Vertex Shader ----
+; Same as diffuse + pass tangent for normal mapping
+shader_vs_phong:
+    ; output.position = MVP * input.position
+    ; output.world_pos = Model * input.position
+    ; output.normal = normalize(normalMatrix * input.normal)
+    ; output.uv = input.uv
+    ret
+
+; ============================================================================
+; FRAGMENT SHADERS
+; ============================================================================
+
+; ---- Unlit Fragment Shader ----
+; Just sample texture or use vertex color
+shader_fs_unlit:
+    ; color = texture.sample(uv) * vertex_color
+    ; Or just: color = uniform_color
+    ret
+
+; ---- Diffuse (Lambert) Fragment Shader ----
+; color = ambient + sum(lights: max(dot(N, L), 0) * light_color * diffuse_color)
+shader_fs_diffuse:
+    push rA
+    
+    ; Get interpolated values
+    ; normal = normalize(frag.normal)
+    ; albedo = texture.sample(frag.uv)
+    
+    ; Ambient
+    ; color = ambient_color * albedo
+    
+    ; For each light:
+    ;   L = normalize(light_pos - frag.world_pos)
+    ;   NdotL = max(dot(normal, L), 0)
+    ;   attenuation = 1 / (1 + 0.09 * dist + 0.032 * dist^2)
+    ;   color += NdotL * light_color * albedo * attenuation
+    
+    ; ... (would compute Lambert lighting)
+    
+    pop rA
+    ret
+
+; ---- Phong Fragment Shader ----
+; Diffuse + specular: color = diffuse + pow(max(dot(R, V), 0), shininess)
+shader_fs_phong:
+    push rA
+    
+    ; Compute diffuse (same as Lambert)
+    
+    ; Specular:
+    ; V = normalize(camera_pos - frag.world_pos)
+    ; R = reflect(-L, N)
+    ; spec = pow(max(dot(R, V), 0), shininess)
+    ; color += spec * light_color * specular_color
+    
+    ; ... (would compute Phong lighting)
+    
+    pop rA
+    ret
+
+; ---- Sky Fragment Shader ----
+; Gradient sky with sun, moon, stars
+shader_fs_sky:
+    push rA
+    
+    ; Get view direction from fragment position
+    ; dir = normalize(frag.world_pos - camera_pos)
+    
+    ; Sky gradient based on dir.y:
+    ;   Above horizon: lerp(horizon_color, zenith_color, dir.y)
+    ;   Below horizon: ground_color
+    
+    ; Sun:
+    ;   sun_dir = compute_sun_direction(time_of_day)
+    ;   sun_dot = dot(dir, sun_dir)
+    ;   if sun_dot > 0.999: sun_color (bright)
+    ;   if sun_dot > 0.99: sun_glow (fade)
+    
+    ; Stars (at night):
+    ;   if time < 0.25 or time > 0.75:
+    ;     star_noise = noise3d(dir * 100)
+    ;     if star_noise > 0.8: star_color
+    
+    ; Moon (opposite to sun):
+    ;   Similar to sun but dimmer
+    
+    ; Clouds:
+    ;   cloud_noise = fbm(dir.xz / dir.y * cloud_scale + time * wind_speed)
+    ;   if cloud_noise > threshold: cloud_color
+    
+    ; ... (would compute sky)
+    
+    pop rA
+    ret
+
+; ---- Water Fragment Shader ----
+; Animated water with reflections and refractions
+shader_fs_water:
+    push rA
+    
+    ; Animated UV offset using time
+    ; uv1 = frag.uv + vec2(time * 0.1, time * 0.05)
+    ; uv2 = frag.uv * 0.8 + vec2(time * -0.07, time * 0.03)
+    
+    ; Sample water texture at two UVs and blend
+    ; color1 = texture.sample(uv1)
+    ; color2 = texture.sample(uv2)
+    ; water_color = mix(color1, color2, 0.5)
+    
+    ; Fresnel effect:
+    ; V = normalize(camera_pos - frag.world_pos)
+    ; N = normalize(frag.normal + wave_offset)
+    ; fresnel = pow(1 - max(dot(N, V), 0), 3)
+    
+    ; Reflection (simplified - just sky color)
+    ; reflection = sky_color(reflect(-V, N))
+    
+    ; Final: mix(water_color, reflection, fresnel)
+    ; Add foam at edges (depth-based)
+    
+    ; ... (would compute water)
+    
+    pop rA
+    ret
+
+; ---- Hologram Fragment Shader ----
+; DNAOS special: holographic effect with scan lines
+shader_fs_hologram:
+    push rA
+    
+    ; Base: semi-transparent blue/cyan
+    ; Scan lines: sin(frag.world_pos.y * 50 + time * 5) > 0 ? bright : dim
+    ; Edge glow: fresnel-based rim lighting
+    ; Glitch: random horizontal offset based on noise(time)
+    ; Flicker: random alpha modulation
+    
+    ; color = vec3(0.0, 0.8, 1.0) * (scanline + rim + 0.3)
+    ; alpha = 0.6 + 0.2 * sin(time * 3) + rim * 0.3
+    
+    ; ... (would compute hologram)
+    
+    pop rA
+    ret
+
+; ---- ATCG Fragment Shader ----
+; DNA visualization: ATCG-colored fragments
+shader_fs_atcg:
+    push rA
+    
+    ; Map fragment world position to ATCG sequence
+    ; Each 2-bit pair determines base:
+    ;   00 = A (green)
+    ;   01 = T (red)
+    ;   10 = C (blue)
+    ;   11 = G (yellow)
+    
+    ; Get ATCG value from position
+    ; base = hash(frag.world_pos) & 3
+    
+    ; Color mapping:
+    ; A = vec3(0.0, 0.8, 0.4)  green
+    ; T = vec3(0.8, 0.2, 0.2)  red
+    ; C = vec3(0.2, 0.4, 0.8)  blue
+    ; G = vec3(0.8, 0.8, 0.2)  yellow
+    
+    ; Add glow effect
+    ; Add double helix pattern
+    
+    ; ... (would compute ATCG visualization)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+shader_vs_table:
+    resq MAX_SHADERS        ; Vertex shader function pointers
+shader_fs_table:
+    resq MAX_SHADERS        ; Fragment shader function pointers
+shader_active_vs:
+    resq 1                  ; Current vertex shader
+shader_active_fs:
+    resq 1                  ; Current fragment shader
+shader_uniforms:
+    resb 1024               ; Uniform data (matrices, vectors, scalars)

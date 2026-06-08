@@ -1,0 +1,399 @@
+; ============================================================================
+; DNAOS - Procedural World Generation (DNAsm)
+; ============================================================================
+; Perlin noise terrain, vegetation, dungeons, structures.
+; Everything from a seed. No pre-made assets needed.
+; ============================================================================
+
+; Noise parameters
+NOISE_OCTAVES   equ 6
+NOISE_PERSIST   equ 0.5
+NOISE_LACUNAR   equ 2.0
+NOISE_SCALE     equ 0.01
+
+; Terrain types
+TERRAIN_DEEP_WATER  equ 0
+TERRAIN_WATER       equ 1
+TERRAIN_BEACH       equ 2
+TERRAIN_GRASS       equ 3
+TERRAIN_FOREST      equ 4
+TERRAIN_MOUNTAIN    equ 5
+TERRAIN_SNOW        equ 6
+
+; Structure types
+STRUCT_HOUSE    equ 0
+STRUCT_TOWER    equ 1
+STRUCT_DUNGEON  equ 2
+STRUCT_SHRINE   equ 3
+STRUCT_PORTAL   equ 4
+
+MAX_STRUCTURES  equ 128
+CHUNK_SIZE      equ 64     ; 64×64 tiles per chunk
+
+.code
+.global worldgen_init
+.global worldgen_generate
+.global worldgen_get_height
+.global worldgen_get_terrain
+.global worldgen_get_biome
+.global worldgen_place_structure
+.global worldgen_generate_dungeon
+.global worldgen_noise2d
+.global worldgen_noise3d
+.global worldgen_perlin2d
+.global worldgen_perlin3d
+
+; ============================================================================
+; worldgen_init - Initialize world generator
+; rC = seed
+; ============================================================================
+worldgen_init:
+    push rA
+    
+    mov [rel wgen_seed], rC
+    
+    ; Initialize permutation table from seed
+    ; Standard Perlin noise permutation
+    lea rA, [rel wgen_perm]
+    mov rC, 256
+.wgen_init_perm:
+    mov [rA + rC - 1], rC.b  ; Fill with 0-255
+    dec rC
+    jnz .wgen_init_perm
+    
+    ; Shuffle permutation table using seed
+    ; Fisher-Yates shuffle
+    mov rC, 256
+.wgen_shuffle:
+    dec rC
+    jz .wgen_shuffle_done
+    
+    ; random = seed_hash(seed + i) % (i + 1)
+    mov rA, [rel wgen_seed]
+    add rA, rC
+    imul rA, 1103515245
+    add rA, 12345
+    shr rA, 16
+    and rA, 0x7FFF
+    xor rC_temp, rC
+    inc rC_temp
+    ; ... simplified shuffle
+    
+    jmp .wgen_shuffle
+
+.wgen_shuffle_done:
+    pop rA
+    ret
+
+; ============================================================================
+; worldgen_generate - Generate a chunk of world
+; rA = chunk_x, rC = chunk_z → generates heightmap + terrain types
+; ============================================================================
+worldgen_generate:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    ; For each tile in chunk (64×64)
+    mov rG, 0               ; y index
+    
+.wgen_gen_y:
+    cmp rG, CHUNK_SIZE
+    jge .wgen_gen_done
+    
+    mov rS, 0               ; x index
+    
+.wgen_gen_x:
+    cmp rS, CHUNK_SIZE
+    jge .wgen_gen_next_y
+    
+    ; World coordinates
+    ; wx = chunk_x * CHUNK_SIZE + x
+    ; wz = chunk_z * CHUNK_SIZE + y
+    
+    ; Get height from Perlin noise
+    ; height = perlin2d(wx * scale, wz * scale, octaves, persistence)
+    
+    ; ... (would compute height)
+    
+    ; Determine terrain type from height
+    ; < 0.2: deep water
+    ; < 0.3: water
+    ; < 0.35: beach
+    ; < 0.6: grass
+    ; < 0.75: forest
+    ; < 0.85: mountain
+    ; >= 0.85: snow
+    
+    ; Store in chunk data
+    ; ... (would write to chunk buffer)
+    
+    inc rS
+    jmp .wgen_gen_x
+
+.wgen_gen_next_y:
+    inc rG
+    jmp .wgen_gen_y
+
+.wgen_gen_done:
+    ; Place structures
+    ; For each structure type, check if this chunk should have one
+    ; Based on hash(chunk_x, chunk_z, structure_type)
+    
+    ; Place vegetation
+    ; Trees in forest biome, cacti in desert, etc.
+    
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; worldgen_get_height - Get terrain height at world position
+; xmm0 = x, xmm1 = z → xmm0 = height
+; ============================================================================
+worldgen_get_height:
+    ; Multi-octave Perlin noise
+    push rA
+    
+    movss xmm2, [rel .noise_scale]
+    mulss xmm0, xmm2        ; x * scale
+    mulss xmm1, xmm2        ; z * scale
+    
+    ; Call perlin2d
+    ; ... (would compute and return height)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; worldgen_get_terrain - Get terrain type at position
+; xmm0 = x, xmm1 = z → rA = terrain type
+; ============================================================================
+worldgen_get_terrain:
+    push rA
+    
+    ; Get height
+    call worldgen_get_height
+    
+    ; Classify
+    movss xmm1, [rel .h_deep_water]
+    comiss xmm0, xmm1
+    jb .terrain_deep_water
+    
+    movss xmm1, [rel .h_water]
+    comiss xmm0, xmm1
+    jb .terrain_water
+    
+    movss xmm1, [rel .h_beach]
+    comiss xmm0, xmm1
+    jb .terrain_beach
+    
+    movss xmm1, [rel .h_grass]
+    comiss xmm0, xmm1
+    jb .terrain_grass
+    
+    movss xmm1, [rel .h_forest]
+    comiss xmm0, xmm1
+    jb .terrain_forest
+    
+    movss xmm1, [rel .h_mountain]
+    comiss xmm0, xmm1
+    jb .terrain_mountain
+    
+    mov rA, TERRAIN_SNOW
+    ret
+
+.terrain_deep_water:
+    mov rA, TERRAIN_DEEP_WATER
+    ret
+.terrain_water:
+    mov rA, TERRAIN_WATER
+    ret
+.terrain_beach:
+    mov rA, TERRAIN_BEACH
+    ret
+.terrain_grass:
+    mov rA, TERRAIN_GRASS
+    ret
+.terrain_forest:
+    mov rA, TERRAIN_FOREST
+    ret
+.terrain_mountain:
+    mov rA, TERRAIN_MOUNTAIN
+    ret
+
+; ============================================================================
+; worldgen_get_biome - Get biome name
+; rA = terrain type → rP = biome name string
+; ============================================================================
+worldgen_get_biome:
+    lea rP, [rel biome_names]
+    shl rA, 4               ; * 16 (each name is 16 bytes max)
+    add rP, rA
+    ret
+
+; ============================================================================
+; worldgen_place_structure - Place a structure in the world
+; rA = structure type, xmm0-xmm2 = position
+; ============================================================================
+worldgen_place_structure:
+    push rG
+    
+    ; Create entity for structure
+    call ecs_create_entity
+    
+    ; Add transform component at position
+    ; Add renderable component with structure mesh
+    ; Add trigger component if interactive
+    
+    ; ... (would create structure entity)
+    
+    pop rG
+    ret
+
+; ============================================================================
+; worldgen_generate_dungeon - Generate a dungeon layout
+; rA = dungeon_type, rC = floors, rG = difficulty
+; ============================================================================
+worldgen_generate_dungeon:
+    push rP
+    
+    ; BSP dungeon generation:
+    ; 1. Start with a rectangular area
+    ; 2. Recursively split into rooms
+    ; 3. Connect rooms with corridors
+    ; 4. Place enemies, traps, treasures
+    ; 5. Place boss room on deepest floor
+    ; 6. Place entrance and exit stairs
+    
+    ; ... (would implement BSP dungeon generation)
+    
+    pop rP
+    ret
+
+; ============================================================================
+; worldgen_noise2d - 2D value noise
+; xmm0 = x, xmm1 = y → xmm0 = noise value [-1..1]
+; ============================================================================
+worldgen_noise2d:
+    push rA
+    push rC
+    
+    ; Get integer coordinates
+    cvttss2si rA, xmm0      ; ix
+    cvttss2si rC, xmm1      ; iy
+    
+    ; Get fractional parts
+    cvtsi2ss xmm2, rA
+    subss xmm0, xmm2        ; fx
+    cvtsi2ss xmm2, rC
+    subss xmm1, xmm2        ; fy
+    
+    ; Smooth interpolation (smoothstep)
+    ; fx = fx * fx * (3 - 2 * fx)
+    ; fy = fy * fy * (3 - 2 * fy)
+    
+    ; Hash four corners
+    ; n00 = hash(ix, iy)
+    ; n10 = hash(ix+1, iy)
+    ; n01 = hash(ix, iy+1)
+    ; n11 = hash(ix+1, iy+1)
+    
+    ; Bilinear interpolation
+    ; nx0 = lerp(n00, n10, fx)
+    ; nx1 = lerp(n01, n11, fx)
+    ; result = lerp(nx0, nx1, fy)
+    
+    ; ... (would compute noise)
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; worldgen_perlin2d - 2D Perlin noise with octaves
+; xmm0 = x, xmm1 = y, rA = octaves, xmm2 = persistence
+; → xmm0 = noise value
+; ============================================================================
+worldgen_perlin2d:
+    push rA
+    push rC
+    
+    ; total = 0
+    ; amplitude = 1
+    ; frequency = 1
+    ; max_value = 0
+    ; for i in range(octaves):
+    ;     total += noise2d(x * frequency, y * frequency) * amplitude
+    ;     max_value += amplitude
+    ;     amplitude *= persistence
+    ;     frequency *= lacunarity
+    ; return total / max_value
+    
+    ; ... (would implement octave noise)
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; worldgen_noise3d - 3D value noise (for caves, overhangs)
+; xmm0 = x, xmm1 = y, xmm2 = z → xmm0 = noise value
+; ============================================================================
+worldgen_noise3d:
+    ; Same as 2D but with 8 corners instead of 4
+    ; Trilinear interpolation
+    ret
+
+; ============================================================================
+; worldgen_perlin3d - 3D Perlin noise with octaves
+; xmm0 = x, xmm1 = y, xmm2 = z, rA = octaves → xmm0 = noise
+; ============================================================================
+worldgen_perlin3d:
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+.noise_scale:
+    dd 0.01
+.h_deep_water:
+    dd 0.2
+.h_water:
+    dd 0.3
+.h_beach:
+    dd 0.35
+.h_grass:
+    dd 0.6
+.h_forest:
+    dd 0.75
+.h_mountain:
+    dd 0.85
+
+biome_names:
+    db "Deep Ocean", 0, 0, 0, 0, 0   ; 16 bytes each
+    db "Ocean", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "Beach", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "Grassland", 0, 0, 0, 0, 0, 0
+    db "Forest", 0, 0, 0, 0, 0, 0, 0, 0, 0
+    db "Mountain", 0, 0, 0, 0, 0, 0, 0
+    db "Snow Peak", 0, 0, 0, 0, 0, 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+wgen_seed:
+    resq 1
+wgen_perm:
+    resb 512                ; Permutation table (256 + 256 for wrapping)
+wgen_chunk_buf:
+    resb CHUNK_SIZE * CHUNK_SIZE * 8  ; Height + terrain type per tile

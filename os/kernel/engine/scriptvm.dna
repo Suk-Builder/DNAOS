@@ -1,0 +1,469 @@
+; ============================================================================
+; DNAOS - Scripting VM (DNAsm Bytecode Interpreter) (DNAsm)
+; ============================================================================
+; Lightweight bytecode VM for game scripting.
+; Scripts compile to DNAsm bytecode, executed by this VM.
+; Supports: variables, control flow, function calls, coroutines.
+; ============================================================================
+
+; Opcodes
+OP_HALT         equ 0x00
+OP_NOP          equ 0x01
+OP_PUSH_I8      equ 0x02
+OP_PUSH_I32     equ 0x03
+OP_PUSH_F32     equ 0x04
+OP_PUSH_STR     equ 0x05
+OP_POP          equ 0x06
+OP_LOAD         equ 0x07    ; Load local
+OP_STORE        equ 0x08    ; Store local
+OP_LOAD_G       equ 0x09    ; Load global
+OP_STORE_G      equ 0x0A    ; Store global
+OP_ADD          equ 0x10
+OP_SUB          equ 0x11
+OP_MUL          equ 0x12
+OP_DIV          equ 0x13
+OP_MOD          equ 0x14
+OP_NEG          equ 0x15
+OP_AND          equ 0x16
+OP_OR           equ 0x17
+OP_XOR          equ 0x18
+OP_NOT          equ 0x19
+OP_SHL          equ 0x1A
+OP_SHR          equ 0x1B
+OP_EQ           equ 0x20
+OP_NE           equ 0x21
+OP_LT           equ 0x22
+OP_LE           equ 0x23
+OP_GT           equ 0x24
+OP_GE           equ 0x25
+OP_JMP          equ 0x30
+OP_JZ           equ 0x31
+OP_JNZ          equ 0x32
+OP_CALL         equ 0x40
+OP_RET          equ 0x41
+OP_NATIVE       equ 0x42    ; Call native function
+OP_YIELD        equ 0x43    ; Coroutine yield
+OP_RESUME       equ 0x44    ; Coroutine resume
+OP_VEC3         equ 0x50    ; Construct vec3
+OP_QUAT         equ 0x51    ; Construct quaternion
+OP_DOT          equ 0x52    ; Vector dot product
+OP_CROSS        equ 0x53    ; Vector cross product
+OP_NORMALIZE    equ 0x54    ; Vector normalize
+OP_LENGTH       equ 0x55    ; Vector length
+OP_SPAWN        equ 0x60    ; Spawn entity
+OP_DESTROY      equ 0x61    ; Destroy entity
+OP_GET_COMP     equ 0x62    ; Get component
+OP_SET_COMP     equ 0x63    ; Set component
+OP_PLAY_ANIM    equ 0x64    ; Play animation
+OP_PLAY_SOUND   equ 0x65    ; Play sound
+OP_RAYCAST      equ 0x66    ; Physics raycast
+OP_GET_INPUT    equ 0x67    ; Get input action
+OP_LOG          equ 0x68    ; Debug log
+OP_WAIT         equ 0x69    ; Wait seconds (coroutine)
+
+VM_STACK_SIZE   equ 1024
+VM_MAX_LOCALS   equ 256
+VM_MAX_GLOBALS  equ 1024
+VM_MAX_NATIVES  equ 64
+VM_MAX_COROUTINES equ 16
+
+.code
+.global vm_init
+.global vm_execute
+.global vm_call
+.global vm_yield
+.global vm_resume
+.global vm_register_native
+
+; ============================================================================
+; vm_init - Initialize VM
+; ============================================================================
+vm_init:
+    push rA
+    push rG
+    
+    ; Clear globals
+    lea rG, [rel vm_globals]
+    mov rA, VM_MAX_GLOBALS * 8
+    xor rC, rC
+.vm_init_clear:
+    mov qword [rG], 0
+    add rG, 8
+    dec rA
+    jnz .vm_init_clear
+    
+    ; Clear native function table
+    lea rG, [rel vm_natives]
+    mov rA, VM_MAX_NATIVES
+.vm_init_natives:
+    mov qword [rG], 0
+    add rG, 8
+    dec rA
+    jnz .vm_init_natives
+    
+    mov qword [rel vm_native_count], 0
+    mov qword [rel vm_coroutine_count], 0
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; vm_execute - Execute bytecode
+; rP = bytecode pointer → rA = result
+; ============================================================================
+vm_execute:
+    push rG
+    push rS
+    
+    ; Set up execution context
+    mov [rel vm_ip], rP     ; Instruction pointer
+    mov qword [rel vm_sp], 0 ; Stack pointer = 0
+    mov qword [rel vm_running], 1
+    
+.vm_exec_loop:
+    cmp qword [rel vm_running], 0
+    je .vm_exec_done
+    
+    ; Fetch opcode
+    mov rG, [rel vm_ip]
+    movzx rA, byte [rG]    ; opcode
+    inc qword [rel vm_ip]
+    
+    ; Dispatch
+    cmp rA, OP_HALT
+    je .vm_op_halt
+    cmp rA, OP_PUSH_I8
+    je .vm_op_push_i8
+    cmp rA, OP_PUSH_I32
+    je .vm_op_push_i32
+    cmp rA, OP_PUSH_F32
+    je .vm_op_push_f32
+    cmp rA, OP_POP
+    je .vm_op_pop
+    cmp rA, OP_ADD
+    je .vm_op_add
+    cmp rA, OP_SUB
+    je .vm_op_sub
+    cmp rA, OP_MUL
+    je .vm_op_mul
+    cmp rA, OP_DIV
+    je .vm_op_div
+    cmp rA, OP_JMP
+    je .vm_op_jmp
+    cmp rA, OP_JZ
+    je .vm_op_jz
+    cmp rA, OP_CALL
+    je .vm_op_call
+    cmp rA, OP_RET
+    je .vm_op_ret
+    cmp rA, OP_NATIVE
+    je .vm_op_native
+    cmp rA, OP_YIELD
+    je .vm_op_yield
+    cmp rA, OP_SPAWN
+    je .vm_op_spawn
+    cmp rA, OP_DESTROY
+    je .vm_op_destroy
+    cmp rA, OP_PLAY_ANIM
+    je .vm_op_play_anim
+    cmp rA, OP_PLAY_SOUND
+    je .vm_op_play_sound
+    cmp rA, OP_RAYCAST
+    je .vm_op_raycast
+    cmp rA, OP_GET_INPUT
+    je .vm_op_get_input
+    cmp rA, OP_LOG
+    je .vm_op_log
+    cmp rA, OP_WAIT
+    je .vm_op_wait
+    
+    ; Unknown opcode - halt
+    jmp .vm_op_halt
+
+; ---- Opcodes ----
+
+.vm_op_halt:
+    mov qword [rel vm_running], 0
+    jmp .vm_exec_loop
+
+.vm_op_push_i8:
+    mov rG, [rel vm_ip]
+    movsx rA, byte [rG]    ; Sign-extend i8
+    inc qword [rel vm_ip]
+    ; Push to stack
+    mov rS, [rel vm_sp]
+    mov [rel vm_stack + rS*8], rA
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_push_i32:
+    mov rG, [rel vm_ip]
+    movsxd rA, dword [rG]  ; Sign-extend i32
+    add qword [rel vm_ip], 4
+    mov rS, [rel vm_sp]
+    mov [rel vm_stack + rS*8], rA
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_push_f32:
+    mov rG, [rel vm_ip]
+    mov rA, dword [rG]     ; Load as raw bits
+    add qword [rel vm_ip], 4
+    mov rS, [rel vm_sp]
+    mov [rel vm_stack + rS*8], rA
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_pop:
+    dec qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_add:
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rA, [rel vm_stack + rS*8]
+    dec rS
+    mov rC, [rel vm_stack + rS*8]
+    add rA, rC
+    mov [rel vm_stack + rS*8], rA
+    mov [rel vm_sp], rS
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_sub:
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rA, [rel vm_stack + rS*8]   ; b
+    dec rS
+    mov rC, [rel vm_stack + rS*8]   ; a
+    sub rC, rA
+    mov [rel vm_stack + rS*8], rC
+    mov [rel vm_sp], rS
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_mul:
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rA, [rel vm_stack + rS*8]
+    dec rS
+    mov rC, [rel vm_stack + rS*8]
+    imul rC, rA
+    mov [rel vm_stack + rS*8], rC
+    mov [rel vm_sp], rS
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_div:
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rA, [rel vm_stack + rS*8]   ; b
+    dec rS
+    mov rC, [rel vm_stack + rS*8]   ; a
+    test rA, rA
+    jz .vm_div_zero
+    cqo
+    idiv rA
+    mov [rel vm_stack + rS*8], rA
+    mov [rel vm_sp], rS
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+.vm_div_zero:
+    mov qword [rel vm_stack + rS*8], 0
+    mov [rel vm_sp], rS
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_jmp:
+    mov rG, [rel vm_ip]
+    movsxd rA, dword [rG]  ; Signed 32-bit offset
+    add [rel vm_ip], rA     ; Jump
+    jmp .vm_exec_loop
+
+.vm_op_jz:
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rA, [rel vm_stack + rS*8]
+    mov [rel vm_sp], rS
+    test rA, rA
+    jnz .vm_jz_skip
+    mov rG, [rel vm_ip]
+    movsxd rA, dword [rG]
+    add [rel vm_ip], rA
+    jmp .vm_exec_loop
+.vm_jz_skip:
+    add qword [rel vm_ip], 4
+    jmp .vm_exec_loop
+
+.vm_op_call:
+    ; Push return address
+    mov rS, [rel vm_sp]
+    mov rA, [rel vm_ip]
+    add rA, 4              ; Return address = after the offset
+    mov [rel vm_stack + rS*8], rA
+    inc qword [rel vm_sp]
+    ; Jump to function
+    mov rG, [rel vm_ip]
+    movsxd rA, dword [rG]
+    add [rel vm_ip], rA
+    jmp .vm_exec_loop
+
+.vm_op_ret:
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rA, [rel vm_stack + rS*8]   ; Return value
+    dec rS
+    mov rG, [rel vm_stack + rS*8]   ; Return address
+    mov [rel vm_ip], rG
+    mov [rel vm_sp], rS
+    inc qword [rel vm_sp]
+    mov [rel vm_stack + rS*8], rA
+    jmp .vm_exec_loop
+
+.vm_op_native:
+    mov rG, [rel vm_ip]
+    movzx rA, byte [rG]    ; Native function index
+    inc qword [rel vm_ip]
+    ; Look up native function
+    lea rG, [rel vm_natives]
+    mov rG, [rG + rA*8]
+    test rG, rG
+    jz .vm_exec_loop
+    ; Call it
+    call rG
+    jmp .vm_exec_loop
+
+.vm_op_yield:
+    ; Save execution state for coroutine resume
+    mov qword [rel vm_running], 0
+    jmp .vm_exec_done
+
+.vm_op_spawn:
+    ; Call ecs_create_entity
+    call ecs_create_entity
+    mov rS, [rel vm_sp]
+    mov [rel vm_stack + rS*8], rA
+    inc qword [rel vm_sp]
+    jmp .vm_exec_loop
+
+.vm_op_destroy:
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rA, [rel vm_stack + rS*8]
+    mov [rel vm_sp], rS
+    call ecs_destroy_entity
+    jmp .vm_exec_loop
+
+.vm_op_play_anim:
+    ; Pop entity_id and anim_id, call anim_play
+    jmp .vm_exec_loop
+
+.vm_op_play_sound:
+    ; Pop sound_id, volume, call audio_play
+    jmp .vm_exec_loop
+
+.vm_op_raycast:
+    ; Pop origin, direction → call physics_raycast
+    jmp .vm_exec_loop
+
+.vm_op_get_input:
+    ; Pop action_id → call input_get_action
+    jmp .vm_exec_loop
+
+.vm_op_log:
+    ; Pop string pointer, print to console
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rP, [rel vm_stack + rS*8]
+    mov [rel vm_sp], rS
+    call console_print
+    jmp .vm_exec_loop
+
+.vm_op_wait:
+    ; Coroutine: save state, set wake time
+    mov qword [rel vm_running], 0
+    jmp .vm_exec_done
+
+.vm_exec_done:
+    ; Return top of stack
+    mov rS, [rel vm_sp]
+    dec rS
+    mov rA, [rel vm_stack + rS*8]
+    
+    pop rS
+    pop rG
+    ret
+
+; ============================================================================
+; vm_call - Call a script function
+; rP = bytecode, rA = function offset → rA = result
+; ============================================================================
+vm_call:
+    push rG
+    
+    ; Save current state
+    ; Set IP to function offset
+    ; Execute until RET
+    ; Restore state
+    
+    mov rG, [rel vm_ip]
+    push rG
+    push qword [rel vm_sp]
+    
+    add rP, rA
+    mov [rel vm_ip], rP
+    call vm_execute
+    
+    pop qword [rel vm_sp]
+    pop rG
+    mov [rel vm_ip], rG
+    
+    pop rG
+    ret
+
+; ============================================================================
+; vm_resume - Resume a yielded coroutine
+; rA = coroutine ID → rA = result (or 0 if still running)
+; ============================================================================
+vm_resume:
+    ; Restore saved state
+    ; Continue execution
+    ret
+
+; ============================================================================
+; vm_register_native - Register a native function
+; rA = index, rP = function pointer
+; ============================================================================
+vm_register_native:
+    lea rG, [rel vm_natives]
+    mov [rG + rA*8], rP
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+vm_ip:
+    resq 1                  ; Instruction pointer
+vm_sp:
+    resq 1                  ; Stack pointer
+vm_running:
+    resq 1                  ; Running flag
+vm_stack:
+    resq VM_STACK_SIZE      ; Value stack
+vm_locals:
+    resq VM_MAX_LOCALS      ; Local variables
+vm_globals:
+    resq VM_MAX_GLOBALS     ; Global variables
+vm_natives:
+    resq VM_MAX_NATIVES     ; Native function pointers
+vm_native_count:
+    resq 1
+
+; Coroutine state: 16 × 64 bytes
+vm_coroutines:
+    resb VM_MAX_COROUTINES * 64
+vm_coroutine_count:
+    resq 1

@@ -1,0 +1,215 @@
+; ============================================================================
+; DNAOS - Mesh & Model System (DNAsm)
+; ============================================================================
+; Procedural mesh generation. No external 3D models needed.
+; Everything is generated from code: spheres, cubes, terrain, characters.
+; ============================================================================
+
+; Mesh flags
+MESH_INDEXED     equ 0x01
+MESH_DYNAMIC     equ 0x02
+MESH_SKINNED     equ 0x04
+
+; Vertex format
+; position:  vec3  (12 bytes)
+; normal:    vec3  (12 bytes)
+; texcoord:  vec2  (8 bytes)
+; color:     dword (4 bytes)
+; Total: 36 bytes per vertex
+
+.code
+.global mesh_create_cube
+.global mesh_create_sphere
+.global mesh_create_plane
+.global mesh_create_cylinder
+.global mesh_create_cone
+.global mesh_create_terrain
+.global mesh_create_billboard
+.global mesh_create_character
+.global mesh_free
+.global mesh_compute_normals
+.global mesh_compute_tangents
+.global mesh_compute_bounds
+
+; ============================================================================
+; mesh_create_cube - Generate unit cube mesh
+; rP = output vertex buffer, rG = output index buffer → rA = vertex count, rC = index count
+; ============================================================================
+mesh_create_cube:
+    push rS
+    
+    ; 6 faces × 4 vertices = 24 vertices
+    ; 6 faces × 2 triangles × 3 indices = 36 indices
+    
+    ; Front face (z = +0.5)
+    ; v0: (-0.5, -0.5,  0.5)  normal (0, 0, 1)  uv (0, 1)
+    ; v1: ( 0.5, -0.5,  0.5)  normal (0, 0, 1)  uv (1, 1)
+    ; v2: ( 0.5,  0.5,  0.5)  normal (0, 0, 1)  uv (1, 0)
+    ; v3: (-0.5,  0.5,  0.5)  normal (0, 0, 1)  uv (0, 0)
+    
+    ; ... (would write all 24 vertices)
+    
+    ; Indices: 0,1,2, 0,2,3, 4,5,6, 4,6,7, ...
+    
+    mov rA, 24              ; vertex count
+    mov rC, 36              ; index count
+    
+    pop rS
+    ret
+
+; ============================================================================
+; mesh_create_sphere - Generate UV sphere mesh
+; rP = output, xmm0 = radius, rC = segments, rG = rings
+; → rA = vertex count, rC = index count
+; ============================================================================
+mesh_create_sphere:
+    push rS
+    
+    ; vertices = (rings + 1) * (segments + 1)
+    ; indices = rings * segments * 6
+    
+    ; For each ring (latitude):
+    ;   phi = PI * ring / rings
+    ;   For each segment (longitude):
+    ;     theta = 2 * PI * segment / segments
+    ;     x = sin(phi) * cos(theta)
+    ;     y = cos(phi)
+    ;     z = sin(phi) * sin(theta)
+    ;     normal = (x, y, z)  (unit sphere)
+    ;     uv = (segment / segments, ring / rings)
+    
+    ; ... (would generate sphere vertices)
+    
+    pop rS
+    ret
+
+; ============================================================================
+; mesh_create_plane - Generate ground plane
+; rP = output, xmm0 = width, xmm1 = depth, rC = subdivisions_x, rG = subdivisions_z
+; ============================================================================
+mesh_create_plane:
+    push rS
+    
+    ; Flat plane at y=0
+    ; Grid of (subdivisions_x + 1) × (subdivisions_z + 1) vertices
+    ; All normals pointing up (0, 1, 0)
+    
+    ; ... (would generate plane vertices)
+    
+    pop rS
+    ret
+
+; ============================================================================
+; mesh_create_cylinder - Generate cylinder
+; rP = output, xmm0 = radius, xmm1 = height, rC = segments
+; ============================================================================
+mesh_create_cylinder:
+    ret
+
+; ============================================================================
+; mesh_create_cone - Generate cone
+; rP = output, xmm0 = radius, xmm1 = height, rC = segments
+; ============================================================================
+mesh_create_cone:
+    ret
+
+; ============================================================================
+; mesh_create_terrain - Generate terrain mesh from heightmap
+; rP = output, rS = heightmap, rC = width, rG = height, xmm0 = scale
+; ============================================================================
+mesh_create_terrain:
+    push rS
+    
+    ; For each point in heightmap:
+    ;   position = (x * scale, heightmap[y * width + x], z * scale)
+    ;   normal = cross(tangent_x, tangent_z)
+    ;   uv = (x / width, z / height)
+    
+    ; ... (would generate terrain mesh)
+    
+    pop rS
+    ret
+
+; ============================================================================
+; mesh_create_billboard - Generate billboard quad (always faces camera)
+; rP = output, xmm0 = width, xmm1 = height
+; ============================================================================
+mesh_create_billboard:
+    ; 4 vertices, 6 indices
+    ; Position will be offset in vertex shader to face camera
+    ret
+
+; ============================================================================
+; mesh_create_character - Generate simple humanoid character
+; rP = output → rA = vertex count, rC = index count
+; ============================================================================
+mesh_create_character:
+    push rS
+    
+    ; Procedural humanoid:
+    ; Head = sphere
+    ; Body = scaled cube
+    ; Arms = cylinders
+    ; Legs = cylinders
+    
+    ; All merged into one mesh with proper normals
+    
+    ; ... (would generate character mesh)
+    
+    pop rS
+    ret
+
+; ============================================================================
+; mesh_compute_normals - Recompute face normals
+; rP = vertex buffer, rC = vertex count, rG = index buffer, rS = index count
+; ============================================================================
+mesh_compute_normals:
+    push rA
+    
+    ; For each triangle:
+    ;   v0, v1, v2 = vertices
+    ;   edge1 = v1 - v0
+    ;   edge2 = v2 - v0
+    ;   normal = normalize(cross(edge1, edge2))
+    ;   v0.normal += normal
+    ;   v1.normal += normal
+    ;   v2.normal += normal
+    
+    ; After all triangles:
+    ;   For each vertex: normalize(normal)
+    
+    ; ... (would compute normals)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; mesh_compute_tangents - Compute tangent vectors for normal mapping
+; ============================================================================
+mesh_compute_tangents:
+    ret
+
+; ============================================================================
+; mesh_compute_bounds - Compute bounding box
+; rP = vertex buffer, rC = vertex count → output to rG (aabb_min), rS (aabb_max)
+; ============================================================================
+mesh_compute_bounds:
+    push rA
+    
+    ; Initialize min/max to first vertex
+    ; For each vertex:
+    ;   min = component-wise min(min, vertex)
+    ;   max = component-wise max(max, vertex)
+    
+    ; ... (would compute bounds)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; mesh_free - Free mesh data
+; rP = mesh pointer
+; ============================================================================
+mesh_free:
+    ; Would call pmm_free_page for mesh buffers
+    ret

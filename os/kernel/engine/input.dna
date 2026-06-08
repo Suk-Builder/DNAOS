@@ -1,0 +1,356 @@
+; ============================================================================
+; DNAOS - Input System (DNAsm)
+; ============================================================================
+; Unified input handling: keyboard, mouse, gamepad.
+; Input mapping, action system, dead zones, input recording.
+; ============================================================================
+
+MAX_ACTIONS      equ 64
+MAX_BINDINGS     equ 256
+MAX_GAMEPADS     equ 4
+
+; Input action states
+ACTION_RELEASED  equ 0
+ACTION_PRESSED   equ 1
+ACTION_HELD      equ 2
+ACTION_JUST_RELEASED equ 3
+
+; Input source types
+SRC_KEYBOARD     equ 0
+SRC_MOUSE_BTN    equ 1
+SRC_MOUSE_AXIS   equ 2
+SRC_GAMEPAD_BTN  equ 3
+SRC_GAMEPAD_AXIS equ 4
+
+.code
+.global input_init
+.global input_update
+.global input_bind_key
+.global input_bind_mouse
+.global input_bind_gamepad
+.global input_get_action
+.global input_get_axis
+.global input_get_mouse_pos
+.global input_get_mouse_delta
+.global input_get_mouse_scroll
+.global input_is_key_down
+.global input_is_mouse_down
+.global input_record_start
+.global input_record_stop
+.global input_playback
+
+; ============================================================================
+; input_init - Initialize input system
+; ============================================================================
+input_init:
+    push rA
+    push rC
+    push rG
+    
+    ; Clear key states
+    lea rG, [rel input_key_states]
+    mov rC, 128
+    xor rA, rA
+.input_init_keys:
+    mov [rG], rA.b
+    inc rG
+    dec rC
+    jnz .input_init_keys
+    
+    ; Clear mouse state
+    mov qword [rel input_mouse_x], 0
+    mov qword [rel input_mouse_y], 0
+    mov qword [rel input_mouse_dx], 0
+    mov qword [rel input_mouse_dy], 0
+    mov qword [rel input_mouse_buttons], 0
+    mov qword [rel input_mouse_scroll], 0
+    
+    ; Clear action states
+    lea rG, [rel input_actions]
+    mov rC, MAX_ACTIONS * 8
+    xor rA, rA
+.input_init_actions:
+    mov [rG], rA.b
+    inc rG
+    dec rC
+    jnz .input_init_actions
+    
+    mov qword [rel input_binding_count], 0
+    mov qword [rel input_recording], 0
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; input_update - Update input state (called once per frame)
+; ============================================================================
+input_update:
+    push rA
+    push rC
+    push rG
+    
+    ; Reset deltas
+    mov qword [rel input_mouse_dx], 0
+    mov qword [rel input_mouse_dy], 0
+    mov qword [rel input_mouse_scroll], 0
+    
+    ; Update action states
+    ; For each action:
+    ;   if was PRESSED and still held → HELD
+    ;   if was JUST_RELEASED → RELEASED
+    lea rG, [rel input_actions]
+    mov rC, MAX_ACTIONS
+.input_update_actions:
+    cmp dword [rG + 4], ACTION_PRESSED
+    je .input_update_to_held
+    cmp dword [rG + 4], ACTION_JUST_RELEASED
+    je .input_update_to_released
+    jmp .input_update_next
+
+.input_update_to_held:
+    mov dword [rG + 4], ACTION_HELD
+    jmp .input_update_next
+
+.input_update_to_released:
+    mov dword [rG + 4], ACTION_RELEASED
+
+.input_update_next:
+    add rG, 8
+    dec rC
+    jnz .input_update_actions
+    
+    ; Process bindings
+    lea rG, [rel input_bindings]
+    mov rC, [rel input_binding_count]
+.input_update_bindings:
+    test rC, rC
+    jz .input_update_done
+    
+    ; Check if source is active
+    ; If yes, set action state to PRESSED
+    ; If no and action was HELD/PRESSED, set to JUST_RELEASED
+    
+    ; ... (would check each binding's source and update action)
+    
+    dec rC
+    jmp .input_update_bindings
+
+.input_update_done:
+    ; Record input if recording
+    cmp qword [rel input_recording], 0
+    je .input_update_no_record
+    ; ... (would save current input state to recording buffer)
+.input_update_no_record:
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; input_bind_key - Bind keyboard key to action
+; rA = scancode, rC = action_id
+; ============================================================================
+input_bind_key:
+    push rG
+    
+    ; Add binding
+    mov rG, [rel input_binding_count]
+    lea rG, [rel input_bindings + rG*12]  ; Each binding = 12 bytes
+    
+    mov dword [rG], SRC_KEYBOARD  ; source_type
+    mov dword [rG + 4], rA.w      ; source_id (scancode)
+    mov dword [rG + 8], rC.w      ; action_id
+    
+    inc qword [rel input_binding_count]
+    
+    pop rG
+    ret
+
+; ============================================================================
+; input_bind_mouse - Bind mouse button to action
+; rA = button (0=left, 1=right, 2=middle), rC = action_id
+; ============================================================================
+input_bind_mouse:
+    push rG
+    
+    mov rG, [rel input_binding_count]
+    lea rG, [rel input_bindings + rG*12]
+    
+    mov dword [rG], SRC_MOUSE_BTN
+    mov dword [rG + 4], rA.w
+    mov dword [rG + 8], rC.w
+    
+    inc qword [rel input_binding_count]
+    
+    pop rG
+    ret
+
+; ============================================================================
+; input_bind_gamepad - Bind gamepad button/axis to action
+; rA = gamepad_id, rC = button/axis, rG = action_id, rS = type (btn/axis)
+; ============================================================================
+input_bind_gamepad:
+    push rP
+    
+    mov rP, [rel input_binding_count]
+    lea rP, [rel input_bindings + rP*12]
+    
+    mov dword [rP], rS.w     ; source_type (SRC_GAMEPAD_BTN or SRC_GAMEPAD_AXIS)
+    mov dword [rP + 4], rC.w ; button/axis
+    mov dword [rP + 8], rG.w ; action_id
+    
+    inc qword [rel input_binding_count]
+    
+    pop rP
+    ret
+
+; ============================================================================
+; input_get_action - Get action state
+; rA = action_id → rA = state (ACTION_RELEASED/PRESSED/HELD/JUST_RELEASED)
+; ============================================================================
+input_get_action:
+    lea rG, [rel input_actions + rA*8]
+    mov rA, [rG + 4]
+    ret
+
+; ============================================================================
+; input_get_axis - Get axis value (mouse/gamepad)
+; rA = axis_id → xmm0 = value [-1..1]
+; ============================================================================
+input_get_axis:
+    ; Axis 0 = mouse X delta (normalized)
+    ; Axis 1 = mouse Y delta (normalized)
+    ; Axis 2-5 = gamepad axes
+    cmp rA, 0
+    je .input_axis_mouse_x
+    cmp rA, 1
+    je .input_axis_mouse_y
+    ; ... gamepad axes
+    ret
+
+.input_axis_mouse_x:
+    cvtsi2ss xmm0, [rel input_mouse_dx]
+    mulss xmm0, [rel .mouse_sensitivity]
+    ret
+
+.input_axis_mouse_y:
+    cvtsi2ss xmm0, [rel input_mouse_dy]
+    mulss xmm0, [rel .mouse_sensitivity]
+    ret
+
+; ============================================================================
+; input_get_mouse_pos - Get mouse position
+; → rA = x, rC = y
+; ============================================================================
+input_get_mouse_pos:
+    mov rA, [rel input_mouse_x]
+    mov rC, [rel input_mouse_y]
+    ret
+
+; ============================================================================
+; input_get_mouse_delta - Get mouse movement delta
+; → rA = dx, rC = dy
+; ============================================================================
+input_get_mouse_delta:
+    mov rA, [rel input_mouse_dx]
+    mov rC, [rel input_mouse_dy]
+    ret
+
+; ============================================================================
+; input_get_mouse_scroll - Get scroll wheel delta
+; → rA = scroll delta
+; ============================================================================
+input_get_mouse_scroll:
+    mov rA, [rel input_mouse_scroll]
+    ret
+
+; ============================================================================
+; input_is_key_down - Check if key is currently held
+; rA = scancode → rA = 1 if down, 0 if up
+; ============================================================================
+input_is_key_down:
+    lea rG, [rel input_key_states + rA]
+    movzx rA, byte [rG]
+    ret
+
+; ============================================================================
+; input_is_mouse_down - Check if mouse button is held
+; rA = button → rA = 1 if down
+; ============================================================================
+input_is_mouse_down:
+    mov rC, [rel input_mouse_buttons]
+    bt rC, rA
+    setc rA
+    and rA, 1
+    ret
+
+; ============================================================================
+; input_record_start - Start recording input
+; ============================================================================
+input_record_start:
+    mov qword [rel input_recording], 1
+    mov qword [rel input_record_pos], 0
+    ret
+
+; ============================================================================
+; input_record_stop - Stop recording input
+; ============================================================================
+input_record_stop:
+    mov qword [rel input_recording], 0
+    ret
+
+; ============================================================================
+; input_playback - Play back recorded input
+; ============================================================================
+input_playback:
+    ; ... (would replay recorded input events)
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+.mouse_sensitivity:
+    dd 0.002                ; Mouse sensitivity for axis mapping
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+input_key_states:
+    resb 128                ; 128 scancode states (0=up, 1=down)
+input_mouse_x:
+    resq 1
+input_mouse_y:
+    resq 1
+input_mouse_dx:
+    resq 1
+input_mouse_dy:
+    resq 1
+input_mouse_buttons:
+    resq 1                  ; Bitfield: bit 0=left, 1=right, 2=middle
+input_mouse_scroll:
+    resq 1
+
+; Actions: 64 × 8 bytes (id + state)
+input_actions:
+    resb MAX_ACTIONS * 8
+
+; Bindings: 256 × 12 bytes (source_type + source_id + action_id)
+input_bindings:
+    resb MAX_BINDINGS * 12
+input_binding_count:
+    resq 1
+
+; Recording
+input_recording:
+    resq 1
+input_record_buf:
+    resb 65536              ; 64KB recording buffer
+input_record_pos:
+    resq 1

@@ -1,0 +1,328 @@
+; ============================================================================
+; DNAOS - Entity Component System (DNAsm)
+; ============================================================================
+; ECS architecture for game engine.
+; Entity = ID. Components = data. Systems = logic.
+; Decoupled, cache-friendly, extensible.
+; ============================================================================
+
+MAX_ENTITIES     equ 4096
+MAX_COMPONENTS   equ 32
+COMPONENT_SIZE   equ 64     ; Max component size
+
+; Component type IDs
+COMP_TRANSFORM   equ 0      ; position, rotation, scale
+COMP_VELOCITY    equ 1      ; linear + angular velocity
+COMP_RENDERABLE  equ 2      ; mesh, material, texture
+COMP_CAMERA      equ 3      ; FOV, near, far, type
+COMP_LIGHT       equ 4      ; type, color, intensity, range
+COMP_PHYSICS     equ 5      ; mass, friction, restitution, collider
+COMP_AUDIO_SRC   equ 6      ; sound, volume, looping
+COMP_AUDIO_LIS   equ 7      ; listener
+COMP_SCRIPT      equ 8      ; script ID, state
+COMP_PLAYER      equ 9      ; player-specific data
+COMP_NPC         equ 10     ; NPC AI data
+COMP_ANIMATOR    equ 11     ; animation state
+COMP_PARTICLE    equ 12     ; particle emitter
+COMP_TRIGGER     equ 13     ; trigger zone
+COMP_UI          equ 14     ; UI element
+COMP_NETWORK     equ 15     ; network sync
+
+.code
+.global ecs_init
+.global ecs_create_entity
+.global ecs_destroy_entity
+.global ecs_add_component
+.global ecs_remove_component
+.global ecs_get_component
+.global ecs_has_component
+.global ecs_query
+.global ecs_query_single
+.global ecs_iterate
+
+; ============================================================================
+; ecs_init - Initialize ECS
+; ============================================================================
+ecs_init:
+    push rA
+    push rC
+    push rG
+    
+    ; Clear entity component masks
+    lea rG, [rel ecs_entity_mask]
+    mov rC, MAX_ENTITIES
+    xor rA, rA
+.ecs_init_clear:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .ecs_init_clear
+    
+    ; Clear component pools
+    ; Each component pool: MAX_ENTITIES × COMPONENT_SIZE bytes
+    ; ... (would zero out all pools)
+    
+    mov qword [rel ecs_entity_count], 0
+    mov qword [rel ecs_next_id], 1
+    
+    ; Free list for entity IDs
+    ; ... (would initialize free list)
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ecs_create_entity - Create new entity
+; → rA = entity ID
+; ============================================================================
+ecs_create_entity:
+    push rC
+    
+    ; Get next ID
+    mov rA, [rel ecs_next_id]
+    inc qword [rel ecs_next_id]
+    
+    ; Clear component mask
+    lea rC, [rel ecs_entity_mask + rA*8]
+    mov qword [rC], 0
+    
+    inc qword [rel ecs_entity_count]
+    
+    pop rC
+    ret
+
+; ============================================================================
+; ecs_destroy_entity - Destroy entity and all its components
+; rA = entity ID
+; ============================================================================
+ecs_destroy_entity:
+    push rC
+    push rG
+    
+    ; Get component mask
+    lea rG, [rel ecs_entity_mask + rA*8]
+    mov rC, [rG]
+    
+    ; For each set bit in mask, remove component
+    ; ... (would iterate bits and free component data)
+    
+    ; Clear mask
+    mov qword [rG], 0
+    
+    dec qword [rel ecs_entity_count]
+    
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; ecs_add_component - Add component to entity
+; rA = entity ID, rC = component type, rP = component data
+; ============================================================================
+ecs_add_component:
+    push rG
+    
+    ; Set bit in entity mask
+    lea rG, [rel ecs_entity_mask + rA*8]
+    bts [rG], rC
+    
+    ; Copy component data to pool
+    ; pool_base = ecs_component_pools[component_type]
+    ; offset = entity_id * COMPONENT_SIZE
+    ; memcpy(pool_base + offset, data, COMPONENT_SIZE)
+    
+    ; Get pool pointer
+    lea rG, [rel ecs_component_pools]
+    mov rG, [rG + rC*8]    ; pool pointer
+    
+    ; Compute offset
+    mov rA_temp, rA
+    shl rA_temp, 6          ; * 64 (COMPONENT_SIZE)
+    add rG, rA_temp
+    
+    ; Copy 64 bytes
+    mov rC_temp, 16
+.ecs_add_copy:
+    mov rA_temp, [rP]
+    mov [rG], rA_temp
+    add rP, 8
+    add rG, 8
+    dec rC_temp
+    jnz .ecs_add_copy
+    
+    pop rG
+    ret
+
+; ============================================================================
+; ecs_remove_component - Remove component from entity
+; rA = entity ID, rC = component type
+; ============================================================================
+ecs_remove_component:
+    push rG
+    
+    ; Clear bit in entity mask
+    lea rG, [rel ecs_entity_mask + rA*8]
+    btr [rG], rC
+    
+    ; Zero out component data in pool
+    ; ... (would clear the 64 bytes)
+    
+    pop rG
+    ret
+
+; ============================================================================
+; ecs_get_component - Get pointer to component data
+; rA = entity ID, rC = component type → rP = component pointer
+; ============================================================================
+ecs_get_component:
+    push rG
+    
+    ; Get pool pointer
+    lea rG, [rel ecs_component_pools]
+    mov rG, [rG + rC*8]
+    
+    ; Compute offset
+    shl rA, 6               ; * 64
+    add rG, rA
+    
+    mov rP, rG
+    
+    pop rG
+    ret
+
+; ============================================================================
+; ecs_has_component - Check if entity has component
+; rA = entity ID, rC = component type → rA = 1 if has, 0 if not
+; ============================================================================
+ecs_has_component:
+    push rG
+    lea rG, [rel ecs_entity_mask + rA*8]
+    bt [rG], rC
+    setc rA
+    and rA, 1
+    pop rG
+    ret
+
+; ============================================================================
+; ecs_query - Find all entities matching component mask
+; rA = required mask → rP = output array, rC = max_results → rA = count
+; ============================================================================
+ecs_query:
+    push rC
+    push rG
+    push rS
+    
+    xor rS, rS              ; result count
+    mov rG, 0               ; entity index
+    
+.ecs_query_loop:
+    cmp rG, [rel ecs_next_id]
+    jge .ecs_query_done
+    
+    ; Check if entity mask matches required mask
+    mov rA_temp, [rel ecs_entity_mask + rG*8]
+    and rA_temp, rA          ; required components
+    cmp rA_temp, rA
+    jne .ecs_query_next
+    
+    ; Match! Add to results
+    mov [rP], rG.w
+    add rP, 4
+    inc rS
+    cmp rS, rC
+    jge .ecs_query_done
+
+.ecs_query_next:
+    inc rG
+    jmp .ecs_query_loop
+
+.ecs_query_done:
+    mov rA, rS
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; ecs_query_single - Find first entity matching mask
+; rA = required mask → rA = entity ID (0 if none)
+; ============================================================================
+ecs_query_single:
+    push rG
+    
+    mov rG, 0
+.ecs_qs_loop:
+    cmp rG, [rel ecs_next_id]
+    jge .ecs_qs_not_found
+    
+    mov rA_temp, [rel ecs_entity_mask + rG*8]
+    and rA_temp, rA
+    cmp rA_temp, rA
+    jne .ecs_qs_next
+    
+    mov rA, rG
+    pop rG
+    ret
+
+.ecs_qs_next:
+    inc rG
+    jmp .ecs_qs_loop
+
+.ecs_qs_not_found:
+    xor rA, rA
+    pop rG
+    ret
+
+; ============================================================================
+; ecs_iterate - Iterate entities with callback
+; rA = required mask, rP = callback function
+; ============================================================================
+ecs_iterate:
+    push rG
+    
+    mov rG, 0
+.ecs_iter_loop:
+    cmp rG, [rel ecs_next_id]
+    jge .ecs_iter_done
+    
+    mov rA_temp, [rel ecs_entity_mask + rG*8]
+    and rA_temp, rA
+    cmp rA_temp, rA
+    jne .ecs_iter_next
+    
+    ; Call callback(entity_id)
+    push rA
+    push rP
+    mov rA, rG
+    call rP                  ; callback(entity_id)
+    pop rP
+    pop rA
+
+.ecs_iter_next:
+    inc rG
+    jmp .ecs_iter_loop
+
+.ecs_iter_done:
+    pop rG
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+ecs_entity_mask:
+    resq MAX_ENTITIES       ; Bitmask per entity (which components it has)
+ecs_entity_count:
+    resq 1
+ecs_next_id:
+    resq 1
+
+; Component pools: 16 types × MAX_ENTITIES × 64 bytes
+; Total: 16 * 4096 * 64 = 4MB
+; This is a lot of memory. In practice, we'd allocate on demand.
+; For now, just reserve pointers.
+ecs_component_pools:
+    resq MAX_COMPONENTS     ; 32 pool pointers

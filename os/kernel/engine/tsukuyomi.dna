@@ -1,0 +1,771 @@
+; ============================================================================
+; DNAOS - 月读 Engine (Tsukuyomi Game Engine) (DNAsm)
+; ============================================================================
+; 超时空輝夜姫の月読 — The game engine for building virtual worlds.
+;
+; Architecture:
+*   ECS (Entity Component System) - entity.dna
+*   Software 3D Renderer (CPU仿GPU) - rasterizer.dna
+*   Physics Engine - physics.dna
+*   Audio Engine - audio.dna
+*   Input System - input.dna
+*   Scene Graph - scene.dna
+*   Scripting (DNAsm VM) - below
+*   World Management - below
+*   Network (multiplayer) - tcpip.dna
+; 
+; This file ties everything together into a game engine.
+; ============================================================================
+
+; Engine states
+ENGINE_INIT      equ 0
+ENGINE_RUNNING   equ 1
+ENGINE_PAUSED    equ 2
+ENGINE_SHUTDOWN  equ 3
+
+; World types
+WORLD_OVERWORLD  equ 0     ; Main world
+WORLD_DUNGEON    equ 1     ; Instance
+WORLD_VR         equ 2     ; Virtual reality (月読)
+WORLD_MENU       equ 3     ; Menu/lobby
+
+; Script opcodes (DNAsm VM)
+OP_HALT      equ 0x00
+OP_PUSH      equ 0x01
+OP_POP       equ 0x02
+OP_ADD       equ 0x03
+OP_SUB       equ 0x04
+OP_MUL       equ 0x05
+OP_DIV       equ 0x06
+OP_MOD       equ 0x07
+OP_AND       equ 0x08
+OP_OR        equ 0x09
+OP_XOR       equ 0x0A
+OP_NOT       equ 0x0B
+OP_LOAD      equ 0x0C
+OP_STORE     equ 0x0D
+OP_JMP       equ 0x0E
+OP_JZ        equ 0x0F
+OP_JNZ       equ 0x10
+OP_CALL      equ 0x11
+OP_RET       equ 0x12
+OP_CMP       equ 0x13
+OP_SYSCALL   equ 0x14
+OP_QAND      equ 0x15     ; Quaternary AND
+OP_QOR       equ 0x16     ; Quaternary OR
+OP_QNOT      equ 0x17     ; Quaternary NOT
+OP_QADD      equ 0x18     ; Quaternary ADD
+OP_ATCG_ENC  equ 0x19     ; ATCG encode
+OP_ATCG_DEC  equ 0x1A     ; ATCG decode
+OP_SPAWN     equ 0x1B     ; Spawn entity
+OP_DESTROY   equ 0x1C     ; Destroy entity
+OP_GET_COMP  equ 0x1D     ; Get component
+OP_SET_COMP  equ 0x1E     ; Set component
+OP_SEND_NET  equ 0x1F     ; Send network message
+OP_PLAY_SND  equ 0x20     ; Play sound
+OP_GET_INPUT equ 0x21     ; Get input state
+OP_RAYCAST   equ 0x22     ; Physics raycast
+OP_SPAWN_PARTICLE equ 0x23
+OP_LOAD_WORLD equ 0x24
+OP_SAVE_WORLD equ 0x25
+
+MAX_SCRIPTS      equ 64
+SCRIPT_STACK_SIZE equ 256
+SCRIPT_MEM_SIZE  equ 1024
+
+.code
+.global tsukuyomi_init
+.global tsukuyomi_run
+.global tsukuyomi_shutdown
+.global tsukuyomi_load_world
+.global tsukuyomi_save_world
+.global tsukuyomi_create_world
+.global tsukuyomi_spawn_player
+.global tsukuyomi_spawn_npc
+.global tsukuyomi_spawn_item
+.global tsukuyomi_spawn_particle_system
+.global tsukuyomi_set_time_of_day
+.global tsukuyomi_get_time_of_day
+.global tsukuyomi_set_weather
+.global tsukuyomi_execute_script
+.global tsukuyomi_vm_step
+.global tsukuyomi_frame
+
+; ============================================================================
+; tsukuyomi_init - Initialize the 月読 engine
+; ============================================================================
+tsukuyomi_init:
+    push rA
+    push rC
+    push rG
+    
+    ; Initialize subsystems
+    call ecs_init            ; Entity Component System
+    call scene_init          ; Scene graph
+    call phys_init           ; Physics
+    call audio_init          ; Audio
+    call input_init          ; Input
+    call rast_init           ; Rasterizer
+    
+    ; Set engine state
+    mov qword [rel tsuku_state], ENGINE_INIT
+    
+    ; Set default time of day (noon)
+    movss xmm0, [rel .float_half]
+    movss [rel tsuku_time_of_day], xmm0
+    
+    ; Set default weather (clear)
+    mov dword [rel tsuku_weather], 0
+    
+    ; Clear world data
+    mov qword [rel tsuku_world_type], WORLD_MENU
+    mov qword [rel tsuku_entity_count], 0
+    mov qword [rel tsuku_player_entity], 0
+    
+    ; Initialize script VM
+    mov qword [rel tsuku_script_count], 0
+    
+    ; Initialize frame counter
+    mov qword [rel tsuku_frame_count], 0
+    movss xmm0, [rel .float_zero]
+    movss [rel tsuku_fps], xmm0
+    movss [rel tsuku_frame_time], xmm0
+    
+    ; Transition to running
+    mov qword [rel tsuku_state], ENGINE_RUNNING
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; tsukuyomi_run - Main game loop
+; ============================================================================
+tsukuyomi_run:
+    push rA
+    push rC
+    push rG
+
+.tsuku_loop:
+    ; Check engine state
+    cmp qword [rel tsuku_state], ENGINE_RUNNING
+    jne .tsuku_loop_done
+    
+    ; ---- Frame start ----
+    ; Record frame start time
+    call pit_get_ticks
+    mov [rel tsuku_frame_start], rA
+    
+    ; ---- Input ----
+    call input_update
+    
+    ; ---- Script update ----
+    ; Execute all active scripts
+    lea rG, [rel tsuku_scripts]
+    mov rC, [rel tsuku_script_count]
+.tsuku_script_loop:
+    test rC, rC
+    jz .tsuku_script_done
+    
+    ; Check if script is active
+    cmp dword [rG], 1       ; active?
+    jne .tsuku_script_next
+    
+    ; Execute script for this frame (budget: N instructions)
+    mov rA, 1000            ; instruction budget per script per frame
+    call tsukuyomi_execute_script
+    
+.tsuku_script_next:
+    add rG, 64              ; Next script
+    dec rC
+    jmp .tsuku_script_loop
+
+.tsuku_script_done:
+    
+    ; ---- Physics step ----
+    call phys_step
+    
+    ; ---- Update scene transforms ----
+    call scene_update_transforms
+    
+    ; ---- Audio mix ----
+    ; call audio_mix_buffer
+    
+    ; ---- Render ----
+    call tsukuyomi_render
+    
+    ; ---- Swap buffers ----
+    ; (double buffering)
+    
+    ; ---- Frame end ----
+    call pit_get_ticks
+    sub rA, [rel tsuku_frame_start]
+    cvtsi2ss xmm0, rA
+    movss [rel tsuku_frame_time], xmm0
+    
+    ; FPS calculation
+    movss xmm1, [rel .float_1000]
+    divss xmm1, xmm0        ; 1000 / frame_time_ms
+    movss [rel tsuku_fps], xmm1
+    
+    inc qword [rel tsuku_frame_count]
+    
+    ; Check for shutdown
+    cmp qword [rel tsuku_state], ENGINE_RUNNING
+    je .tsuku_loop
+
+.tsuku_loop_done:
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; tsukuyomi_render - Render one frame
+; ============================================================================
+tsukuyomi_render:
+    push rA
+    push rC
+    push rG
+    
+    ; ---- Clear ----
+    ; Sky gradient based on time of day
+    movss xmm0, [rel tsuku_time_of_day]
+    ; Compute sky color from time
+    ; 0.0 = midnight (dark), 0.25 = sunrise, 0.5 = noon, 0.75 = sunset
+    ; ... (would compute sky color and clear framebuffer)
+    
+    ; ---- Frustum culling ----
+    ; Get camera frustum
+    ; Test each renderable entity against frustum
+    ; Only render visible entities
+    
+    ; ---- Sort renderables ----
+    ; Sort by: opaque first (front to back), then transparent (back to front)
+    
+    ; ---- Render opaque objects ----
+    ; For each visible renderable entity:
+    ;   1. Get transform (position, rotation, scale)
+    ;   2. Set model matrix
+    ;   3. Set material (texture, shader)
+    ;   4. Draw mesh (rast_draw_mesh)
+    
+    ; ---- Render transparent objects ----
+    ; Same but with alpha blending enabled
+    
+    ; ---- Render particles ----
+    ; Billboard particles facing camera
+    
+    ; ---- Render UI ----
+    ; 2D overlay: health bar, minimap, inventory, dialog
+    
+    ; ---- Render debug ----
+    ; If debug mode: wireframe, collision shapes, FPS counter
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; tsukuyomi_shutdown - Shutdown engine
+; ============================================================================
+tsukuyomi_shutdown:
+    mov qword [rel tsuku_state], ENGINE_SHUTDOWN
+    ret
+
+; ============================================================================
+; tsukuyomi_load_world - Load a world from filesystem
+; rP = world name
+; ============================================================================
+tsukuyomi_load_world:
+    push rA
+    push rC
+    push rG
+    
+    ; Open world file from /codon/worlds/<name>.dna
+    ; Parse world data:
+    ;   - Terrain heightmap
+    ;   - Static meshes
+    ;   - NPC spawn points
+    ;   - Item spawn points
+    ;   - Trigger zones
+    ;   - Sky settings
+    ;   - Weather patterns
+    ;   - Music track
+    
+    ; For each entity in world file:
+    ;   Create entity with appropriate components
+    
+    ; ... (would implement world loading)
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; tsukuyomi_save_world - Save current world state
+; rP = world name
+; ============================================================================
+tsukuyomi_save_world:
+    push rA
+    push rC
+    push rG
+    
+    ; Serialize all entities and their components
+    ; Write to /codon/worlds/<name>.dna
+    
+    ; ... (would implement world saving)
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; tsukuyomi_create_world - Create a new world
+; rA = world type, rC = seed
+; ============================================================================
+tsukuyomi_create_world:
+    push rG
+    
+    ; Procedural world generation based on seed
+    ; Generate terrain using Perlin noise
+    ; Place trees, rocks, water
+    ; Generate dungeon layouts
+    ; Place NPCs and items
+    
+    mov [rel tsuku_world_type], rA
+    mov [rel tsuku_world_seed], rC
+    
+    ; ... (would implement procedural generation)
+    
+    pop rG
+    ret
+
+; ============================================================================
+; tsukuyomi_spawn_player - Spawn player entity
+; xmm0 = x, xmm1 = y, xmm2 = z → rA = entity ID
+; ============================================================================
+tsukuyomi_spawn_player:
+    push rC
+    push rG
+    
+    ; Create entity
+    call ecs_create_entity
+    mov [rel tsuku_player_entity], rA
+    
+    ; Add transform component
+    ; ... position = (x, y, z)
+    
+    ; Add velocity component
+    
+    ; Add renderable component (player mesh)
+    
+    ; Add physics component (capsule collider)
+    
+    ; Add camera component (third-person)
+    
+    ; Add player component (health, inventory, etc.)
+    
+    ; Add audio listener component
+    
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; tsukuyomi_spawn_npc - Spawn NPC entity
+; xmm0-xmm2 = position, rC = npc_type → rA = entity ID
+; ============================================================================
+tsukuyomi_spawn_npc:
+    push rG
+    
+    call ecs_create_entity
+    
+    ; Add transform, renderable, physics, NPC AI component
+    ; NPC AI: state machine (idle, patrol, chase, attack, flee, dialog)
+    
+    pop rG
+    ret
+
+; ============================================================================
+; tsukuyomi_spawn_item - Spawn item entity
+; xmm0-xmm2 = position, rC = item_type → rA = entity ID
+; ============================================================================
+tsukuyomi_spawn_item:
+    push rG
+    
+    call ecs_create_entity
+    
+    ; Add transform, renderable (floating + rotating), trigger component
+    
+    pop rG
+    ret
+
+; ============================================================================
+; tsukuyomi_spawn_particle_system - Spawn particle system
+; xmm0-xmm2 = position, rC = particle_type → rA = entity ID
+; ============================================================================
+tsukuyomi_spawn_particle_system:
+    push rG
+    
+    call ecs_create_entity
+    
+    ; Add transform, particle component
+    ; Particle: position, velocity, color, lifetime, size
+    
+    pop rG
+    ret
+
+; ============================================================================
+; tsukuyomi_set_time_of_day - Set time of day
+; xmm0 = time [0..1] (0=midnight, 0.5=noon)
+; ============================================================================
+tsukuyomi_set_time_of_day:
+    movss [rel tsuku_time_of_day], xmm0
+    ret
+
+; ============================================================================
+; tsukuyomi_get_time_of_day - Get time of day
+; → xmm0 = time [0..1]
+; ============================================================================
+tsukuyomi_get_time_of_day:
+    movss xmm0, [rel tsuku_time_of_day]
+    ret
+
+; ============================================================================
+; tsukuyomi_set_weather - Set weather
+; rA = weather type (0=clear, 1=rain, 2=snow, 3=fog, 4=storm)
+; ============================================================================
+tsukuyomi_set_weather:
+    mov [rel tsuku_weather], rA
+    ret
+
+; ============================================================================
+; DNAsm Virtual Machine (Scripting Engine)
+; ============================================================================
+
+; ============================================================================
+; tsukuyomi_execute_script - Execute script for N instructions
+; rG = script pointer, rA = instruction budget
+; ============================================================================
+tsukuyomi_execute_script:
+    push rA
+    push rC
+    push rP
+    push rS
+    
+    ; Get script state
+    mov rP, [rG + 8]        ; instruction pointer
+    mov rS, [rG + 16]       ; stack pointer
+    mov rC, [rG + 24]       ; memory base
+    
+.tsuku_vm_loop:
+    test rA, rA
+    jz .tsuku_vm_done
+    
+    ; Fetch opcode
+    movzx rA_temp, byte [rP]
+    inc rP
+    
+    ; Dispatch
+    cmp rA_temp, OP_HALT
+    je .tsuku_vm_halt
+    cmp rA_temp, OP_PUSH
+    je .tsuku_vm_push
+    cmp rA_temp, OP_ADD
+    je .tsuku_vm_add
+    cmp rA_temp, OP_SUB
+    je .tsuku_vm_sub
+    cmp rA_temp, OP_MUL
+    je .tsuku_vm_mul
+    cmp rA_temp, OP_JMP
+    je .tsuku_vm_jmp
+    cmp rA_temp, OP_JZ
+    je .tsuku_vm_jz
+    cmp rA_temp, OP_CALL
+    je .tsuku_vm_call
+    cmp rA_temp, OP_RET
+    je .tsuku_vm_ret
+    cmp rA_temp, OP_SYSCALL
+    je .tsuku_vm_syscall
+    cmp rA_temp, OP_QAND
+    je .tsuku_vm_qand
+    cmp rA_temp, OP_QOR
+    je .tsuku_vm_qor
+    cmp rA_temp, OP_QNOT
+    je .tsuku_vm_qnot
+    cmp rA_temp, OP_QADD
+    je .tsuku_vm_qadd
+    cmp rA_temp, OP_SPAWN
+    je .tsuku_vm_spawn
+    cmp rA_temp, OP_DESTROY
+    je .tsuku_vm_destroy
+    cmp rA_temp, OP_PLAY_SND
+    je .tsuku_vm_play_snd
+    cmp rA_temp, OP_GET_INPUT
+    je .tsuku_vm_get_input
+    cmp rA_temp, OP_RAYCAST
+    je .tsuku_vm_raycast
+    cmp rA_temp, OP_LOAD_WORLD
+    je .tsuku_vm_load_world
+    
+    ; Unknown opcode → halt
+    jmp .tsuku_vm_halt
+
+.tsuku_vm_push:
+    ; Push 8-byte immediate value
+    mov rA_temp, [rP]
+    add rP, 8
+    mov [rS], rA_temp
+    add rS, 8
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_add:
+    ; Pop two values, push sum
+    sub rS, 8
+    mov rA_temp, [rS]
+    sub rS, 8
+    add rA_temp, [rS]
+    mov [rS], rA_temp
+    add rS, 8
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_sub:
+    sub rS, 8
+    mov rA_temp, [rS]
+    sub rS, 8
+    sub [rS], rA_temp
+    add rS, 8
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_mul:
+    sub rS, 8
+    mov rA_temp, [rS]
+    sub rS, 8
+    imul rA_temp, [rS]
+    mov [rS], rA_temp
+    add rS, 8
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_jmp:
+    ; Jump to address
+    mov rP, [rP]
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_jz:
+    ; Pop value, if zero jump
+    sub rS, 8
+    mov rA_temp, [rS]
+    test rA_temp, rA_temp
+    jnz .tsuku_vm_jz_skip
+    mov rP, [rP]
+    dec rA
+    jmp .tsuku_vm_loop
+.tsuku_vm_jz_skip:
+    add rP, 8
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_call:
+    ; Push return address, jump
+    mov [rS], rP
+    add rS, 8
+    add rP, 8               ; Skip address bytes
+    ; Actually: call address is the operand
+    mov rA_temp, [rP - 8]   ; Get call target
+    mov rP, rA_temp
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_ret:
+    ; Pop return address, jump
+    sub rS, 8
+    mov rP, [rS]
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_syscall:
+    ; System call from script
+    ; Pop syscall number and args from stack
+    ; Execute, push result
+    sub rS, 8
+    mov rA_temp, [rS]       ; syscall number
+    ; ... dispatch to engine functions
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_qand:
+    ; Quaternary AND = min(a, b) per 2-bit pair
+    sub rS, 8
+    mov rA_temp, [rS]
+    sub rS, 8
+    ; call qand(rA_temp, [rS])
+    ; ... (would call kernel qand)
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_qor:
+    ; Quaternary OR = max(a, b) per 2-bit pair
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_qnot:
+    ; Quaternary NOT = 3 - x per 2-bit pair
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_qadd:
+    ; Quaternary ADD with carry
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_spawn:
+    ; Spawn entity from script
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_destroy:
+    ; Destroy entity from script
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_play_snd:
+    ; Play sound from script
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_get_input:
+    ; Get input state from script
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_raycast:
+    ; Physics raycast from script
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_load_world:
+    ; Load world from script
+    dec rA
+    jmp .tsuku_vm_loop
+
+.tsuku_vm_halt:
+    ; Script halted
+    mov dword [rG], 0       ; Set inactive
+
+.tsuku_vm_done:
+    ; Save script state
+    mov [rG + 8], rP        ; Save IP
+    mov [rG + 16], rS       ; Save SP
+    
+    pop rS
+    pop rP
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; tsukuyomi_vm_step - Single-step VM (for debugging)
+; rG = script pointer
+; ============================================================================
+tsukuyomi_vm_step:
+    mov rA, 1               ; Execute 1 instruction
+    call tsukuyomi_execute_script
+    ret
+
+; ============================================================================
+; tsukuyomi_frame - Called once per frame from kernel main loop
+; ============================================================================
+tsukuyomi_frame:
+    push rA
+    
+    ; Update time of day (1 day = 24 real minutes)
+    movss xmm0, [rel tsuku_time_of_day]
+    addss xmm0, [rel .time_speed]
+    movss xmm1, [rel .float_one]
+    comiss xmm0, xmm1
+    jb .tsuku_frame_time_ok
+    subss xmm0, xmm1        ; Wrap around
+.tsuku_frame_time_ok:
+    movss [rel tsuku_time_of_day], xmm0
+    
+    ; Update weather particles (rain/snow)
+    ; ... (would update particle systems)
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+.float_zero:
+    dd 0.0
+.float_one:
+    dd 1.0
+.float_half:
+    dd 0.5
+.float_1000:
+    dd 1000.0
+.time_speed:
+    dd 0.000007             ; ~24 min per day cycle at 60fps
+
+; Engine name strings
+tsuku_name:
+    db "Tsukuyomi Engine v1.0", 0
+tsuku_subtitle:
+    db "DNAOS Game Engine - CPU Software Renderer", 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+tsuku_state:
+    resq 1
+tsuku_frame_count:
+    resq 1
+tsuku_frame_start:
+    resq 1
+tsuku_frame_time:
+    resb 4                  ; float
+tsuku_fps:
+    resb 4                  ; float
+tsuku_time_of_day:
+    resb 4                  ; float [0..1]
+tsuku_weather:
+    resq 1                  ; 0=clear, 1=rain, 2=snow, 3=fog, 4=storm
+tsuku_world_type:
+    resq 1
+tsuku_world_seed:
+    resq 1
+tsuku_player_entity:
+    resq 1
+tsuku_entity_count:
+    resq 1
+
+; Scripts: 64 × 64 bytes
+tsuku_scripts:
+    resb MAX_SCRIPTS * 64
+tsuku_script_count:
+    resq 1
+
+; Camera
+tsuku_camera:
+    resb 256                ; Camera struct (fov, aspect, near, far, matrices)
+
+; Render list (visible entities)
+tsuku_render_list:
+    resq 1024               ; Entity IDs
+tsuku_render_count:
+    resq 1
