@@ -1,0 +1,282 @@
+; ============================================================================
+; DNAOS - PS/2 Keyboard Driver (DNAsm)
+; ============================================================================
+; IRQ1 handler. Scancode Set 1. ASCII translation with shift/caps.
+; ============================================================================
+
+.code
+.global keyboard_init
+.global keyboard_irq_handler
+.global keyboard_getchar
+
+; ============================================================================
+; keyboard_init - Initialize PS/2 keyboard
+; ============================================================================
+keyboard_init:
+    push rA
+    
+    ; Enable keyboard device
+    call kb_wait_ctrl
+    mov rA, 0xAE           ; Enable keyboard
+    out 0x64, rA.b
+    
+    ; Set scancode set 1
+    call kb_wait
+    mov rA, 0xF0           ; Set scancode set command
+    out 0x60, rA.b
+    call kb_wait
+    mov rA, 0x01           ; Scancode set 1
+    out 0x60, rA.b
+    
+    ; Enable scanning
+    call kb_wait
+    mov rA, 0xF4           ; Enable scanning
+    out 0x60, rA.b
+    
+    ; Clear buffer
+    xor rA, rA
+    mov [rel kb_shift], rA
+    mov [rel kb_caps], rA
+    mov [rel kb_buf_head], rA
+    mov [rel kb_buf_tail], rA
+    
+    pop rA
+    ret
+
+; ============================================================================
+; keyboard_irq_handler - Called from IRQ1 in boot.S
+; ============================================================================
+keyboard_irq_handler:
+    push rA
+    push rC
+    
+    ; Read scancode
+    in rA.b, 0x60
+    
+    ; Check for extended scancode (0xE0)
+    cmp rA.b, 0xE0
+    jne .kb_not_ext
+    mov qword [rel kb_extended], 1
+    pop rC
+    pop rA
+    ret
+
+.kb_not_ext:
+    mov rC, rA
+    mov qword [rel kb_extended], 0
+    
+    ; Check for key release (bit 7 set)
+    test rC, 0x80
+    jnz .kb_key_release
+    
+    ; Key press - translate to ASCII
+    call kb_scancode_to_ascii
+    test rA, rA
+    jz .kb_irq_done
+    
+    ; Put in buffer
+    call kb_buf_put
+
+.kb_irq_done:
+    pop rC
+    pop rA
+    ret
+
+.kb_key_release:
+    ; Handle shift/caps release
+    and rC, 0x7F           ; Remove release bit
+    
+    cmp rC, 0x2A           ; Left shift release
+    je .kb_shift_release
+    cmp rC, 0x36           ; Right shift release
+    je .kb_shift_release
+    cmp rC, 0x3A           ; Caps lock release
+    je .kb_caps_toggle
+    
+    pop rC
+    pop rA
+    ret
+
+.kb_shift_release:
+    mov qword [rel kb_shift], 0
+    pop rC
+    pop rA
+    ret
+
+.kb_caps_toggle:
+    ; Caps lock toggles on release
+    mov rA, [rel kb_caps]
+    xor rA, 1
+    mov [rel kb_caps], rA
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; keyboard_getchar - Get next character from buffer
+; Returns: rA = character (0 if none)
+; ============================================================================
+keyboard_getchar:
+    push rC
+    
+    mov rA, [rel kb_buf_head]
+    mov rC, [rel kb_buf_tail]
+    cmp rA, rC
+    je .kb_no_char
+    
+    ; Get character from buffer
+    lea rC, [rel kb_buffer]
+    add rC, rA
+    mov rA.b, [rC]
+    
+    ; Advance head
+    inc qword [rel kb_buf_head]
+    and qword [rel kb_buf_head], 0xFF   ; 256-byte buffer mask
+    
+    pop rC
+    ret
+
+.kb_no_char:
+    xor rA, rA
+    pop rC
+    ret
+
+; ============================================================================
+; kb_scancode_to_ascii - Translate scancode to ASCII
+; rC = scancode → rA = ASCII char (0 if not printable)
+; ============================================================================
+kb_scancode_to_ascii:
+    push rG
+    
+    ; Check for shift keys
+    cmp rC, 0x2A           ; Left shift
+    je .kb_shift_press
+    cmp rC, 0x36           ; Right shift
+    je .kb_shift_press
+    cmp rC, 0x3A           ; Caps lock
+    je .kb_caps_press
+    
+    ; Look up in scancode table
+    lea rG, [rel kb_scancodes]
+    mov rA, rC
+    mov rA.b, [rG + rA]
+    
+    ; Apply shift if needed
+    mov rG, [rel kb_shift]
+    test rG, rG
+    jz .kb_no_shift
+    
+    ; Look up in shifted table
+    lea rG, [rel kb_scancodes_shift]
+    mov rA, rC
+    mov rA.b, [rG + rA]
+
+.kb_no_shift:
+    ; Apply caps lock for letters
+    mov rG, [rel kb_caps]
+    test rG, rG
+    jz .kb_no_caps
+    
+    ; If letter, toggle case
+    cmp rA.b, 'a'
+    jl .kb_no_caps
+    cmp rA.b, 'z'
+    jg .kb_no_caps
+    sub rA, 32             ; To uppercase
+    
+.kb_no_caps:
+    pop rG
+    ret
+
+.kb_shift_press:
+    mov qword [rel kb_shift], 1
+    xor rA, rA
+    pop rG
+    ret
+
+.kb_caps_press:
+    ; Don't toggle here, toggle on release
+    xor rA, rA
+    pop rG
+    ret
+
+; ============================================================================
+; kb_buf_put - Put character in keyboard buffer
+; rA = character
+; ============================================================================
+kb_buf_put:
+    push rC
+    push rG
+    
+    mov rC, [rel kb_buf_tail]
+    lea rG, [rel kb_buffer]
+    add rG, rC
+    mov [rG], rA.b
+    
+    inc qword [rel kb_buf_tail]
+    and qword [rel kb_buf_tail], 0xFF
+    
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; kb_wait - Wait for keyboard controller ready (input buffer)
+; ============================================================================
+kb_wait:
+    push rA
+.kb_wait_loop:
+    in rA.b, 0x64
+    test rA, 0x02          ; Input buffer full?
+    jnz .kb_wait_loop
+    pop rA
+    ret
+
+; ============================================================================
+; kb_wait_ctrl - Wait for keyboard controller ready (output buffer)
+; ============================================================================
+kb_wait_ctrl:
+    push rA
+.kb_wait_ctrl_loop:
+    in rA.b, 0x64
+    test rA, 0x01          ; Output buffer empty?
+    jz .kb_wait_ctrl_loop
+    pop rA
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+kb_scancodes:
+    db 0, 0x1B, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0x08
+    db 0, 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', 0x0A
+    db 0, 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", '`'
+    db 0, '\\', 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/'
+    db 0, 0, 0, ' '
+
+kb_scancodes_shift:
+    db 0, 0x1B, '!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '_', '+', 0x08
+    db 0, 'Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P', '{', '}', 0x0A
+    db 0, 'A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ':', '"', '~'
+    db 0, '|', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', '<', '>', '?'
+    db 0, 0, 0, ' '
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+kb_shift:
+    resq 1
+kb_caps:
+    resq 1
+kb_extended:
+    resq 1
+kb_buf_head:
+    resq 1
+kb_buf_tail:
+    resq 1
+kb_buffer:
+    resb 256

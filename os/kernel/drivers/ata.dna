@@ -1,0 +1,348 @@
+; ============================================================================
+; DNAOS - ATA/IDE Hard Disk Driver (DNAsm)
+; ============================================================================
+; PIO mode ATA driver. Supports up to 4 IDE devices (2 channels × 2 drives).
+; LBA28 addressing for drives < 128GB.
+; LBA48 for larger drives.
+; ============================================================================
+
+; Primary channel
+ATA_PRIMARY_CMD    equ 0x1F0
+ATA_PRIMARY_CTRL   equ 0x3F6
+; Secondary channel
+ATA_SECONDARY_CMD  equ 0x170
+ATA_SECONDARY_CTRL equ 0x376
+
+; Register offsets from base
+ATA_DATA      equ 0   ; Data register (16-bit)
+ATA_ERROR     equ 1   ; Error register (read)
+ATA_FEATURES  equ 1   ; Features register (write)
+ATA_SECTOR    equ 2   ; Sector count
+ATA_LBA_LOW   equ 3   ; LBA low byte
+ATA_LBA_MID   equ 4   ; LBA mid byte
+ATA_LBA_HIGH  equ 5   ; LBA high byte
+ATA_DRIVE     equ 6   ; Drive/head register
+ATA_STATUS    equ 7   ; Status register (read)
+ATA_COMMAND   equ 7   ; Command register (write)
+
+; Status bits
+ATA_STATUS_ERR  equ 0x01
+ATA_STATUS_DRQ  equ 0x08
+ATA_STATUS_SRV  equ 0x10
+ATA_STATUS_DF   equ 0x20
+ATA_STATUS_RDY  equ 0x40
+ATA_STATUS_BSY  equ 0x80
+
+; Commands
+ATA_CMD_IDENTIFY  equ 0xEC
+ATA_CMD_READ_PIO  equ 0x20
+ATA_CMD_WRITE_PIO equ 0x30
+ATA_CMD_READ_PIO48  equ 0x24
+ATA_CMD_WRITE_PIO48 equ 0x34
+
+; Drive selection
+ATA_DRIVE_MASTER equ 0xA0
+ATA_DRIVE_SLAVE  equ 0xB0
+ATA_DRIVE_LBA    equ 0x40
+
+.code
+.global ata_init
+.global ata_read_sector
+.global ata_write_sector
+.global ata_identify
+
+; ============================================================================
+; ata_init - Initialize ATA driver
+; ============================================================================
+ata_init:
+    push rA
+    
+    ; Reset both channels
+    ; Primary
+    mov rA, 4              ; SRST bit
+    out ATA_PRIMARY_CTRL, rA.b
+    ; Wait
+    mov rC, 1000
+.ata_reset_wait1:
+    nop
+    dec rC
+    jnz .ata_reset_wait1
+    ; Clear reset
+    xor rA, rA
+    out ATA_PRIMARY_CTRL, rA.b
+    
+    ; Secondary
+    mov rA, 4
+    out ATA_SECONDARY_CTRL, rA.b
+    mov rC, 1000
+.ata_reset_wait2:
+    nop
+    dec rC
+    jnz .ata_reset_wait2
+    xor rA, rA
+    out ATA_SECONDARY_CTRL, rA.b
+    
+    ; Detect drives
+    ; Try primary master
+    mov rP, ATA_PRIMARY_CMD
+    mov rA, ATA_DRIVE_MASTER
+    call ata_select_drive
+    call ata_wait_bsy
+    
+    ; Check if drive exists
+    in rA.b, ATA_PRIMARY_CMD + ATA_STATUS
+    cmp rA.b, 0xFF         ; Floating bus = no drive
+    je .ata_no_primary_master
+    
+    ; Identify drive
+    mov rP, ATA_PRIMARY_CMD
+    call ata_identify
+    
+.ata_no_primary_master:
+    ; Try primary slave
+    mov rP, ATA_PRIMARY_CMD
+    mov rA, ATA_DRIVE_SLAVE
+    call ata_select_drive
+    call ata_wait_bsy
+    
+    in rA.b, ATA_PRIMARY_CMD + ATA_STATUS
+    cmp rA.b, 0xFF
+    je .ata_no_primary_slave
+    
+    mov rP, ATA_PRIMARY_CMD
+    call ata_identify
+    
+.ata_no_primary_slave:
+    pop rA
+    ret
+
+; ============================================================================
+; ata_select_drive - Select drive on channel
+; rP = command port base, rA = drive (master/slave)
+; ============================================================================
+ata_select_drive:
+    push rA
+    add rP, ATA_DRIVE
+    out rP, rA.b
+    ; Wait 400ns
+    mov rC, 100
+.ata_select_wait:
+    nop
+    dec rC
+    jnz .ata_select_wait
+    pop rA
+    ret
+
+; ============================================================================
+; ata_wait_bsy - Wait until BSY bit clears
+; rP = command port base
+; ============================================================================
+ata_wait_bsy:
+    push rA
+.ata_bsy_loop:
+    add rP, ATA_STATUS
+    in rA.b, rP
+    sub rP, ATA_STATUS
+    test rA, ATA_STATUS_BSY
+    jnz .ata_bsy_loop
+    pop rA
+    ret
+
+; ============================================================================
+; ata_wait_drq - Wait until DRQ bit sets
+; rP = command port base
+; ============================================================================
+ata_wait_drq:
+    push rA
+.ata_drq_loop:
+    add rP, ATA_STATUS
+    in rA.b, rP
+    sub rP, ATA_STATUS
+    test rA, ATA_STATUS_DRQ
+    jz .ata_drq_loop
+    pop rA
+    ret
+
+; ============================================================================
+; ata_identify - Identify drive
+; rP = command port base
+; ============================================================================
+ata_identify:
+    push rA
+    push rC
+    push rG
+    
+    ; Send IDENTIFY command
+    add rP, ATA_COMMAND
+    mov rA, ATA_CMD_IDENTIFY
+    out rP, rA.b
+    sub rP, ATA_COMMAND
+    
+    ; Wait for data
+    call ata_wait_bsy
+    call ata_wait_drq
+    
+    ; Read 256 words (512 bytes) of identify data
+    add rP, ATA_DATA
+    mov rC, 256
+    lea rG, [rel ata_ident_buf]
+.ata_ident_read:
+    in rA.w, rP
+    mov [rG], rA.w
+    add rG, 2
+    dec rC
+    jnz .ata_ident_read
+    sub rP, ATA_DATA
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ata_read_sector - Read one sector (512 bytes) using PIO
+; rP = command port base, rA = LBA, rS = buffer, rC = drive
+; ============================================================================
+ata_read_sector:
+    push rA
+    push rC
+    push rG
+    
+    ; Select drive with LBA
+    add rP, ATA_DRIVE
+    mov rG, ATA_DRIVE_LBA | ATA_DRIVE_MASTER
+    or rG, rC              ; Drive select
+    ; Extract LBA bits 24-27
+    shr rA, 24
+    and rA, 0x0F
+    or rG, rA
+    out rP, rG.b
+    sub rP, ATA_DRIVE
+    
+    ; Wait for drive ready
+    call ata_wait_bsy
+    
+    ; Set sector count = 1
+    add rP, ATA_SECTOR
+    mov rA, 1
+    out rP, rA.b
+    sub rP, ATA_SECTOR
+    
+    ; Set LBA
+    add rP, ATA_LBA_LOW
+    mov rA, [rel ata_read_lba]
+    out rP, rA.b           ; LBA 0-7
+    inc rP
+    shr rA, 8
+    out rP, rA.b           ; LBA 8-15
+    inc rP
+    shr rA, 8
+    out rP, rA.b           ; LBA 16-23
+    sub rP, ATA_LBA_HIGH
+    
+    ; Send READ command
+    add rP, ATA_COMMAND
+    mov rA, ATA_CMD_READ_PIO
+    out rP, rA.b
+    sub rP, ATA_COMMAND
+    
+    ; Wait for data
+    call ata_wait_bsy
+    call ata_wait_drq
+    
+    ; Read 256 words
+    add rP, ATA_DATA
+    mov rC, 256
+.ata_read_loop:
+    in rA.w, rP
+    mov [rS], rA.w
+    add rS, 2
+    dec rC
+    jnz .ata_read_loop
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; ata_write_sector - Write one sector using PIO
+; rP = command port base, rA = LBA, rS = buffer, rC = drive
+; ============================================================================
+ata_write_sector:
+    push rA
+    push rC
+    push rG
+    
+    ; Select drive with LBA (same as read)
+    add rP, ATA_DRIVE
+    mov rG, ATA_DRIVE_LBA | ATA_DRIVE_MASTER
+    or rG, rC
+    mov rA, [rel ata_write_lba]
+    shr rA, 24
+    and rA, 0x0F
+    or rG, rA
+    out rP, rG.b
+    sub rP, ATA_DRIVE
+    
+    call ata_wait_bsy
+    
+    ; Sector count = 1
+    add rP, ATA_SECTOR
+    mov rA, 1
+    out rP, rA.b
+    sub rP, ATA_SECTOR
+    
+    ; LBA
+    add rP, ATA_LBA_LOW
+    mov rA, [rel ata_write_lba]
+    out rP, rA.b
+    inc rP
+    shr rA, 8
+    out rP, rA.b
+    inc rP
+    shr rA, 8
+    out rP, rA.b
+    sub rP, ATA_LBA_HIGH
+    
+    ; Send WRITE command
+    add rP, ATA_COMMAND
+    mov rA, ATA_CMD_WRITE_PIO
+    out rP, rA.b
+    sub rP, ATA_COMMAND
+    
+    call ata_wait_bsy
+    call ata_wait_drq
+    
+    ; Write 256 words
+    add rP, ATA_DATA
+    mov rC, 256
+.ata_write_loop:
+    mov rA.w, [rS]
+    out rP, rA.w
+    add rS, 2
+    dec rC
+    jnz .ata_write_loop
+    
+    ; Flush cache
+    add rP, ATA_COMMAND
+    mov rA, 0xE7           ; FLUSH CACHE
+    out rP, rA.b
+    sub rP, ATA_COMMAND
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+ata_ident_buf:
+    resb 512
+ata_read_lba:
+    resq 1
+ata_write_lba:
+    resq 1

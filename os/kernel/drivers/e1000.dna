@@ -1,0 +1,347 @@
+; ============================================================================
+; DNAOS - E1000 Network Driver (DNAsm)
+; ============================================================================
+; Intel PRO/1000 - most common NIC in QEMU and many real machines.
+; MMIO register access. RX/TX ring buffers.
+; ============================================================================
+
+; E1000 MMIO Register offsets
+E1000_CTRL      equ 0x0000
+E1000_STATUS    equ 0x0008
+E1000_EECD      equ 0x0010
+E1000_EERD      equ 0x0014
+E1000_ICR       equ 0x00C0
+E1000_ICS       equ 0x00C8
+E1000_IMS       equ 0x00D0
+E1000_IMC       equ 0x00D8
+E1000_RCTL      equ 0x0100
+E1000_RDBAL     equ 0x2800
+E1000_RDBAH     equ 0x2804
+E1000_RDLEN     equ 0x2808
+E1000_RDH       equ 0x2810
+E1000_RDT       equ 0x2818
+E1000_TCTL      equ 0x0400
+E1000_TDBAL     equ 0x3800
+E1000_TDBAH     equ 0x3804
+E1000_TDLEN     equ 0x3808
+E1000_TDH       equ 0x3810
+E1000_TDT       equ 0x3818
+E1000_RA        equ 0x5400
+E1000_MTA       equ 0x5200
+
+E1000_NUM_RX_DESC equ 32
+E1000_NUM_TX_DESC equ 32
+E1000_RX_BUF_SIZE equ 2048
+
+; RX descriptor flags
+E1000_RXD_DD     equ 0x01
+E1000_RXD_EOP    equ 0x02
+
+; TX descriptor flags
+E1000_TXD_CMD_EOP  equ 0x01
+E1000_TXD_CMD_IFCS equ 0x02
+E1000_TXD_CMD_RS   equ 0x08
+
+; RCTL flags
+E1000_RCTL_EN     equ 0x00000002
+E1000_RCTL_SBP    equ 0x00000004
+E1000_RCTL_UPE    equ 0x00000008
+E1000_RCTL_MPE    equ 0x00000010
+E1000_RCTL_LBM    equ 0x000000C0
+E1000_RCTL_BAM    equ 0x00008000
+E1000_RCTL_SZ_2048 equ 0x00000000
+E1000_RCTL_SECRC  equ 0x04000000
+
+; TCTL flags
+E1000_TCTL_EN     equ 0x00000002
+E1000_TCTL_PSP    equ 0x00000008
+E1000_TCTL_CT     equ 0x00000FF00
+E1000_TCTL_COLD   equ 0x003FF000
+
+; ============================================================================
+; E1000 State (BSS)
+; ============================================================================
+.bss
+
+align 16
+e1000_mmio_base:
+    resq 1
+e1000_mac:
+    resb 6
+e1000_rx_descs:
+    ; Each descriptor: addr(8) + length(2) + checksum(2) + status(1) + errors(1) + special(2) = 16 bytes
+    resb E1000_NUM_RX_DESC * 16
+e1000_tx_descs:
+    resb E1000_NUM_TX_DESC * 16
+e1000_rx_buffers:
+    resb E1000_NUM_RX_DESC * E1000_RX_BUF_SIZE
+e1000_tx_buffers:
+    resb E1000_NUM_TX_DESC * E1000_RX_BUF_SIZE
+e1000_rx_tail:
+    resq 1
+e1000_tx_tail:
+    resq 1
+e1000_rx_packets:
+    resq 1
+e1000_tx_packets:
+    resq 1
+e1000_rx_bytes:
+    resq 1
+e1000_tx_bytes:
+    resq 1
+e1000_initialized:
+    resq 1
+
+.code
+
+; ============================================================================
+; e1000_init - Initialize E1000 NIC
+; ============================================================================
+e1000_init:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    ; Find E1000 via PCI (vendor=0x8086, device=0x100E or 0x100F)
+    ; For now, assume MMIO base from PCI BAR0
+    ; QEMU default: 0xFEB00000
+    
+    mov qword [rel e1000_mmio_base], 0xFEB00000
+    
+    ; Read MAC from EEPROM
+    call e1000_read_mac
+    
+    ; Initialize RX descriptors
+    lea rP, [rel e1000_rx_descs]
+    xor rC, rC
+.e1000_rx_desc_init:
+    cmp rC, E1000_NUM_RX_DESC
+    jge .e1000_rx_desc_done
+    
+    ; Set buffer address
+    lea rA, [rel e1000_rx_buffers]
+    mov rG, rC
+    imul rG, E1000_RX_BUF_SIZE
+    add rA, rG
+    mov [rP], rA           ; addr
+    mov qword [rP + 8], 0  ; status = 0
+    
+    add rP, 16
+    inc rC
+    jmp .e1000_rx_desc_init
+
+.e1000_rx_desc_done:
+    ; Initialize TX descriptors
+    lea rP, [rel e1000_tx_descs]
+    xor rC, rC
+.e1000_tx_desc_init:
+    cmp rC, E1000_NUM_TX_DESC
+    jge .e1000_tx_desc_done
+    
+    mov qword [rP], 0      ; addr = 0
+    mov qword [rP + 8], 0  ; status = 0
+    
+    add rP, 16
+    inc rC
+    jmp .e1000_tx_desc_init
+
+.e1000_tx_desc_done:
+    ; Program RX registers
+    mov rG, [rel e1000_mmio_base]
+    
+    ; RDBAL
+    lea rA, [rel e1000_rx_descs]
+    mov [rG + E1000_RDBAL], rA
+    
+    ; RDBAH = 0 (below 4GB)
+    mov qword [rG + E1000_RDBAH], 0
+    
+    ; RDLEN
+    mov rA, E1000_NUM_RX_DESC * 16
+    mov [rG + E1000_RDLEN], rA
+    
+    ; RDH = 0
+    mov qword [rG + E1000_RDH], 0
+    
+    ; RDT = E1000_NUM_RX_DESC - 1
+    mov rA, E1000_NUM_RX_DESC - 1
+    mov [rG + E1000_RDT], rA
+    mov [rel e1000_rx_tail], rA
+    
+    ; Program TX registers
+    lea rA, [rel e1000_tx_descs]
+    mov [rG + E1000_TDBAL], rA
+    mov qword [rG + E1000_TDBAH], 0
+    mov rA, E1000_NUM_TX_DESC * 16
+    mov [rG + E1000_TDLEN], rA
+    mov qword [rG + E1000_TDH], 0
+    mov qword [rG + E1000_TDT], 0
+    mov qword [rel e1000_tx_tail], 0
+    
+    ; Enable RX
+    mov rA, E1000_RCTL_EN | E1000_RCTL_SBP | E1000_RCTL_UPE | \
+           E1000_RCTL_MPE | E1000_RCTL_BAM | E1000_RCTL_SZ_2048 | \
+           E1000_RCTL_SECRC
+    mov [rG + E1000_RCTL], rA
+    
+    ; Enable TX
+    mov rA, E1000_TCTL_EN | E1000_TCTL_PSP | (0x10 << 4) | (0x40 << 12)
+    mov [rG + E1000_TCTL], rA
+    
+    ; Enable interrupts
+    mov rA, 0x1F6D
+    mov [rG + E1000_IMS], rA
+    
+    ; Clear MTA (multicast table)
+    xor rC, rC
+.e1000_clear_mta:
+    cmp rC, 128
+    jge .e1000_mta_done
+    mov qword [rG + E1000_MTA + rC*4], 0
+    inc rC
+    jmp .e1000_clear_mta
+
+.e1000_mta_done:
+    mov qword [rel e1000_initialized], 1
+    mov qword [rel e1000_rx_packets], 0
+    mov qword [rel e1000_tx_packets], 0
+    
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; e1000_read_mac - Read MAC address from EEPROM
+; ============================================================================
+e1000_read_mac:
+    push rA
+    push rC
+    push rG
+    push rP
+    
+    mov rG, [rel e1000_mmio_base]
+    lea rP, [rel e1000_mac]
+    mov rC, 3              ; 3 words = 6 bytes
+    
+.e1000_mac_loop:
+    ; Start EEPROM read at offset rC
+    mov rA, rC
+    shl rA, 16
+    or rA, 0x01            ; EERD_START
+    mov [rG + E1000_EERD], rA
+    
+    ; Wait for done
+.e1000_mac_wait:
+    mov rA, [rG + E1000_EERD]
+    test rA, 0x10          ; EERD_DONE
+    jz .e1000_mac_wait
+    
+    ; Extract data
+    shr rA, 16
+    mov [rP], rA.w
+    add rP, 2
+    inc rC
+    cmp rC, 6
+    jl .e1000_mac_loop
+    
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; e1000_receive - Check for received packets
+; Returns: rA = packet length (0 if none)
+; ============================================================================
+e1000_receive:
+    push rC
+    push rG
+    push rP
+    
+    mov rG, [rel e1000_mmio_base]
+    mov rC, [rel e1000_rx_tail]
+    inc rC
+    and rC, E1000_NUM_RX_DESC - 1
+    
+    ; Check descriptor status
+    lea rP, [rel e1000_rx_descs]
+    shl rC, 4              ; * 16
+    add rP, rC
+    mov rA, [rP + 8]       ; status word
+    test rA, E1000_RXD_DD  ; Descriptor done?
+    jz .e1000_no_packet
+    
+    ; Get length
+    mov rA, [rP + 8]
+    shr rA, 16             ; length in upper word
+    and rA, 0x3FFF
+    
+    ; Update tail
+    mov [rel e1000_rx_tail], rC
+    mov [rG + E1000_RDT], rC
+    
+    inc qword [rel e1000_rx_packets]
+    add [rel e1000_rx_bytes], rA
+    
+    pop rP
+    pop rG
+    pop rC
+    ret
+
+.e1000_no_packet:
+    xor rA, rA
+    pop rP
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; e1000_send - Send a packet
+; rP = packet data, rC = length → rA = bytes sent
+; ============================================================================
+e1000_send:
+    push rG
+    push rP
+    push rC
+    
+    mov rG, [rel e1000_mmio_base]
+    
+    ; Copy packet to TX buffer
+    ; (simplified - would use memcpy)
+    
+    ; Set up TX descriptor
+    mov rA, [rel e1000_tx_tail]
+    lea rS, [rel e1000_tx_descs]
+    shl rA, 4
+    add rS, rA
+    
+    ; Set buffer address
+    lea rA, [rel e1000_tx_buffers]
+    mov [rS], rA
+    
+    ; Set length
+    mov [rS + 8], rC.w
+    
+    ; Set command flags
+    mov byte [rS + 12], E1000_TXD_CMD_EOP | E1000_TXD_CMD_IFCS | E1000_TXD_CMD_RS
+    
+    ; Advance tail
+    mov rA, [rel e1000_tx_tail]
+    inc rA
+    and rA, E1000_NUM_TX_DESC - 1
+    mov [rel e1000_tx_tail], rA
+    mov [rG + E1000_TDT], rA
+    
+    inc qword [rel e1000_tx_packets]
+    add [rel e1000_tx_bytes], rC
+    
+    mov rA, rC
+    
+    pop rC
+    pop rP
+    pop rG
+    ret

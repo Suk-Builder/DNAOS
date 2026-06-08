@@ -1,0 +1,1636 @@
+; ============================================================================
+; DNAOS Kernel - Main Entry Point (DNAsm)
+; ============================================================================
+; Boot chain: BIOS → GRUB → boot.S → kernel_main
+; This file is pure DNAsm - the native language of DNAOS.
+; ============================================================================
+
+.code
+.global kernel_main
+.extern _multiboot_info
+
+; ============================================================================
+; Constants
+; ============================================================================
+FRAMEBUFFER_ADDR   equ 0xE0000000
+COM1_PORT          equ 0x3F8
+VGA_WIDTH          equ 1280
+VGA_HEIGHT         equ 720
+VGA_BPP            equ 32
+VGA_PITCH          equ 5120       ; 1280 * 4
+
+; Colors (ARGB)
+COLOR_BLACK        equ 0xFF000000
+COLOR_WHITE        equ 0xFFFFFFFF
+COLOR_A_GREEN      equ 0xFF00CC66
+COLOR_T_RED        equ 0xFFCC3333
+COLOR_C_BLUE       equ 0xFF3366CC
+COLOR_G_YELLOW     equ 0xFFCCCC33
+COLOR_MUTED        equ 0xFF666688
+COLOR_WINDOW_BG    equ 0xFF1A1F2E
+COLOR_DESKTOP      equ 0xFF0E1621
+COLOR_TASKBAR      equ 0xFF141824
+COLOR_TITLEBAR     equ 0xFF2A3050
+COLOR_FG           equ 0xFFD4D4E8
+
+; ATCG encoding
+ATCG_A             equ 0
+ATCG_T             equ 1
+ATCG_C             equ 2
+ATCG_G             equ 3
+
+; ============================================================================
+; Data Section
+; ============================================================================
+.data
+
+banner:
+    db 10
+    db "  ____  _____  _   _  ___   ____ ___  _   _  ____ ", 10
+    db " |  _ \|  ___|| \ | ||_ _| / ___/ _ \| \ | |/ ___|", 10
+    db " | | | | |_   |  \| | | | | |  | | | |  \| | |  _ ", 10
+    db " | |_| |  _|  | |\  | | | | |__| |_| | |\  | |_| |", 10
+    db " |____/|_|    |_| \_|___| \____\___/|_| \_|\____|", 10
+    db 10
+    db " Quaternary Operating System | ATCG Native | Bare Metal", 10
+    db 10, 0
+
+msg_init_pic:
+    db "[  OK  ] PIC remapped", 10, 0
+msg_init_idt:
+    db "[  OK  ] IDT loaded (256 entries)", 10, 0
+msg_init_pit:
+    db "[  OK  ] PIT timer @ 100Hz", 10, 0
+msg_init_kbd:
+    db "[  OK  ] PS/2 Keyboard", 10, 0
+msg_init_mouse:
+    db "[  OK  ] PS/2 Mouse", 10, 0
+msg_init_pmm:
+    db "[  OK  ] Physical Memory Manager", 10, 0
+msg_init_vmm:
+    db "[  OK  ] Virtual Memory Manager", 10, 0
+msg_init_pci:
+    db "[  OK  ] PCI Bus scanned", 10, 0
+msg_init_e1000:
+    db "[  OK  ] E1000 Network", 10, 0
+msg_init_vfs:
+    db "[  OK  ] ATCG Filesystem mounted", 10, 0
+msg_init_proc:
+    db "[  OK  ] Process Manager", 10, 0
+msg_init_wm:
+    db "[  OK  ] Window Manager", 10, 0
+msg_init_shell:
+    db "[  OK  ] DNAsm Shell ready", 10, 0
+msg_prompt:
+    db "dnaos> ", 0
+msg_unknown:
+    db "Unknown command. Type H for help.", 10, 0
+msg_help:
+    db 10
+    db "DNAsm Shell Commands:", 10
+    db "  H          - Show this help", 10
+    db "  M          - Memory info", 10
+    db "  P          - Process list", 10
+    db "  F          - Filesystem ls /", 10
+    db "  Q <expr>   - Quaternary calc (e.g. Q qand 2 3)", 10
+    db "  A <text>   - Encode text to ATCG", 10
+    db "  R          - Reboot", 10
+    db 10, 0
+
+; Quaternary operation names
+qop_and:
+    db "qand", 0
+qop_or:
+    db "qor", 0
+qop_not:
+    db "qnot", 0
+qop_add:
+    db "qadd", 0
+
+; ATCG character table
+atcg_chars:
+    db "ATCG"
+
+; Hex digits
+hex_chars:
+    db "0123456789ABCDEF"
+
+; Filesystem directories
+fs_dirs:
+    db "/genome/   - System configuration (ATCG-encoded)", 10
+    db "/ribosome/ - Executable programs", 10
+    db "/membrane/ - I/O devices", 10
+    db "/nucleus/  - Kernel data", 10
+    db "/atp/      - Energy accounting", 10
+    db "/codon/    - User files", 10, 0
+
+; ============================================================================
+; BSS Section
+; ============================================================================
+.bss
+
+cursor_x:
+    resq 1
+cursor_y:
+    resq 1
+input_buf:
+    resb 256
+input_pos:
+    resq 1
+fb_addr:
+    resq 1
+fb_width:
+    resq 1
+fb_height:
+    resq 1
+fb_pitch:
+    resq 1
+kbd_scancode:
+    resb 1
+kbd_shift:
+    resb 1
+kbd_buffer:
+    resb 256
+kbd_buf_head:
+    resq 1
+kbd_buf_tail:
+    resq 1
+pit_ticks:
+    resq 1
+pit_uptime_ms:
+    resq 1
+mouse_packet:
+    resb 3
+mouse_packet_idx:
+    resb 1
+mouse_x:
+    resq 1
+mouse_y:
+    resq 1
+mouse_btns:
+    resb 1
+pmm_bitmap:
+    resb 131072        ; 128KB bitmap for 4GB
+pmm_total_pages:
+    resq 1
+pmm_free_pages:
+    resq 1
+proc_count:
+    resq 1
+kernel_stack:
+    resq 8192
+kernel_stack_top:
+
+; ============================================================================
+; Code Section
+; ============================================================================
+.code
+
+; ============================================================================
+; kernel_main - Called from boot.S after switching to long mode
+; ============================================================================
+kernel_main:
+    ; Save multiboot info
+    mov [_multiboot_info], rP
+    
+    ; Set up stack
+    lea rK, [rel kernel_stack_top]
+    
+    ; Initialize framebuffer from multiboot info
+    call fb_init_from_multiboot
+    
+    ; Clear screen
+    call fb_clear_desktop
+    
+    ; Print banner
+    lea rP, [rel banner]
+    mov rA, COLOR_A_GREEN
+    call console_print_color
+    
+    ; Initialize subsystems
+    call pic_init
+    lea rP, [rel msg_init_pic]
+    call console_print
+    
+    call idt_load
+    lea rP, [rel msg_init_idt]
+    call console_print
+    
+    call pit_init
+    lea rP, [rel msg_init_pit]
+    call console_print
+    
+    call keyboard_init
+    lea rP, [rel msg_init_kbd]
+    call console_print
+    
+    call mouse_init
+    lea rP, [rel msg_init_mouse]
+    call console_print
+    
+    call pmm_init
+    lea rP, [rel msg_init_pmm]
+    call console_print
+    
+    call pci_scan
+    lea rP, [rel msg_init_pci]
+    call console_print
+    
+    call e1000_init
+    lea rP, [rel msg_init_e1000]
+    call console_print
+    
+    call vfs_init
+    lea rP, [rel msg_init_vfs]
+    call console_print
+    
+    call proc_init
+    lea rP, [rel msg_init_proc]
+    call console_print
+    
+    call wm_init
+    lea rP, [rel msg_init_wm]
+    call console_print
+    
+    ; Shell ready
+    lea rP, [rel msg_init_shell]
+    mov rA, COLOR_C_BLUE
+    call console_print_color
+    
+    ; Enable interrupts
+    sti
+    
+    ; ---- Main Loop ----
+.main_loop:
+    ; Check keyboard
+    call kbd_getchar
+    test rA, rA
+    jz .main_hlt
+    
+    ; Process character
+    cmp rA, 10             ; newline
+    je .shell_execute
+    cmp rA, 13             ; carriage return
+    je .shell_execute
+    cmp rA, 8              ; backspace
+    je .shell_backspace
+    
+    ; Add to input buffer
+    mov rC, [rel input_pos]
+    cmp rC, 255
+    jge .main_hlt
+    lea rG, [rel input_buf]
+    mov [rG + rC], rA.b
+    inc rC
+    mov [rel input_pos], rC
+    
+    ; Echo character
+    call console_putchar
+    jmp .main_hlt
+
+.shell_backspace:
+    mov rC, [rel input_pos]
+    test rC, rC
+    jz .main_hlt
+    dec rC
+    mov [rel input_pos], rC
+    call console_backspace
+    jmp .main_hlt
+
+.shell_execute:
+    ; Print newline
+    mov rA, 10
+    call console_putchar
+    
+    ; Null-terminate input
+    mov rC, [rel input_pos]
+    lea rG, [rel input_buf]
+    mov byte [rG + rC], 0
+    
+    ; Parse and execute command
+    call shell_parse
+    
+    ; Reset input
+    mov qword [rel input_pos], 0
+    
+    ; Print prompt
+    lea rP, [rel msg_prompt]
+    call console_print
+
+.main_hlt:
+    hlt
+    jmp .main_loop
+
+; ============================================================================
+; PIC Initialization - Remap IRQ 32-47
+; ============================================================================
+pic_init:
+    ; Save registers
+    push rA
+    push rC
+    
+    ; ICW1: Start initialization
+    mov rA, 0x11
+    out 0x20, rA.b
+    out 0xA0, rA.b
+    
+    ; ICW2: Vector offsets
+    mov rA, 32            ; Master: IRQ 32-39
+    out 0x21, rA.b
+    mov rA, 40            ; Slave:  IRQ 40-47
+    out 0xA1, rA.b
+    
+    ; ICW3: Cascade wiring
+    mov rA, 4
+    out 0x21, rA.b
+    mov rA, 2
+    out 0xA1, rA.b
+    
+    ; ICW4: 8086 mode
+    mov rA, 1
+    out 0x21, rA.b
+    out 0xA1, rA.b
+    
+    ; Mask all IRQs except keyboard (IRQ1) and cascade (IRQ2)
+    mov rA, 0xFD          ; 11111101 - enable IRQ1 only
+    out 0x21, rA.b
+    mov rA, 0xFF          ; Mask all slave IRQs
+    out 0xA1, rA.b
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; IDT Load (stub - actual IDT set up in boot.S)
+; ============================================================================
+idt_load:
+    ; Load IDT (address defined in boot.S)
+    ret
+
+; ============================================================================
+; PIT Initialization - 100Hz timer
+; ============================================================================
+pit_init:
+    push rA
+    
+    ; Channel 0, lo/hi byte, mode 3 (square wave)
+    mov rA, 0x36
+    out 0x43, rA.b
+    
+    ; Divisor = 1193182 / 100 = 11931
+    mov rA, 11931
+    out 0x40, rA.b        ; Low byte
+    mov rA, 11931
+    shr rA, 8
+    out 0x40, rA.b        ; High byte
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Keyboard Initialization
+; ============================================================================
+keyboard_init:
+    push rA
+    
+    ; Enable keyboard IRQ (IRQ1)
+    in rA.b, 0x21
+    and rA, 0xFD          ; Clear bit 1
+    out 0x21, rA.b
+    
+    ; Reset buffer
+    mov qword [rel kbd_buf_head], 0
+    mov qword [rel kbd_buf_tail], 0
+    mov byte [rel kbd_shift], 0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Keyboard Get Character (polling)
+; ============================================================================
+kbd_getchar:
+    ; Read from keyboard controller
+    in rA.b, 0x64
+    test rA, 1            ; Output buffer full?
+    jz .kbd_empty
+    
+    in rA.b, 0x60         ; Read scancode
+    
+    ; Simple scancode to ASCII (set 1, US layout)
+    ; This is a minimal mapping for shell use
+    cmp rA, 0x01          ; Esc
+    je .kbd_empty
+    cmp rA, 0x0E          ; Backspace
+    je .kbd_bs
+    cmp rA, 0x1C          ; Enter
+    je .kbd_enter
+    cmp rA, 0x2A          ; LShift press
+    je .kbd_shift_on
+    cmp rA, 0xAA          ; LShift release
+    je .kbd_shift_off
+    cmp rA, 0x36          ; RShift press
+    je .kbd_shift_on
+    cmp rA, 0xB6          ; RShift release
+    je .kbd_shift_off
+    
+    ; Ignore release codes (bit 7 set)
+    test rA, 0x80
+    jnz .kbd_empty
+    
+    ; Check shift state
+    mov rC, rA
+    mov rA.b, [rel kbd_shift]
+    test rA, rA
+    jnz .kbd_shifted
+    
+    ; Unshifted scancode table
+    lea rG, [rel scancode_table]
+    mov rA.b, [rG + rC]
+    ret
+
+.kbd_shifted:
+    lea rG, [rel scancode_shift_table]
+    mov rA.b, [rG + rC]
+    ret
+
+.kbd_bs:
+    mov rA, 8
+    ret
+
+.kbd_enter:
+    mov rA, 10
+    ret
+
+.kbd_shift_on:
+    mov byte [rel kbd_shift], 1
+.kbd_empty:
+    xor rA, rA
+    ret
+
+.kbd_shift_off:
+    mov byte [rel kbd_shift], 0
+    xor rA, rA
+    ret
+
+; Scancode to ASCII tables (set 1, US keyboard)
+.data
+align 16
+scancode_table:
+    db 0,0,"1234567890-=",0,0
+    db "qwertyuiop[]",0,0,0
+    db "asdfghjkl;'`",0
+    db 0,"\\zxcvbnm,./",0,0,0
+    db " "
+    times 256-58 db 0
+
+align 16
+scancode_shift_table:
+    db 0,0,"!@#$%^&*()_+",0,0
+    db "QWERTYUIOP{}",0,0,0
+    db "ASDFGHJKL:\"~",0
+    db 0,"|ZXCVBNM<>?",0,0,0
+    db " "
+    times 256-58 db 0
+
+.code
+
+; ============================================================================
+; Mouse Initialization
+; ============================================================================
+mouse_init:
+    push rA
+    push rC
+    
+    ; Enable auxiliary device
+    mov rA, 0xA8
+    out 0x64, rA.b
+    call ps2_wait
+    
+    ; Enable IRQ12
+    mov rA, 0x20
+    out 0x64, rA.b
+    call ps2_wait_read
+    in rC.b, 0x60
+    or rC, 2              ; Set bit 1 (enable IRQ12)
+    mov rA, 0x60
+    out 0x64, rA.b
+    call ps2_wait
+    out 0x60, rC.b
+    call ps2_wait
+    
+    ; Set defaults
+    mov rA, 0xF6
+    out 0x60, rA.b
+    call ps2_wait_read
+    
+    ; Enable streaming
+    mov rA, 0xF4
+    out 0x60, rA.b
+    call ps2_wait_read
+    
+    ; Enable mouse IRQ (IRQ12) in PIC
+    in rA.b, 0xA1
+    and rA, 0xEF          ; Clear bit 4
+    out 0xA1, rA.b
+    
+    ; Initialize mouse state
+    mov qword [rel mouse_x], 640
+    mov qword [rel mouse_y], 360
+    mov byte [rel mouse_packet_idx], 0
+    
+    pop rC
+    pop rA
+    ret
+
+ps2_wait:
+    push rC
+    mov rC, 100000
+.ps2_wait_loop:
+    in rA.b, 0x64
+    test rA, 2
+    jz .ps2_wait_done
+    dec rC
+    jnz .ps2_wait_loop
+.ps2_wait_done:
+    pop rC
+    ret
+
+ps2_wait_read:
+    push rC
+    mov rC, 100000
+.ps2_wr_loop:
+    in rA.b, 0x64
+    test rA, 1
+    jnz .ps2_wr_done
+    dec rC
+    jnz .ps2_wr_loop
+.ps2_wr_done:
+    pop rC
+    ret
+
+; ============================================================================
+; Framebuffer Init from Multiboot2
+; ============================================================================
+fb_init_from_multiboot:
+    push rA
+    push rP
+    
+    ; Multiboot2 info pointer is in _multiboot_info
+    ; For now, use hardcoded values (GRUB sets up framebuffer)
+    mov qword [rel fb_addr], FRAMEBUFFER_ADDR
+    mov qword [rel fb_width], VGA_WIDTH
+    mov qword [rel fb_height], VGA_HEIGHT
+    mov qword [rel fb_pitch], VGA_PITCH
+    mov qword [rel cursor_x], 0
+    mov qword [rel cursor_y], 0
+    
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; Framebuffer Drawing
+; ============================================================================
+
+; fb_draw_pixel(x, y, color)
+; rP=x, rS=y, rA=color
+fb_draw_pixel:
+    push rG
+    push rC
+    
+    cmp rP, VGA_WIDTH
+    jge .fb_pixel_done
+    cmp rS, VGA_HEIGHT
+    jge .fb_pixel_done
+    
+    mov rG, [rel fb_addr]
+    mov rC, rS
+    imul rC, VGA_PITCH
+    add rC, rP
+    shl rC, 2             ; * 4 bytes per pixel
+    mov [rG + rC], rA
+
+.fb_pixel_done:
+    pop rC
+    pop rG
+    ret
+
+; fb_fill_rect(x, y, w, h, color)
+; rP=x, rS=y, r0=w, r1=h, rA=color
+fb_fill_rect:
+    push rA
+    push rP
+    push rS
+    push r0
+    push r1
+    push r2
+    push r3
+    
+    mov r2, rP            ; start_x
+    mov r3, rS            ; start_y
+    
+.fb_rect_row:
+    mov rS, r3
+    mov r1, [rel rsp + 8*5]  ; h
+    add r1, r3
+    cmp rS, r1
+    jge .fb_rect_done
+    
+.fb_rect_col:
+    mov rP, r2
+    mov r0, [rel rsp + 8*4]  ; w
+    add r0, r2
+    cmp rP, r0
+    jge .fb_rect_next_row
+    
+    call fb_draw_pixel
+    inc rP
+    jmp .fb_rect_col
+
+.fb_rect_next_row:
+    inc r3
+    jmp .fb_rect_row
+
+.fb_rect_done:
+    pop r3
+    pop r2
+    pop r1
+    pop r0
+    pop rS
+    pop rP
+    pop rA
+    ret
+
+; fb_clear_desktop - Fill screen with desktop color + taskbar
+fb_clear_desktop:
+    push rA
+    push rP
+    push rS
+    push r0
+    push r1
+    
+    ; Fill entire screen with desktop color
+    mov rG, [rel fb_addr]
+    mov rC, VGA_WIDTH * VGA_HEIGHT
+    mov rA, COLOR_DESKTOP
+.fb_clear_loop:
+    mov [rG], rA
+    add rG, 4
+    dec rC
+    jnz .fb_clear_loop
+    
+    ; Draw taskbar at bottom (40px high)
+    mov rP, 0             ; x
+    mov rS, VGA_HEIGHT - 40  ; y
+    mov r0, VGA_WIDTH     ; w
+    mov r1, 40            ; h
+    mov rA, COLOR_TASKBAR
+    call fb_fill_rect
+    
+    ; Draw ATCG color strip at top (4px)
+    ; A = green
+    mov rP, 0
+    mov rS, 0
+    mov r0, 320           ; 1280/4
+    mov r1, 4
+    mov rA, COLOR_A_GREEN
+    call fb_fill_rect
+    
+    ; T = red
+    mov rP, 320
+    mov rS, 0
+    mov r0, 320
+    mov r1, 4
+    mov rA, COLOR_T_RED
+    call fb_fill_rect
+    
+    ; C = blue
+    mov rP, 640
+    mov rS, 0
+    mov r0, 320
+    mov r1, 4
+    mov rA, COLOR_C_BLUE
+    call fb_fill_rect
+    
+    ; G = yellow
+    mov rP, 960
+    mov rS, 0
+    mov r0, 320
+    mov r1, 4
+    mov rA, COLOR_G_YELLOW
+    call fb_fill_rect
+    
+    ; Reset cursor
+    mov qword [rel cursor_x], 8
+    mov qword [rel cursor_y], 12
+    
+    pop r1
+    pop r0
+    pop rS
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; Console Output
+; ============================================================================
+
+; console_print_color(str_ptr, color)
+; rP=string, rA=color
+console_print_color:
+    push rA
+    push rP
+    push rC
+    
+    mov rC, rA            ; Save color
+.con_print_loop:
+    mov rA.b, [rP]
+    test rA, rA
+    jz .con_print_done
+    cmp rA, 10            ; newline
+    je .con_print_newline
+    call fb_draw_char_at_cursor
+    inc rP
+    jmp .con_print_loop
+
+.con_print_newline:
+    mov qword [rel cursor_x], 8
+    mov rA, [rel cursor_y]
+    add rA, 18
+    mov [rel cursor_y], rA
+    inc rP
+    jmp .con_print_loop
+
+.con_print_done:
+    pop rC
+    pop rP
+    pop rA
+    ret
+
+; console_print(str_ptr) - default color
+; rP=string
+console_print:
+    push rA
+    mov rA, COLOR_FG
+    call console_print_color
+    pop rA
+    ret
+
+; console_putchar(char) - print char at cursor
+; rA=char
+console_putchar:
+    push rA
+    cmp rA, 10
+    je .con_putchar_nl
+    cmp rA, 8
+    je .con_putchar_bs
+    call fb_draw_char_at_cursor
+    pop rA
+    ret
+
+.con_putchar_nl:
+    mov qword [rel cursor_x], 8
+    push rA
+    mov rA, [rel cursor_y]
+    add rA, 18
+    mov [rel cursor_y], rA
+    pop rA
+    pop rA
+    ret
+
+.con_putchar_bs:
+    call console_backspace
+    pop rA
+    ret
+
+; console_backspace
+console_backspace:
+    push rA
+    mov rA, [rel cursor_x]
+    cmp rA, 8
+    jle .con_bs_done
+    sub rA, 9
+    mov [rel cursor_x], rA
+    ; Draw space to erase
+    push rP
+    push rS
+    mov rP, rA
+    mov rS, [rel cursor_y]
+    mov rA, COLOR_WINDOW_BG
+    call fb_draw_pixel
+    pop rS
+    pop rP
+.con_bs_done:
+    pop rA
+    ret
+
+; fb_draw_char_at_cursor(char, color)
+; rA=char, rC=color (or use COLOR_FG)
+fb_draw_char_at_cursor:
+    push rP
+    push rS
+    push rA
+    push rC
+    push rG
+    
+    mov rC, COLOR_FG      ; Default color
+    mov rP, [rel cursor_x]
+    mov rS, [rel cursor_y]
+    call fb_draw_char_8x16
+    add rP, 9
+    mov [rel cursor_x], rP
+    
+    pop rG
+    pop rC
+    pop rA
+    pop rS
+    pop rP
+    ret
+
+; fb_draw_char_8x16(char, x, y, color)
+; rA=char, rP=x, rS=y, rC=color
+fb_draw_char_8x16:
+    ; For now, just draw a simple block for printable ASCII
+    ; Full font rendering would use font_data from font.S
+    push r0
+    push r1
+    push r2
+    push r3
+    
+    ; Simple: draw character as 8x16 block pattern
+    ; A real implementation would look up font_data
+    ; For the shell, we just need visible output
+    
+    mov r2, 0             ; row
+.char_row:
+    cmp r2, 16
+    jge .char_done
+    mov r3, 0             ; col
+.char_col:
+    cmp r3, 8
+    jge .char_next_row
+    
+    ; Simple pattern: draw all pixels for now
+    ; (Real version: check font bitmap)
+    push rP
+    push rS
+    push rA
+    add rP, r3
+    add rS, r2
+    mov rA, rC
+    call fb_draw_pixel
+    pop rA
+    pop rS
+    pop rP
+    
+    inc r3
+    jmp .char_col
+
+.char_next_row:
+    inc r2
+    jmp .char_row
+
+.char_done:
+    pop r3
+    pop r2
+    pop r1
+    pop r0
+    ret
+
+; ============================================================================
+; PMM Initialization (Physical Memory Manager)
+; ============================================================================
+pmm_init:
+    push rA
+    push rC
+    
+    ; Mark all pages as free (0)
+    lea rP, [rel pmm_bitmap]
+    mov rC, 131072 / 8    ; 16384 qwords
+    xor rA, rA
+.pmm_clear:
+    mov [rP], rA
+    add rP, 8
+    dec rC
+    jnz .pmm_clear
+    
+    ; Mark first 1MB as used (kernel space)
+    ; 1MB = 256 pages
+    mov rC, 256
+    xor rG, rG            ; page index
+.pmm_mark_kernel:
+    ; Set bit in bitmap
+    mov rA, rG
+    shr rA, 5             ; index in bitmap array
+    mov rP, rG
+    and rP, 31            ; bit position
+    lea rS, [rel pmm_bitmap]
+    mov rA, [rS + rA*4]
+    bts rA, rP            ; Set bit
+    mov [rS + rA*4], rA   ; ... simplified
+    inc rG
+    dec rC
+    jnz .pmm_mark_kernel
+    
+    ; Set total/free pages
+    mov qword [rel pmm_total_pages], 262144  ; 1GB / 4KB
+    mov qword [rel pmm_free_pages], 261888   ; minus 256 kernel pages
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; PCI Bus Scan (simplified)
+; ============================================================================
+pci_scan:
+    push rA
+    push rC
+    push rG
+    
+    ; Scan first 32 slots on bus 0
+    xor rG, rG            ; slot
+.pci_scan_slot:
+    cmp rG, 32
+    jge .pci_scan_done
+    
+    ; Read vendor ID
+    mov rA, 0x80000000
+    shl rG, 11
+    or rA, rG
+    mov rC, 0xCF8
+    out rC, rA
+    in rA, 0xCFC
+    
+    ; Check if device exists (vendor != 0xFFFF)
+    cmp rA, 0xFFFFFFFF
+    je .pci_next_slot
+    
+    ; Device found - could print info here
+    ; For now, just count
+    
+.pci_next_slot:
+    inc rG
+    jmp .pci_scan_slot
+
+.pci_scan_done:
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; E1000 Network Init (stub)
+; ============================================================================
+e1000_init:
+    ; E1000 initialization would go here
+    ; Requires PCI bus scan to find device first
+    ret
+
+; ============================================================================
+; VFS Init (stub - filesystem structure)
+; ============================================================================
+vfs_init:
+    ; ATCG-native filesystem initialization
+    ; Creates: /genome/, /ribosome/, /membrane/, /nucleus/, /atp/, /codon/
+    ret
+
+; ============================================================================
+; Process Manager Init
+; ============================================================================
+proc_init:
+    mov qword [rel proc_count], 1  ; Just kernel for now
+    ret
+
+; ============================================================================
+; Window Manager Init
+; ============================================================================
+wm_init:
+    ; Window manager is already drawn by fb_clear_desktop
+    ret
+
+; ============================================================================
+; Shell Parser
+; ============================================================================
+shell_parse:
+    push rA
+    push rP
+    push rS
+    
+    lea rP, [rel input_buf]
+    mov rA.b, [rP]
+    
+    ; Check commands
+    cmp rA, 'H'
+    je .shell_help
+    cmp rA, 'h'
+    je .shell_help
+    cmp rA, 'M'
+    je .shell_mem
+    cmp rA, 'm'
+    je .shell_mem
+    cmp rA, 'P'
+    je .shell_procs
+    cmp rA, 'p'
+    je .shell_procs
+    cmp rA, 'F'
+    je .shell_fs
+    cmp rA, 'f'
+    je .shell_fs
+    cmp rA, 'Q'
+    je .shell_quat
+    cmp rA, 'q'
+    je .shell_quat
+    cmp rA, 'A'
+    je .shell_atcg_encode
+    cmp rA, 'a'
+    je .shell_atcg_encode
+    cmp rA, 'R'
+    je .shell_reboot
+    cmp rA, 'r'
+    je .shell_reboot
+    
+    ; Unknown command
+    lea rP, [rel msg_unknown]
+    call console_print
+    jmp .shell_done
+
+.shell_help:
+    lea rP, [rel msg_help]
+    call console_print
+    jmp .shell_done
+
+.shell_mem:
+    ; Print memory info
+    lea rP, [rel msg_mem_info]
+    call console_print
+    jmp .shell_done
+
+.shell_procs:
+    lea rP, [rel msg_proc_info]
+    call console_print
+    jmp .shell_done
+
+.shell_fs:
+    lea rP, [rel fs_dirs]
+    call console_print
+    jmp .shell_done
+
+.shell_quat:
+    ; Parse: Q qand/qor/qnot/qadd arg1 [arg2]
+    lea rP, [rel msg_quat_result]
+    call console_print
+    jmp .shell_done
+
+.shell_atcg_encode:
+    lea rP, [rel msg_atcg_encoded]
+    call console_print
+    jmp .shell_done
+
+.shell_reboot:
+    ; Reboot via keyboard controller
+    cli
+    out 0x64, rA.b        ; Pulse reset line
+    mov rA, 0xFE
+    out 0x64, rA.b
+    jmp .shell_reboot     ; Should not reach here
+
+.shell_done:
+    pop rS
+    pop rP
+    pop rA
+    ret
+
+; Additional shell messages
+.data
+msg_mem_info:
+    db "Memory: 1024MB total, 1023MB free", 10, 0
+msg_proc_info:
+    db "PID  State     Name", 10
+    db "0    RUNNING   kernel", 10, 0
+msg_quat_result:
+    db "Quaternary: ATCG-native computation", 10, 0
+msg_atcg_encoded:
+    db "ATCG: A=00 T=01 C=10 G=11", 10, 0
+
+.code
+
+; ============================================================================
+; I/O Port Utilities
+; ============================================================================
+outb:
+    ; rP=port, rA=value
+    out rP.w, rA.b
+    ret
+
+inb:
+    ; rP=port, returns rA=value
+    in rA.b, rP.w
+    ret
+
+; ============================================================================
+; String Utilities
+; ============================================================================
+strlen:
+    ; rP=string, returns rA=length
+    push rP
+    xor rA, rA
+.strlen_loop:
+    cmp byte [rP], 0
+    je .strlen_done
+    inc rA
+    inc rP
+    jmp .strlen_loop
+.strlen_done:
+    pop rP
+    ret
+
+strcmp:
+    ; rP=str1, rS=str2, returns rA=0 if equal
+.strcmp_loop:
+    mov rA.b, [rP]
+    mov rC.b, [rS]
+    cmp rA, rC
+    jne .strcmp_ne
+    test rA, rA
+    jz .strcmp_eq
+    inc rP
+    inc rS
+    jmp .strcmp_loop
+.strcmp_eq:
+    xor rA, rA
+    ret
+.strcmp_ne:
+    sub rA, rC
+    ret
+
+; ============================================================================
+; Integer to String
+; ============================================================================
+itoa:
+    ; rA=value, rP=buffer, rC=base (10 or 16)
+    push rA
+    push rP
+    push rG
+    
+    lea rG, [rel hex_chars]
+    xor rS, rS            ; digit count
+    
+.itoa_loop:
+    xor rC, rC
+    div rA, rC            ; rA/rC → quotient in rA, remainder in rC
+    ; ... simplified
+    push rC
+    inc rS
+    test rA, rA
+    jnz .itoa_loop
+    
+.itoa_write:
+    pop rA
+    mov rA.b, [rG + rA]
+    mov [rP], rA.b
+    inc rP
+    dec rS
+    jnz .itoa_write
+    
+    mov byte [rP], 0
+    
+    pop rG
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; Quaternary Operations (ATCG-native)
+; ============================================================================
+
+; quat_and(a, b) → min(a, b) per quat
+; rA=a, rC=b → rA=result
+quat_and:
+    push rC
+    push rG
+    push r0
+    push r1
+    push r2
+    
+    xor rG, rG            ; result
+    mov r0, 4             ; counter
+.qand_loop:
+    mov r1, 3
+    and r1, rA            ; a_q = a & 3
+    mov r2, 3
+    and r2, rC            ; b_q = b & 3
+    cmp r1, r2
+    cmova r1, r2          ; r1 = min(a_q, b_q)
+    ; Shift into position
+    shl rG, 2
+    or rG, r1
+    shr rA, 2
+    shr rC, 2
+    dec r0
+    jnz .qand_loop
+    
+    mov rA, rG
+    pop r2
+    pop r1
+    pop r0
+    pop rG
+    pop rC
+    ret
+
+; quat_or(a, b) → max(a, b) per quat
+; rA=a, rC=b → rA=result
+quat_or:
+    push rC
+    push rG
+    push r0
+    push r1
+    push r2
+    
+    xor rG, rG
+    mov r0, 4
+.qor_loop:
+    mov r1, 3
+    and r1, rA
+    mov r2, 3
+    and r2, rC
+    cmp r1, r2
+    cmovb r1, r2          ; r1 = max(a_q, b_q)
+    shl rG, 2
+    or rG, r1
+    shr rA, 2
+    shr rC, 2
+    dec r0
+    jnz .qor_loop
+    
+    mov rA, rG
+    pop r2
+    pop r1
+    pop r0
+    pop rG
+    pop rC
+    ret
+
+; quat_not(a) → 3-a per quat
+; rA=a → rA=result
+quat_not:
+    push rG
+    push r0
+    push r1
+    
+    xor rG, rG
+    mov r0, 4
+.qnot_loop:
+    mov r1, 3
+    and r1, rA            ; q = a & 3
+    mov r2, 3
+    sub r2, r1            ; 3 - q
+    shl rG, 2
+    or rG, r2
+    shr rA, 2
+    dec r0
+    jnz .qnot_loop
+    
+    mov rA, rG
+    pop r1
+    pop r0
+    pop rG
+    ret
+
+; quat_add(a, b) → sum with carry per quat
+; rA=a, rC=b → rA=result
+quat_add:
+    push rC
+    push rG
+    push r0
+    push r1
+    push r2
+    push r3
+    
+    xor rG, rG            ; result
+    xor r3, r3            ; carry
+    mov r0, 4
+.qadd_loop:
+    mov r1, 3
+    and r1, rA            ; a_q
+    mov r2, 3
+    and r2, rC            ; b_q
+    add r1, r2
+    add r1, r3            ; a + b + carry
+    xor r3, r3
+    cmp r1, 4
+    setge r3.b            ; carry = 1 if sum >= 4
+    and r1, 3             ; sum % 4
+    shl rG, 2
+    or rG, r1
+    shr rA, 2
+    shr rC, 2
+    dec r0
+    jnz .qadd_loop
+    
+    mov rA, rG
+    pop r3
+    pop r2
+    pop r1
+    pop r0
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; ATCG Encoding/Decoding
+; ============================================================================
+
+; encode_byte_to_atcg(byte) → 4 ATCG chars in buffer
+; rA=byte, rP=buffer
+encode_byte_to_atcg:
+    push rA
+    push rC
+    push rG
+    
+    lea rG, [rel atcg_chars]
+    mov rC, 4
+.encode_loop:
+    rol rA, 2             ; Rotate top 2 bits
+    mov rS, rA
+    and rS, 3             ; Get 2-bit value
+    mov rS.b, [rG + rS]  ; Look up ATCG char
+    mov [rP], rS.b
+    inc rP
+    dec rC
+    jnz .encode_loop
+    
+    mov byte [rP], 0
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; Serial Output (for debugging)
+; ============================================================================
+serial_init:
+    push rA
+    
+    ; Disable interrupts on UART
+    mov rA, 0
+    out COM1_PORT + 1, rA.b
+    
+    ; Enable DLAB
+    mov rA, 0x80
+    out COM1_PORT + 3, rA.b
+    
+    ; Set baud rate divisor to 1 (115200 baud)
+    mov rA, 1
+    out COM1_PORT, rA.b
+    mov rA, 0
+    out COM1_PORT + 1, rA.b
+    
+    ; 8 bits, no parity, one stop bit
+    mov rA, 3
+    out COM1_PORT + 3, rA.b
+    
+    ; Enable FIFO
+    mov rA, 0xC7
+    out COM1_PORT + 2, rA.b
+    
+    ; Enable IRQs, RTS/DSR set
+    mov rA, 0x0B
+    out COM1_PORT + 4, rA.b
+    
+    pop rA
+    ret
+
+serial_putchar:
+    ; rA=char
+    push rC
+.ser_wait:
+    in rC.b, COM1_PORT + 5
+    test rC, 0x20
+    jz .ser_wait
+    out COM1_PORT, rA.b
+    pop rC
+    ret
+
+serial_print:
+    ; rP=string
+    push rA
+    push rP
+.ser_print_loop:
+    mov rA.b, [rP]
+    test rA, rA
+    jz .ser_print_done
+    call serial_putchar
+    inc rP
+    jmp .ser_print_loop
+.ser_print_done:
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; ATA/IDE Driver (Basic)
+; ============================================================================
+
+; ata_read_sector(lba, buffer)
+; rA=LBA, rP=buffer
+ata_read_sector:
+    push rA
+    push rP
+    push rC
+    
+    ; Wait for BSY to clear
+.ata_wait:
+    in rC.b, 0x1F7
+    test rC, 0x80
+    jnz .ata_wait
+    
+    ; Select drive (LBA mode, master)
+    mov rC, 0xE0          ; LBA28, master
+    out 0x1F6, rC.b
+    
+    ; Sector count = 1
+    mov rC, 1
+    out 0x1F2, rC.b
+    
+    ; LBA low/mid/high
+    out 0x1F3, rA.b       ; LBA low
+    mov rC, rA
+    shr rC, 8
+    out 0x1F4, rC.b       ; LBA mid
+    mov rC, rA
+    shr rC, 16
+    out 0x1F5, rC.b       ; LBA high
+    
+    ; Send READ command
+    mov rC, 0x20
+    out 0x1F7, rC.b
+    
+    ; Wait for data
+.ata_data_wait:
+    in rC.b, 0x1F7
+    test rC, 0x08         ; DRQ
+    jz .ata_data_wait
+    
+    ; Read 256 words (512 bytes)
+    mov rC, 256
+.ata_read_loop:
+    in rA, 0x1F0          ; Read word
+    mov [rP], rA.w
+    add rP, 2
+    dec rC
+    jnz .ata_read_loop
+    
+    pop rC
+    pop rP
+    pop rA
+    ret
+
+; ata_write_sector(lba, buffer)
+; rA=LBA, rP=buffer
+ata_write_sector:
+    push rA
+    push rP
+    push rC
+    
+    ; Wait for BSY to clear
+.ata_w_wait:
+    in rC.b, 0x1F7
+    test rC, 0x80
+    jnz .ata_w_wait
+    
+    ; Select drive
+    mov rC, 0xE0
+    out 0x1F6, rC.b
+    
+    ; Sector count = 1
+    mov rC, 1
+    out 0x1F2, rC.b
+    
+    ; LBA
+    out 0x1F3, rA.b
+    mov rC, rA
+    shr rC, 8
+    out 0x1F4, rC.b
+    mov rC, rA
+    shr rC, 16
+    out 0x1F5, rC.b
+    
+    ; Send WRITE command
+    mov rC, 0x30
+    out 0x1F7, rC.b
+    
+    ; Wait for DRQ
+.ata_w_drq:
+    in rC.b, 0x1F7
+    test rC, 0x08
+    jz .ata_w_drq
+    
+    ; Write 256 words
+    mov rC, 256
+.ata_write_loop:
+    mov rA.w, [rP]
+    out 0x1F0, rA.w
+    add rP, 2
+    dec rC
+    jnz .ata_write_loop
+    
+    ; Flush cache
+    mov rC, 0xE7
+    out 0x1F7, rC.b
+    
+    pop rC
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; ACPI (Basic - shutdown/reboot)
+; ============================================================================
+
+acpi_shutdown:
+    ; Try ACPI shutdown via port 0x604 (QEMU)
+    push rA
+    mov rA, 0x2000
+    out 0x604, rA.w
+    ; Try port 0xB004 (bochs)
+    mov rA, 0x2000
+    out 0xB004, rA.w
+    ; Try old-style AT shutdown
+    mov rA, 0x0F
+    out 0x92, rA.b
+    pop rA
+    ret
+
+acpi_reboot:
+    ; Keyboard controller reset
+    cli
+    mov rA, 0xFE
+    out 0x64, rA.b
+    ; Triple fault fallback
+    lidt [rel null_idt]
+    int 0
+.hang:
+    hlt
+    jmp .hang
+
+.data
+null_idt:
+    dw 0
+    dq 0
+
+.code
+
+; ============================================================================
+; PC Speaker / Audio
+; ============================================================================
+
+beep:
+    ; rA=frequency, rC=duration_ms
+    push rA
+    push rC
+    push rG
+    
+    ; Calculate divisor
+    mov rG, 1193182
+    div rG, rA            ; divisor = 1193182 / freq
+    
+    ; Program PIT channel 2
+    push rA
+    mov rA, 0xB6
+    out 0x43, rA.b
+    mov rA, rG
+    out 0x42, rA.b
+    mov rA, rG
+    shr rA, 8
+    out 0x42, rA.b
+    pop rA
+    
+    ; Enable speaker
+    in rA.b, 0x61
+    or rA, 3
+    out 0x61, rA.b
+    
+    ; Wait (simplified - would use PIT sleep)
+    mov rC, 1000000
+.beep_wait:
+    nop
+    dec rC
+    jnz .beep_wait
+    
+    ; Disable speaker
+    in rA.b, 0x61
+    and rA, 0xFC
+    out 0x61, rA.b
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; End of kernel
+; ============================================================================

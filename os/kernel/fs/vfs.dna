@@ -1,0 +1,366 @@
+; ============================================================================
+; DNAOS - ATCG-native Virtual File System (DNAsm)
+; ============================================================================
+; File names ATCG-encoded. Directory structure mirrors DNA:
+;   /genome/    → system configuration
+;   /ribosome/  → executable programs
+;   /membrane/  → I/O devices
+;   /nucleus/   → kernel data
+;   /atp/       → energy accounting
+;   /codon/     → user files
+; ============================================================================
+
+MAX_FILES       equ 128
+MAX_FILENAME    equ 64
+MAX_OPEN_FILES  equ 32
+FILE_REGULAR    equ 1
+FILE_DIR        equ 2
+FILE_DEVICE     equ 3
+
+; ============================================================================
+; File structure (in BSS)
+; ============================================================================
+.bss
+
+align 8
+vfs_files:
+    ; 128 files, each:
+    ;   name:     64 bytes
+    ;   type:     qword (1=regular, 2=dir, 3=device)
+    ;   size:     qword
+    ;   data:     qword (pointer to data)
+    ;   used:     qword (0=free, 1=used)
+    ; Total: 64 + 8*4 = 96 bytes per file
+    resb 128 * 96
+
+vfs_open_files:
+    ; 32 open file handles
+    ;   file_idx: qword
+    ;   position: qword
+    ;   flags:    qword
+    ;   used:     qword
+    ; Total: 32 bytes per handle
+    resb 32 * 32
+
+vfs_file_count:
+    resq 1
+
+.code
+
+; ============================================================================
+; vfs_init - Initialize filesystem with DNA directories
+; ============================================================================
+vfs_init:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    ; Clear file table
+    lea rG, [rel vfs_files]
+    mov rC, 128 * 96 / 8
+    xor rA, rA
+.vfs_clear:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .vfs_clear
+    
+    ; Clear open files
+    lea rG, [rel vfs_open_files]
+    mov rC, 32 * 32 / 8
+    xor rA, rA
+.vfs_clear_of:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .vfs_clear_of
+    
+    mov qword [rel vfs_file_count], 0
+    
+    ; Create DNA directories
+    lea rP, [rel dir_genome]
+    mov rA, FILE_DIR
+    call vfs_create_entry
+    
+    lea rP, [rel dir_ribosome]
+    mov rA, FILE_DIR
+    call vfs_create_entry
+    
+    lea rP, [rel dir_membrane]
+    mov rA, FILE_DIR
+    call vfs_create_entry
+    
+    lea rP, [rel dir_nucleus]
+    mov rA, FILE_DIR
+    call vfs_create_entry
+    
+    lea rP, [rel dir_atp]
+    mov rA, FILE_DIR
+    call vfs_create_entry
+    
+    lea rP, [rel dir_codon]
+    mov rA, FILE_DIR
+    call vfs_create_entry
+    
+    ; Create system files
+    lea rP, [rel file_boot_cfg]
+    mov rA, FILE_REGULAR
+    call vfs_create_entry
+    
+    lea rP, [rel file_charter]
+    mov rA, FILE_REGULAR
+    call vfs_create_entry
+    
+    lea rP, [rel file_dnasm]
+    mov rA, FILE_REGULAR
+    call vfs_create_entry
+    
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; vfs_create_entry - Create a file/directory entry
+; rP = name string, rA = type
+; ============================================================================
+vfs_create_entry:
+    push rC
+    push rG
+    push rS
+    
+    ; Find free slot
+    lea rG, [rel vfs_files]
+    mov rC, 128
+.vfs_find_free:
+    cmp qword [rG + 88], 0    ; used field
+    je .vfs_slot_found
+    add rG, 96
+    dec rC
+    jnz .vfs_find_free
+    
+    ; No free slots
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+.vfs_slot_found:
+    ; Copy name
+    mov rS, rP
+    lea rP, [rG]              ; name field
+    call strcpy_kernel
+    
+    ; Set type
+    mov [rG + 64], rA         ; type
+    
+    ; Set size = 0
+    mov qword [rG + 72], 0
+    
+    ; Set data = 0
+    mov qword [rG + 80], 0
+    
+    ; Mark as used
+    mov qword [rG + 88], 1
+    
+    inc qword [rel vfs_file_count]
+    
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; vfs_open - Open a file
+; rP = path, rA = flags → rA = fd (-1 on error)
+; ============================================================================
+vfs_open:
+    push rC
+    push rG
+    
+    ; Find file by name
+    lea rG, [rel vfs_files]
+    mov rC, 128
+.vfs_open_scan:
+    cmp qword [rG + 88], 0
+    je .vfs_open_next
+    
+    ; Compare name
+    lea rS, [rG]
+    call strcmp_kernel
+    test rA, rA
+    jz .vfs_open_found
+
+.vfs_open_next:
+    add rG, 96
+    dec rC
+    jnz .vfs_open_scan
+    
+    ; File not found
+    mov rA, -1
+    pop rG
+    pop rC
+    ret
+
+.vfs_open_found:
+    ; Find free open file handle
+    push rG
+    lea rG, [rel vfs_open_files]
+    mov rC, 32
+.vfs_find_handle:
+    cmp qword [rG + 24], 0
+    je .vfs_handle_found
+    add rG, 32
+    dec rC
+    jnz .vfs_find_handle
+    
+    ; No free handles
+    pop rG
+    mov rA, -1
+    pop rG
+    pop rC
+    ret
+
+.vfs_handle_found:
+    ; Calculate file index
+    pop rS                   ; Original rG (file entry)
+    push rG                  ; Handle entry
+    
+    ; file_idx = (rS - vfs_files) / 96
+    lea rA, [rel vfs_files]
+    sub rS, rA
+    mov rA, rS
+    shr rA, 0               ; Would need division by 96
+    ; Simplified: just store pointer
+    
+    ; Set up handle
+    mov qword [rG], rS      ; file pointer (simplified)
+    mov qword [rG + 8], 0   ; position = 0
+    mov qword [rG + 16], rA ; flags
+    mov qword [rG + 24], 1  ; used = 1
+    
+    ; Return handle index
+    lea rA, [rel vfs_open_files]
+    sub rG, rA
+    shr rG, 5               ; / 32
+    mov rA, rG
+    
+    pop rG
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; vfs_close - Close a file
+; rA = fd
+; ============================================================================
+vfs_close:
+    push rG
+    
+    ; Get handle
+    lea rG, [rel vfs_open_files]
+    shl rA, 5               ; * 32
+    add rG, rA
+    
+    ; Mark as free
+    mov qword [rG + 24], 0
+    
+    pop rG
+    ret
+
+; ============================================================================
+; vfs_read - Read from file
+; rA = fd, rP = buffer, rC = count → rA = bytes read
+; ============================================================================
+vfs_read:
+    ; Simplified - would read from file data
+    xor rA, rA
+    ret
+
+; ============================================================================
+; vfs_write - Write to file
+; rA = fd, rP = buffer, rC = count → rA = bytes written
+; ============================================================================
+vfs_write:
+    ; Simplified - would write to file data
+    mov rA, rC
+    ret
+
+; ============================================================================
+; Helper: strcmp_kernel
+; rP = str1, rS = str2 → rA = 0 if equal
+; ============================================================================
+strcmp_kernel:
+    push rP
+    push rS
+.strcmp_k_loop:
+    mov rA.b, [rP]
+    mov rC.b, [rS]
+    cmp rA, rC
+    jne .strcmp_k_ne
+    test rA, rA
+    jz .strcmp_k_eq
+    inc rP
+    inc rS
+    jmp .strcmp_k_loop
+.strcmp_k_eq:
+    xor rA, rA
+    pop rS
+    pop rP
+    ret
+.strcmp_k_ne:
+    sub rA, rC
+    pop rS
+    pop rP
+    ret
+
+; ============================================================================
+; Helper: strcpy_kernel
+; rS = source, rP = dest
+; ============================================================================
+strcpy_kernel:
+    push rA
+    push rP
+    push rS
+.strcpy_k_loop:
+    mov rA.b, [rS]
+    mov [rP], rA.b
+    test rA, rA
+    jz .strcpy_k_done
+    inc rP
+    inc rS
+    jmp .strcpy_k_loop
+.strcpy_k_done:
+    pop rS
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; Directory and file names
+; ============================================================================
+.data
+
+dir_genome:
+    db "/genome", 0
+dir_ribosome:
+    db "/ribosome", 0
+dir_membrane:
+    db "/membrane", 0
+dir_nucleus:
+    db "/nucleus", 0
+dir_atp:
+    db "/atp", 0
+dir_codon:
+    db "/codon", 0
+
+file_boot_cfg:
+    db "/genome/boot.cfg", 0
+file_charter:
+    db "/nucleus/charter", 0
+file_dnasm:
+    db "/ribosome/dnasm", 0

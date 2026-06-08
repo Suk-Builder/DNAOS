@@ -1,72 +1,121 @@
 # ============================================================================
-# DNAOS Kernel - Complete Build System
+# DNAOS Kernel - Complete Build System (DNAsm-native)
+# ============================================================================
+#
+# Build flow:
+#   .dna → dasm.py → .nasm → nasm → .o → ld → dnaos.bin → grub → dnaos.iso
+#
+# Prerequisites:
+#   - Python 3 (for dasm.py)
+#   - NASM (assembler)
+#   - GCC (for linker, not for kernel code)
+#   - GRUB (grub-mkrescue)
+#   - XORRISO (for ISO)
+#   - QEMU (for testing)
+#
 # ============================================================================
 
-CC      = gcc
-LD      = ld
+DASM    = python3 dasm/dasm.py
 NASM    = nasm
-
-CFLAGS  = -ffreestanding -mno-red-zone -mno-mmx -mno-sse -mno-sse2 \
-          -nostdlib -nodefaultlibs -fno-stack-protector -fno-pic \
-          -fno-pie -Wall -Wextra -O2 -mcmodel=kernel \
-          -Ikernel/
+LD      = ld
 
 LDFLAGS = -nostdlib -T kernel/linker.ld -z max-page-size=0x1000
 
-# Source files
-C_SRCS  = kernel/kernel.c
+# DNAsm source files
+DNA_SRCS = kernel/kernel.dna \
+           kernel/mm/pmm.dna \
+           kernel/mm/vmm.dna \
+           kernel/proc/scheduler.dna \
+           kernel/fs/vfs.dna \
+           kernel/drivers/keyboard.dna \
+           kernel/drivers/mouse.dna \
+           kernel/drivers/pit.dna \
+           kernel/drivers/pci.dna \
+           kernel/drivers/e1000.dna \
+           kernel/drivers/vga.dna \
+           kernel/drivers/ata.dna \
+           kernel/drivers/acpi.dna \
+           kernel/drivers/serial.dna \
+           kernel/gui/wm.dna \
+           kernel/sys/syscall.dna \
+           kernel/shell/dnasm.dna
+
+# x86 assembly (boot code, must stay as .S)
 ASM_SRCS = kernel/boot.S kernel/font.S
 
-C_OBJS  = $(C_SRCS:.c=.o)
-ASM_OBJS = $(ASM_SRCS:.S=.o)
+# Generated NASM files
+DNA_NASMS = $(patsubst kernel/%.dna,build/%.nasm,$(DNA_SRCS))
 
-OBJ     = $(ASM_OBJS) $(C_OBJS)
+# Object files
+DNA_OBJS = $(patsubst kernel/%.dna,build/%.o,$(DNA_SRCS))
+ASM_OBJS = $(patsubst kernel/%.S,build/%.o,$(ASM_SRCS))
 
-.PHONY: all clean iso run run-uefi usb
+OBJ = $(ASM_OBJS) $(DNA_OBJS)
+
+.PHONY: all clean iso run run-uefi usb dasm-test
 
 all: dnaos.bin
 
 # ============================================================================
-# Compile rules
+# DNAsm → NASM → Object
 # ============================================================================
 
-kernel/%.o: kernel/%.S
-	$(NASM) -f elf64 -o $@ $<
+# Create build directories
+builddirs:
+	@mkdir -p build/mm build/proc build/fs build/drivers build/gui build/sys build/shell
 
-kernel/%.o: kernel/%.c
-	$(CC) $(CFLAGS) -c -o $@ $<
+# Compile DNAsm to NASM
+build/%.nasm: kernel/%.dna dasm/dasm.py | builddirs
+	@echo "  DNAsm  $< → $@"
+	@$(DASM) $< -o $@ -n
+
+# Assemble NASM to ELF64
+build/%.o: build/%.nasm
+	@echo "  NASM   $< → $@"
+	@$(NASM) -f elf64 -o $@ $<
+
+# Boot assembly (x86, not DNAsm)
+build/boot.o: kernel/boot.S | builddirs
+	@echo "  NASM   $< → $@"
+	@$(NASM) -f elf64 -o $@ $<
+
+build/font.o: kernel/font.S | builddirs
+	@echo "  NASM   $< → $@"
+	@$(NASM) -f elf64 -o $@ $<
+
+# ============================================================================
+# Link
+# ============================================================================
 
 dnaos.bin: $(OBJ)
-	$(LD) $(LDFLAGS) -o $@ $(OBJ)
+	@echo "  LD     $@"
+	@$(LD) $(LDFLAGS) -o $@ $(OBJ)
 
 # ============================================================================
-# ISO creation (GRUB bootable)
+# ISO
 # ============================================================================
 
 iso: dnaos.iso
 
 dnaos.iso: dnaos.bin
-	mkdir -p iso/boot/grub
-	cp dnaos.bin iso/boot/dnaos.bin
-	
-	echo 'set timeout=3' > iso/boot/grub/grub.cfg
-	echo 'set default=0' >> iso/boot/grub/grub.cfg
-	echo '' >> iso/boot/grub/grub.cfg
-	echo 'menuentry "DNAOS - Quaternary OS (1280x720)" {' >> iso/boot/grub/grub.cfg
-	echo '    multiboot2 /boot/dnaos.bin' >> iso/boot/grub/grub.cfg
-	echo '    boot' >> iso/boot/grub/grub.cfg
-	echo '}' >> iso/boot/grub/grub.cfg
-	echo '' >> iso/boot/grub/grub.cfg
-	echo 'menuentry "DNAOS - Safe Mode (640x480)" {' >> iso/boot/grub/grub.cfg
-	echo '    multiboot2 /boot/dnaos.bin' >> iso/boot/grub/grub.cfg
-	echo '    boot' >> iso/boot/grub/grub.cfg
-	echo '}' >> iso/boot/grub/grub.cfg
-	
-	grub-mkrescue -o dnaos.iso iso/ 2>/dev/null || \
-		echo "ERROR: grub-mkrescue failed. Install: sudo apt install grub-pc-bin xorriso"
+	@mkdir -p iso/boot/grub
+	@cp dnaos.bin iso/boot/dnaos.bin
+	@echo 'set timeout=0' > iso/boot/grub/grub.cfg
+	@echo 'set default=0' >> iso/boot/grub/grub.cfg
+	@echo '' >> iso/boot/grub/grub.cfg
+	@echo 'menuentry "DNAOS - Quaternary Operating System" {' >> iso/boot/grub/grub.cfg
+	@echo '    multiboot2 /boot/dnaos.bin' >> iso/boot/grub/grub.cfg
+	@echo '    boot' >> iso/boot/grub/grub.cfg
+	@echo '}' >> iso/boot/grub/grub.cfg
+	@echo '' >> iso/boot/grub/grub.cfg
+	@echo 'menuentry "DNAOS - Safe Mode (800x600)" {' >> iso/boot/grub/grub.cfg
+	@echo '    multiboot2 /boot/dnaos.bin' >> iso/boot/grub/grub.cfg
+	@echo '    boot' >> iso/boot/grub/grub.cfg
+	@echo '}' >> iso/boot/grub/grub.cfg
+	grub-mkrescue -o dnaos.iso iso/ 2>/dev/null
 
 # ============================================================================
-# QEMU testing
+# QEMU
 # ============================================================================
 
 run: dnaos.iso
@@ -81,10 +130,9 @@ run-uefi: dnaos.iso
 run-debug: dnaos.iso
 	qemu-system-x86_64 -cdrom dnaos.iso -m 512M -smp 1 \
 		-vga std -serial stdio -s -S
-	# In another terminal: gdb -ex "target remote :1234"
 
 # ============================================================================
-# USB flash
+# USB
 # ============================================================================
 
 usb: dnaos.iso
@@ -95,9 +143,17 @@ usb: dnaos.iso
 	sync
 
 # ============================================================================
+# DNAsm compiler test
+# ============================================================================
+
+dasm-test:
+	@echo "Testing DNAsm compiler..."
+	@python3 dasm/dasm.py --test
+	@echo "All tests passed!"
+
+# ============================================================================
 # Clean
 # ============================================================================
 
 clean:
-	rm -f kernel/*.o *.bin *.iso
-	rm -rf iso/
+	rm -rf build/ *.bin *.iso iso/

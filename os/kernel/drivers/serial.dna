@@ -1,0 +1,126 @@
+; ============================================================================
+; DNAOS - Serial Port Driver (DNAsm)
+; ============================================================================
+; COM1 (0x3F8) for kernel debug output.
+; Useful for QEMU -serial stdio debugging.
+; ============================================================================
+
+COM1_PORT equ 0x3F8
+
+.code
+.global serial_init
+.global serial_putchar
+.global serial_print
+.global serial_print_hex
+
+; ============================================================================
+; serial_init - Initialize COM1 @ 115200 baud
+; ============================================================================
+serial_init:
+    push rA
+    
+    ; Disable interrupts
+    mov rA, 0x00
+    out COM1_PORT + 1, rA.b
+    
+    ; Enable DLAB (set baud rate divisor)
+    mov rA, 0x80
+    out COM1_PORT + 3, rA.b
+    
+    ; Set divisor to 1 (115200 baud)
+    mov rA, 0x01           ; Low byte
+    out COM1_PORT, rA.b
+    mov rA, 0x00           ; High byte
+    out COM1_PORT + 1, rA.b
+    
+    ; 8 bits, no parity, one stop bit (8N1)
+    mov rA, 0x03
+    out COM1_PORT + 3, rA.b
+    
+    ; Enable FIFO, clear them, 14-byte threshold
+    mov rA, 0xC7
+    out COM1_PORT + 2, rA.b
+    
+    ; IRQs enabled, RTS/DSR set
+    mov rA, 0x0B
+    out COM1_PORT + 4, rA.b
+    
+    pop rA
+    ret
+
+; ============================================================================
+; serial_putchar - Send one character
+; rA = character
+; ============================================================================
+serial_putchar:
+    push rA
+    push rC
+    
+    ; Wait for transmit buffer empty
+.serial_tx_wait:
+    in rC.b, COM1_PORT + 5
+    test rC, 0x20          ; THR empty?
+    jz .serial_tx_wait
+    
+    ; Send character
+    pop rC
+    pop rA
+    out COM1_PORT, rA.b
+    ret
+
+; ============================================================================
+; serial_print - Print null-terminated string
+; rP = string pointer
+; ============================================================================
+serial_print:
+    push rA
+    push rP
+    
+.serial_print_loop:
+    mov rA.b, [rP]
+    test rA, rA
+    jz .serial_print_done
+    call serial_putchar
+    inc rP
+    jmp .serial_print_loop
+
+.serial_print_done:
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; serial_print_hex - Print 64-bit value in hexadecimal
+; rA = value
+; ============================================================================
+serial_print_hex:
+    push rA
+    push rC
+    push rP
+    
+    lea rP, [rel hex_prefix]
+    call serial_print
+    
+    mov rC, 16             ; 16 hex digits for 64-bit
+.serial_hex_loop:
+    rol rA, 4              ; Rotate left to get next nibble
+    push rA
+    and rA, 0x0F
+    lea rP, [rel hex_chars]
+    add rP, rA
+    mov rA.b, [rP]
+    call serial_putchar
+    pop rA
+    dec rC
+    jnz .serial_hex_loop
+    
+    pop rP
+    pop rC
+    pop rA
+    ret
+
+.data
+hex_prefix:
+    db "0x", 0
+hex_chars:
+    db "0123456789ABCDEF"

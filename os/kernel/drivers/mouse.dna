@@ -1,0 +1,245 @@
+; ============================================================================
+; DNAOS - PS/2 Mouse Driver (DNAsm)
+; ============================================================================
+; IRQ12 handler. Standard 3-byte packet: [flags, dx, dy]
+; ============================================================================
+
+.code
+.global mouse_init
+.global mouse_irq_handler
+.global mouse_get_state
+
+; ============================================================================
+; mouse_init - Initialize PS/2 mouse
+; ============================================================================
+mouse_init:
+    push rA
+    
+    ; Enable auxiliary device
+    call mouse_wait_ctrl
+    mov rA, 0xA8           ; Enable aux
+    out 0x64, rA.b
+    
+    ; Enable IRQ12 in PS/2 controller
+    call mouse_wait_ctrl
+    mov rA, 0x20           ; Read config
+    out 0x64, rA.b
+    call mouse_wait_data
+    in rA.b, 0x60
+    or rA, 0x03            ; Enable IRQ1 + IRQ12
+    push rA
+    call mouse_wait_ctrl
+    mov rA, 0x60           ; Write config
+    out 0x64, rA.b
+    call mouse_wait_ctrl
+    pop rA
+    out 0x60, rA.b
+    
+    ; Set defaults
+    call mouse_send_cmd
+    mov rA, 0xF6           ; Set defaults
+    out 0x60, rA.b
+    call mouse_read_ack
+    
+    ; Enable streaming
+    call mouse_send_cmd
+    mov rA, 0xF4           ; Enable streaming
+    out 0x60, rA.b
+    call mouse_read_ack
+    
+    ; Set sample rate (for scroll wheel detection)
+    call mouse_send_cmd
+    mov rA, 0xF3           ; Set sample rate
+    out 0x60, rA.b
+    call mouse_read_ack
+    call mouse_send_cmd
+    mov rA, 200            ; 200 samples/sec
+    out 0x60, rA.b
+    call mouse_read_ack
+    
+    ; Initialize state
+    xor rA, rA
+    mov [rel mouse_x], rA
+    mov [rel mouse_y], rA
+    mov [rel mouse_buttons], rA
+    mov [rel mouse_dx], rA
+    mov [rel mouse_dy], rA
+    mov [rel mouse_packet_idx], rA
+    
+    pop rA
+    ret
+
+; ============================================================================
+; mouse_irq_handler - Called from IRQ12 in boot.S
+; ============================================================================
+mouse_irq_handler:
+    push rA
+    push rC
+    
+    ; Read byte from mouse
+    in rA.b, 0x60
+    
+    ; First byte must have bit 3 set
+    mov rC, [rel mouse_packet_idx]
+    test rC, rC
+    jnz .mouse_not_first
+    test rA, 0x08
+    jz .mouse_irq_done
+
+.mouse_not_first:
+    ; Store in packet buffer
+    lea rC, [rel mouse_packet]
+    add rC, [rel mouse_packet_idx]
+    mov [rC], rA.b
+    inc qword [rel mouse_packet_idx]
+    
+    ; Check if we have complete packet (3 bytes)
+    mov rC, [rel mouse_packet_idx]
+    cmp rC, 3
+    jl .mouse_irq_done
+    
+    ; Reset packet index
+    mov qword [rel mouse_packet_idx], 0
+    
+    ; Parse packet
+    mov rC, [rel mouse_packet]      ; flags
+    mov rA, [rel mouse_packet + 1]  ; dx (signed byte)
+    movsx rA, rA.b                  ; Sign extend
+    mov rG, [rel mouse_packet + 2]  ; dy (signed byte)
+    movsx rG, rG.b
+    
+    ; Apply overflow
+    test rC, 0x40           ; X overflow
+    jnz .mouse_x_overflow
+    test rC, 0x80           ; Y overflow
+    jnz .mouse_y_overflow
+    
+    ; Apply sign
+    test rC, 0x10           ; X sign
+    jz .mouse_x_positive
+    or rA, 0xFFFFFFFFFFFFFF00LL  ; Sign extend negative
+.mouse_x_positive:
+    
+    test rC, 0x20           ; Y sign
+    jz .mouse_y_positive
+    or rG, 0xFFFFFFFFFFFFFF00LL
+.mouse_y_positive:
+    
+    ; Update position
+    add [rel mouse_x], rA
+    neg rG                  ; Y is inverted
+    add [rel mouse_y], rG
+    
+    ; Clamp to screen
+    cmp qword [rel mouse_x], 0
+    jge .mouse_x_ok
+    mov qword [rel mouse_x], 0
+.mouse_x_ok:
+    cmp qword [rel mouse_x], 1280
+    jl .mouse_x_ok2
+    mov qword [rel mouse_x], 1279
+.mouse_x_ok2:
+    
+    cmp qword [rel mouse_y], 0
+    jge .mouse_y_ok
+    mov qword [rel mouse_y], 0
+.mouse_y_ok:
+    cmp qword [rel mouse_y], 720
+    jl .mouse_y_ok2
+    mov qword [rel mouse_y], 719
+.mouse_y_ok2:
+    
+    ; Store deltas and buttons
+    mov [rel mouse_dx], rA
+    mov [rel mouse_dy], rG
+    and rC, 0x07
+    mov [rel mouse_buttons], rC
+    
+.mouse_irq_done:
+    pop rC
+    pop rA
+    ret
+
+.mouse_x_overflow:
+.mouse_y_overflow:
+    mov qword [rel mouse_packet_idx], 0
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; mouse_get_state - Get current mouse state
+; rP = &x, rS = &y, rC = &buttons
+; ============================================================================
+mouse_get_state:
+    push rA
+    
+    mov rA, [rel mouse_x]
+    mov [rP], rA
+    mov rA, [rel mouse_y]
+    mov [rS], rA
+    mov rA, [rel mouse_buttons]
+    mov [rC], rA
+    
+    pop rA
+    ret
+
+; ============================================================================
+; Helper functions
+; ============================================================================
+mouse_wait_ctrl:
+    push rA
+.mouse_wait_ctrl_loop:
+    in rA.b, 0x64
+    test rA, 0x02
+    jnz .mouse_wait_ctrl_loop
+    pop rA
+    ret
+
+mouse_wait_data:
+    push rA
+.mouse_wait_data_loop:
+    in rA.b, 0x64
+    test rA, 0x01
+    jz .mouse_wait_data_loop
+    pop rA
+    ret
+
+mouse_send_cmd:
+    push rA
+.mouse_send_cmd_loop:
+    call mouse_wait_ctrl
+    mov rA, 0xD4           ; Send to mouse
+    out 0x64, rA.b
+    pop rA
+    ret
+
+mouse_read_ack:
+    push rA
+.mouse_read_ack_loop:
+    call mouse_wait_data
+    in rA.b, 0x60
+    cmp rA.b, 0xFA         ; ACK
+    jne .mouse_read_ack_loop
+    pop rA
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+mouse_x:
+    resq 1
+mouse_y:
+    resq 1
+mouse_buttons:
+    resq 1
+mouse_dx:
+    resq 1
+mouse_dy:
+    resq 1
+mouse_packet:
+    resb 3
+mouse_packet_idx:
+    resq 1

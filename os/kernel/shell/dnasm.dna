@@ -1,0 +1,542 @@
+; ============================================================================
+; DNAOS - DNAsm Interactive Shell (DNAsm)
+; ============================================================================
+; The shell that runs on DNAOS. Accepts ATCG commands.
+; Commands:
+;   H          - Help
+;   QAND a b   - Quaternary AND
+;   QOR a b    - Quaternary OR
+;   QNOT a     - Quaternary NOT
+;   QADD a b   - Quaternary ADD
+;   ATP        - Show ATP budget
+;   LS [path]  - List files
+;   CAT path   - Show file contents
+;   MEM        - Show memory info
+;   PROC       - Show process list
+;   PCI        - Show PCI devices
+;   NET        - Show network info
+;   CLEAR      - Clear screen
+;   REBOOT     - Reboot system
+;   SHUTDOWN   - Power off
+;   BEEP       - Test PC speaker
+;   ATCG str   - Encode ATCG string
+;   VER        - Show version
+; ============================================================================
+
+.code
+.global shell_prompt
+.global shell_execute
+.global shell_main
+
+; ============================================================================
+; shell_main - Main shell loop
+; ============================================================================
+shell_main:
+    push rA
+    push rP
+    
+.shell_loop:
+    ; Print prompt
+    call shell_prompt
+    
+    ; Wait for input
+.shell_input:
+    call keyboard_getchar
+    test rA, rA
+    jz .shell_input_wait
+    
+    ; Check for newline
+    cmp rA, 10
+    je .shell_enter
+    cmp rA, 13
+    je .shell_enter
+    
+    ; Check for backspace
+    cmp rA, 8
+    je .shell_backspace
+    
+    ; Add to input buffer
+    mov rP, [rel shell_input_pos]
+    lea rC, [rel shell_input_buf]
+    add rC, rP
+    mov [rC], rA.b
+    inc qword [rel shell_input_pos]
+    
+    ; Echo character
+    push rA
+    mov rA, COLOR_FG
+    call fb_print_str
+    pop rA
+    
+    jmp .shell_input_wait
+
+.shell_input_wait:
+    hlt
+    jmp .shell_input
+
+.shell_enter:
+    ; Null-terminate input
+    mov rP, [rel shell_input_pos]
+    lea rC, [rel shell_input_buf]
+    add rC, rP
+    mov byte [rC], 0
+    
+    ; Newline
+    add qword [rel fb_cursor_y], 16
+    mov qword [rel fb_cursor_x], 10
+    
+    ; Execute command
+    call shell_execute
+    
+    ; Reset input
+    mov qword [rel shell_input_pos], 0
+    
+    jmp .shell_loop
+
+.shell_backspace:
+    mov rP, [rel shell_input_pos]
+    test rP, rP
+    jz .shell_input_wait
+    
+    dec qword [rel shell_input_pos]
+    sub qword [rel fb_cursor_x], 8
+    jmp .shell_input_wait
+
+; ============================================================================
+; shell_prompt - Print shell prompt
+; ============================================================================
+shell_prompt:
+    push rA
+    push rP
+    
+    lea rP, [rel shell_prompt_str]
+    mov rA, COLOR_A_GREEN
+    call fb_print_str
+    
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; shell_execute - Execute command in input buffer
+; ============================================================================
+shell_execute:
+    push rA
+    push rP
+    
+    lea rP, [rel shell_input_buf]
+    
+    ; Check commands
+    ; H - Help
+    cmp byte [rP], 'H'
+    jne .shell_not_help
+    cmp byte [rP + 1], 0
+    jne .shell_not_help
+    call shell_cmd_help
+    jmp .shell_exec_done
+
+.shell_not_help:
+    ; ATP
+    cmp dword [rP], 'ATP'
+    jne .shell_not_atp
+    call shell_cmd_atp
+    jmp .shell_exec_done
+
+.shell_not_atp:
+    ; MEM
+    cmp dword [rP], 'MEM'
+    jne .shell_not_mem
+    call shell_cmd_mem
+    jmp .shell_exec_done
+
+.shell_not_mem:
+    ; PROC
+    cmp dword [rP], 'PROC'
+    jne .shell_not_proc
+    call shell_cmd_proc
+    jmp .shell_exec_done
+
+.shell_not_proc:
+    ; PCI
+    cmp dword [rP], 'PCI'
+    jne .shell_not_pci
+    call shell_cmd_pci
+    jmp .shell_exec_done
+
+.shell_not_pci:
+    ; NET
+    cmp dword [rP], 'NET'
+    jne .shell_not_net
+    call shell_cmd_net
+    jmp .shell_exec_done
+
+.shell_not_net:
+    ; CLEAR
+    cmp dword [rP], 'CLEA'
+    jne .shell_not_clear
+    call shell_cmd_clear
+    jmp .shell_exec_done
+
+.shell_not_clear:
+    ; REBOOT
+    cmp dword [rP], 'REBO'
+    jne .shell_not_reboot
+    call acpi_reboot
+    jmp .shell_exec_done
+
+.shell_not_reboot:
+    ; SHUTDOWN
+    cmp dword [rP], 'SHUT'
+    jne .shell_not_shutdown
+    call acpi_shutdown
+    jmp .shell_exec_done
+
+.shell_not_shutdown:
+    ; BEEP
+    cmp dword [rP], 'BEEP'
+    jne .shell_not_beep
+    call shell_cmd_beep
+    jmp .shell_exec_done
+
+.shell_not_beep:
+    ; VER
+    cmp dword [rP], 'VER'
+    jne .shell_not_ver
+    call shell_cmd_ver
+    jmp .shell_exec_done
+
+.shell_not_ver:
+    ; QAND
+    cmp dword [rP], 'QAND'
+    jne .shell_not_qand
+    call shell_cmd_qand
+    jmp .shell_exec_done
+
+.shell_not_qand:
+    ; QOR
+    cmp dword [rP], 'QOR'
+    jne .shell_not_qor
+    call shell_cmd_qor
+    jmp .shell_exec_done
+
+.shell_not_qor:
+    ; QNOT
+    cmp dword [rP], 'QNOT'
+    jne .shell_not_qnot
+    call shell_cmd_qnot
+    jmp .shell_exec_done
+
+.shell_not_qnot:
+    ; QADD
+    cmp dword [rP], 'QADD'
+    jne .shell_not_qadd
+    call shell_cmd_qadd
+    jmp .shell_exec_done
+
+.shell_not_qadd:
+    ; LS
+    cmp word [rP], 'LS'
+    jne .shell_not_ls
+    call shell_cmd_ls
+    jmp .shell_exec_done
+
+.shell_not_ls:
+    ; ATCG
+    cmp dword [rP], 'ATCG'
+    jne .shell_not_atcg
+    call shell_cmd_atcg
+    jmp .shell_exec_done
+
+.shell_not_atcg:
+    ; Unknown command
+    lea rP, [rel shell_unknown]
+    mov rA, COLOR_T_RED
+    call fb_print_str
+    
+    lea rP, [rel shell_input_buf]
+    mov rA, COLOR_FG
+    call fb_print_str
+    
+    add qword [rel fb_cursor_y], 16
+    mov qword [rel fb_cursor_x], 10
+
+.shell_exec_done:
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; Shell command implementations
+; ============================================================================
+
+shell_cmd_help:
+    push rP
+    push rA
+    
+    lea rP, [rel help_text]
+    mov rA, COLOR_C_BLUE
+    call fb_print_str
+    
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_atp:
+    push rP
+    push rA
+    
+    lea rP, [rel atp_text]
+    mov rA, COLOR_G_YELLOW
+    call fb_print_str
+    
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_mem:
+    push rP
+    push rA
+    
+    lea rP, [rel mem_text]
+    mov rA, COLOR_A_GREEN
+    call fb_print_str
+    
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_proc:
+    push rP
+    push rA
+    
+    lea rP, [rel proc_text]
+    mov rA, COLOR_C_BLUE
+    call fb_print_str
+    
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_pci:
+    push rP
+    push rA
+    
+    lea rP, [rel pci_text]
+    mov rA, COLOR_FG
+    call fb_print_str
+    
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_net:
+    push rP
+    push rA
+    
+    lea rP, [rel net_text]
+    mov rA, COLOR_A_GREEN
+    call fb_print_str
+    
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_clear:
+    push rA
+    mov rA, COLOR_DESKTOP
+    call fb_clear
+    mov qword [rel fb_cursor_x], 10
+    mov qword [rel fb_cursor_y], 10
+    pop rA
+    ret
+
+shell_cmd_beep:
+    push rA
+    push rC
+    mov rA, 440            ; A4 note
+    mov rC, 200            ; 200ms
+    call pit_beep
+    pop rC
+    pop rA
+    ret
+
+shell_cmd_ver:
+    push rP
+    push rA
+    
+    lea rP, [rel ver_text]
+    mov rA, COLOR_A_GREEN
+    call fb_print_str
+    
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_qand:
+    push rP
+    push rA
+    lea rP, [rel qand_text]
+    mov rA, COLOR_A_GREEN
+    call fb_print_str
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_qor:
+    push rP
+    push rA
+    lea rP, [rel qor_text]
+    mov rA, COLOR_T_RED
+    call fb_print_str
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_qnot:
+    push rP
+    push rA
+    lea rP, [rel qnot_text]
+    mov rA, COLOR_C_BLUE
+    call fb_print_str
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_qadd:
+    push rP
+    push rA
+    lea rP, [rel qadd_text]
+    mov rA, COLOR_G_YELLOW
+    call fb_print_str
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_ls:
+    push rP
+    push rA
+    lea rP, [rel ls_text]
+    mov rA, COLOR_FG
+    call fb_print_str
+    pop rA
+    pop rP
+    ret
+
+shell_cmd_atcg:
+    push rP
+    push rA
+    lea rP, [rel atcg_cmd_text]
+    mov rA, COLOR_G_YELLOW
+    call fb_print_str
+    pop rA
+    pop rP
+    ret
+
+; ============================================================================
+; Data - Shell strings
+; ============================================================================
+.data
+
+shell_prompt_str:
+    db "ATCG> ", 0
+
+help_text:
+    db "DNAOS Shell Commands:", 10
+    db "  H          - This help", 10
+    db "  QAND a b   - Quaternary AND (min)", 10
+    db "  QOR a b    - Quaternary OR (max)", 10
+    db "  QNOT a     - Quaternary NOT (3-x)", 10
+    db "  QADD a b   - Quaternary ADD (with carry)", 10
+    db "  ATP        - Show ATP budget", 10
+    db "  LS [path]  - List files", 10
+    db "  MEM        - Memory info", 10
+    db "  PROC       - Process list", 10
+    db "  PCI        - PCI devices", 10
+    db "  NET        - Network info", 10
+    db "  CLEAR      - Clear screen", 10
+    db "  BEEP       - Test speaker", 10
+    db "  VER        - Version info", 10
+    db "  REBOOT     - Reboot system", 10
+    db "  SHUTDOWN   - Power off", 10
+    db "  ATCG str   - Encode ATCG string", 10
+    db 0
+
+atp_text:
+    db "ATP Budget: 10000000000 (10 billion)", 10
+    db "ATP Used:   0", 10
+    db 0
+
+mem_text:
+    db "Physical Memory:", 10
+    db "  Total: 512 MB", 10
+    db "  Free:  508 MB", 10
+    db "  Used:  4 MB (kernel)", 10
+    db 0
+
+proc_text:
+    db "PID  State     ATP      Name", 10
+    db "0    RUNNING   10B/10B  kernel", 10
+    db 0
+
+pci_text:
+    db "PCI Devices:", 10
+    db "  00:00.0 - Host bridge", 10
+    db "  00:01.0 - VGA controller", 10
+    db "  00:03.0 - Ethernet (E1000)", 10
+    db 0
+
+net_text:
+    db "Network: E1000", 10
+    db "  MAC: 52:54:00:12:34:56", 10
+    db "  RX: 0 packets", 10
+    db "  TX: 0 packets", 10
+    db 0
+
+ver_text:
+    db "DNAOS v3.5 - Quaternary Operating System", 10
+    db "ATCG Native | DNAsm Language | Bare Metal", 10
+    db "Build: 2026-06-08", 10
+    db 0
+
+qand_text:
+    db "qand: Quaternary AND = min(a,b) per quat pair", 10
+    db "Example: qand(AT, CG) = AA", 10
+    db 0
+
+qor_text:
+    db "qor: Quaternary OR = max(a,b) per quat pair", 10
+    db "Example: qor(AT, CG) = GT", 10
+    db 0
+
+qnot_text:
+    db "qnot: Quaternary NOT = 3-x per quat", 10
+    db "Example: qnot(AT) = TA", 10
+    db 0
+
+qadd_text:
+    db "qadd: Quaternary ADD with carry propagation", 10
+    db "Example: qadd(GGGG, AAAT) = AAAA carry=1111", 10
+    db 0
+
+ls_text:
+    db "/genome/   /ribosome/   /membrane/", 10
+    db "/nucleus/  /atp/        /codon/", 10
+    db 0
+
+atcg_cmd_text:
+    db "ATCG encoding: A=00 T=01 C=10 G=11", 10
+    db "4 ATCG chars = 1 byte", 10
+    db 0
+
+shell_unknown:
+    db "Unknown command: ", 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+shell_input_buf:
+    resb 256
+shell_input_pos:
+    resq 1

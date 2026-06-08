@@ -1,0 +1,261 @@
+; ============================================================================
+; DNAOS - System Call Interface (DNAsm)
+; ============================================================================
+; Syscall convention:
+;   rax = syscall number
+;   rdi = arg1, rsi = arg2, rdx = arg3
+;   r10 = arg4, r8 = arg5, r9 = arg6
+;   Return: rax = result (negative = error)
+;
+; Syscall numbers:
+;   0x00 read(fd, buf, count)
+;   0x01 write(fd, buf, count)
+;   0x02 open(path, flags)
+;   0x03 close(fd)
+;   0x04 seek(fd, offset, whence)
+;   0x05 mkdir(path)
+;   0x06 ls(path, buf, size)
+;   0x07 exec(path, argv)
+;   0x08 fork()
+;   0x09 exit(code)
+;   0x0A getpid()
+;   0x0B atp_query()
+;   0x0C atp_consume(amount)
+;   0x0D quat_and(a, b)
+;   0x0E quat_or(a, b)
+;   0x0F quat_not(a)
+;   0x10 quat_add(a, b)
+;   0x11 encode_atcg(buf, len)
+;   0x12 decode_atcg(buf, len)
+;   0x13 fb_draw(x, y, color)
+;   0x14 fb_print(x, y, str)
+;   0x15 wm_create(title, x, y, w, h)
+;   0x16 wm_destroy(win_id)
+;   0x17 net_send(buf, len)
+;   0x18 net_recv(buf, size)
+; ============================================================================
+
+.code
+.global syscall_handler
+
+; ============================================================================
+; syscall_handler - Called from SYSCALL/SYSRET entry in boot.S
+; rA = syscall number, rP = arg1, rS = arg2, rC = arg3
+; ============================================================================
+syscall_handler:
+    ; Dispatch based on syscall number
+    cmp rA, 0x00
+    je .sys_read
+    cmp rA, 0x01
+    je .sys_write
+    cmp rA, 0x02
+    je .sys_open
+    cmp rA, 0x03
+    je .sys_close
+    cmp rA, 0x07
+    je .sys_exec
+    cmp rA, 0x08
+    je .sys_fork
+    cmp rA, 0x09
+    je .sys_exit
+    cmp rA, 0x0A
+    je .sys_getpid
+    cmp rA, 0x0B
+    je .sys_atp_query
+    cmp rA, 0x0C
+    je .sys_atp_consume
+    cmp rA, 0x0D
+    je .sys_quat_and
+    cmp rA, 0x0E
+    je .sys_quat_or
+    cmp rA, 0x0F
+    je .sys_quat_not
+    cmp rA, 0x10
+    je .sys_quat_add
+    cmp rA, 0x13
+    je .sys_fb_draw
+    cmp rA, 0x15
+    je .sys_wm_create
+    cmp rA, 0x17
+    je .sys_net_send
+    cmp rA, 0x18
+    je .sys_net_recv
+    
+    ; Unknown syscall
+    mov rA, -38            ; -ENOSYS
+    ret
+
+; ============================================================================
+; Syscall implementations
+; ============================================================================
+
+.sys_read:
+    ; rP = fd, rS = buf, rC = count
+    ; Call vfs_read
+    call vfs_read
+    ret
+
+.sys_write:
+    ; rP = fd, rS = buf, rC = count
+    ; Call vfs_write
+    call vfs_write
+    ret
+
+.sys_open:
+    ; rP = path, rS = flags
+    call vfs_open
+    ret
+
+.sys_close:
+    ; rP = fd
+    mov rA, rP
+    call vfs_close
+    xor rA, rA
+    ret
+
+.sys_exec:
+    ; rP = path, rS = argv
+    ; Load and execute program
+    mov rA, -1             ; Not implemented yet
+    ret
+
+.sys_fork:
+    ; Create child process
+    mov rA, -1             ; Not implemented yet
+    ret
+
+.sys_exit:
+    ; rP = exit code
+    ; Mark current process as zombie
+    ; Schedule next process
+    call proc_exit
+    ; Should not return
+    hlt
+
+.sys_getpid:
+    mov rA, [rel current_pid]
+    ret
+
+.sys_atp_query:
+    ; Return current process ATP budget
+    mov rA, [rel current_pid]
+    ; Look up ATP budget in proc_table
+    ; Simplified: return 10 billion
+    mov rA, 10000000000
+    ret
+
+.sys_atp_consume:
+    ; rP = amount to consume
+    ; Deduct from current process ATP budget
+    ; Simplified: always succeed
+    xor rA, rA
+    ret
+
+.sys_quat_and:
+    ; rP = a, rS = b → rA = qand(a, b)
+    mov rA, rP
+    mov rC, rS
+    call quat_and
+    ret
+
+.sys_quat_or:
+    ; rP = a, rS = b → rA = qor(a, b)
+    mov rA, rP
+    mov rC, rS
+    call quat_or
+    ret
+
+.sys_quat_not:
+    ; rP = a → rA = qnot(a)
+    mov rA, rP
+    call quat_not
+    ret
+
+.sys_quat_add:
+    ; rP = a, rS = b → rA = qadd(a, b)
+    mov rA, rP
+    mov rC, rS
+    call quat_add
+    ret
+
+.sys_fb_draw:
+    ; rP = x, rS = y, rC = color
+    call fb_draw_pixel
+    xor rA, rA
+    ret
+
+.sys_wm_create:
+    ; rP = title, rS = x, rC = y
+    call wm_create_window
+    ret
+
+.sys_net_send:
+    ; rP = buf, rS = len
+    mov rC, rS
+    call e1000_send
+    ret
+
+.sys_net_recv:
+    ; rP = buf, rS = size
+    call e1000_receive
+    ret
+
+; ============================================================================
+; proc_exit - Exit current process
+; ============================================================================
+proc_exit:
+    push rG
+    
+    ; Find current process in table
+    mov rA, [rel current_pid]
+    lea rG, [rel proc_table]
+    shl rA, 8
+    add rG, rA
+    
+    ; Mark as zombie
+    mov qword [rG], PROC_ZOMBIE
+    
+    ; Schedule next process
+    call scheduler_tick
+    
+    pop rG
+    ret
+
+; ============================================================================
+; syscall_init - Set up SYSCALL/SYSRET MSRs
+; ============================================================================
+syscall_init:
+    push rA
+    push rC
+    
+    ; Set STAR MSR (0xC0000081)
+    ; bits 32:47 = kernel CS (0x08)
+    ; bits 48:63 = user CS (0x00, will add 0x08 for user = 0x18)
+    mov rC, 0xC0000081
+    mov rA, ((0x18ULL << 48) | (0x08ULL << 32))
+    wrmsr
+    
+    ; Set LSTAR MSR (0xC0000082) = syscall_entry address
+    mov rC, 0xC0000082
+    lea rA, [rel syscall_entry]
+    wrmsr
+    
+    ; Set SFMASK MSR (0xC0000084)
+    mov rC, 0xC0000084
+    xor rA, rA
+    wrmsr
+    
+    ; Enable SCE in EFER MSR (0xC0000080)
+    mov rC, 0xC0000080
+    rdmsr
+    or rA, 1              ; SCE bit
+    wrmsr
+    
+    pop rC
+    pop rA
+    ret
+
+; syscall_entry is in boot.S (assembly)
+syscall_entry:
+    ; This label is just a marker; actual entry is in boot.S
+    ret

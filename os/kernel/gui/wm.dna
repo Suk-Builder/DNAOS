@@ -1,0 +1,276 @@
+; ============================================================================
+; DNAOS - Window Manager (DNAsm)
+; ============================================================================
+; Software-rendered windowing system on framebuffer.
+; No GPU. Pure CPU. DNA-themed.
+; ============================================================================
+
+WM_MAX_WINDOWS  equ 16
+WM_TITLE_H      equ 24
+WM_TASKBAR_H    equ 40
+
+; Window states
+WIN_HIDDEN      equ 0
+WIN_NORMAL      equ 1
+WIN_MINIMIZED   equ 2
+WIN_MAXIMIZED   equ 3
+
+; ============================================================================
+; Window structure (BSS)
+; ============================================================================
+.bss
+
+align 8
+wm_windows:
+    ; 16 windows, each:
+    ;   id:       qword
+    ;   x:        qword
+    ;   y:        qword
+    ;   w:        qword
+    ;   h:        qword
+    ;   state:    qword
+    ;   title:    32 bytes
+    ;   z_order:  qword
+    ;   has_focus:qword
+    ; Total: 8*8 + 32 = 96 bytes
+    resb WM_MAX_WINDOWS * 96
+
+wm_window_count:
+    resq 1
+wm_next_id:
+    resq 1
+wm_active_window:
+    resq 1
+wm_start_menu_open:
+    resq 1
+wm_dragging:
+    resq 1
+wm_drag_win:
+    resq 1
+wm_drag_off_x:
+    resq 1
+wm_drag_off_y:
+    resq 1
+
+.code
+
+; ============================================================================
+; wm_init - Initialize window manager
+; ============================================================================
+wm_init:
+    push rA
+    push rC
+    push rG
+    
+    ; Clear window table
+    lea rG, [rel wm_windows]
+    mov rC, WM_MAX_WINDOWS * 96 / 8
+    xor rA, rA
+.wm_clear:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .wm_clear
+    
+    mov qword [rel wm_window_count], 0
+    mov qword [rel wm_next_id], 1
+    mov qword [rel wm_active_window], -1
+    mov qword [rel wm_start_menu_open], 0
+    mov qword [rel wm_dragging], 0
+    
+    ; Draw desktop
+    call wm_draw_desktop
+    
+    ; Create default terminal window
+    call wm_create_terminal
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; wm_draw_desktop - Draw desktop background, taskbar, ATCG strip
+; ============================================================================
+wm_draw_desktop:
+    ; This calls fb_clear_desktop from kernel.dna
+    ; which draws:
+    ;   - Desktop background (dark blue-black)
+    ;   - ATCG color strip (4px top)
+    ;   - Taskbar (40px bottom)
+    ret
+
+; ============================================================================
+; wm_create_window - Create a new window
+; rP = title, rA = x, rC = y, rS = w, rG = h → rA = window id
+; ============================================================================
+wm_create_window:
+    push rP
+    push rC
+    push rG
+    push r0
+    
+    ; Find free slot
+    lea r0, [rel wm_windows]
+    mov rC, WM_MAX_WINDOWS
+.wm_find_slot:
+    cmp qword [r0], 0     ; id == 0 means free
+    je .wm_slot_found
+    add r0, 96
+    dec rC
+    jnz .wm_find_slot
+    
+    ; No free slots
+    mov rA, -1
+    pop r0
+    pop rG
+    pop rC
+    pop rP
+    ret
+
+.wm_slot_found:
+    ; Assign ID
+    mov rA, [rel wm_next_id]
+    inc qword [rel wm_next_id]
+    mov [r0], rA           ; id
+    
+    ; Set position and size (from registers - already pushed, need to reload)
+    ; Simplified: use default position
+    mov qword [r0 + 8], 100    ; x
+    mov qword [r0 + 16], 80    ; y
+    mov qword [r0 + 24], 600   ; w
+    mov qword [r0 + 32], 400   ; h
+    mov qword [r0 + 40], WIN_NORMAL  ; state
+    
+    ; Copy title
+    lea rG, [r0 + 48]
+    call strcpy_kernel
+    
+    ; Set z-order
+    mov rC, [rel wm_window_count]
+    mov [r0 + 80], rC
+    
+    inc qword [rel wm_window_count]
+    
+    ; Draw the window
+    push rA
+    call wm_draw_window
+    pop rA
+    
+    pop r0
+    pop rG
+    pop rC
+    pop rP
+    ret
+
+; ============================================================================
+; wm_draw_window - Draw a window with title bar and content area
+; r0 = window entry pointer
+; ============================================================================
+wm_draw_window:
+    push rA
+    push rP
+    push rS
+    push r0
+    push r1
+    
+    ; Get window dimensions
+    mov rP, [r0 + 8]      ; x
+    mov rS, [r0 + 16]     ; y
+    mov r0, [r0 + 24]     ; w (reusing r0)
+    
+    ; Draw title bar (dark blue)
+    ; fb_fill_rect(x, y, w, WM_TITLE_H, COLOR_TITLEBAR)
+    ; ... would call fb_fill_rect from kernel.dna
+    
+    ; Draw window content area (dark)
+    ; fb_fill_rect(x, y+WM_TITLE_H, w, h-WM_TITLE_H, COLOR_WINDOW_BG)
+    
+    ; Draw title text
+    ; ...
+    
+    ; Draw close button (red X)
+    ; ...
+    
+    ; Draw minimize button (yellow -)
+    ; ...
+    
+    ; Draw maximize button (green □)
+    ; ...
+    
+    pop r1
+    pop r0
+    pop rS
+    pop rP
+    pop rA
+    ret
+
+; ============================================================================
+; wm_create_terminal - Create default terminal window
+; ============================================================================
+wm_create_terminal:
+    push rA
+    push rP
+    
+    lea rP, [rel wm_term_title]
+    call wm_create_window
+    
+    pop rP
+    pop rA
+    ret
+
+.data
+wm_term_title:
+    db "DNAsm Terminal", 0
+
+.code
+
+; ============================================================================
+; wm_handle_click - Handle mouse click
+; rA = x, rC = y
+; ============================================================================
+wm_handle_click:
+    push rG
+    push r0
+    
+    ; Check if click is on title bar of any window
+    lea r0, [rel wm_windows]
+    mov rG, WM_MAX_WINDOWS
+.wm_click_scan:
+    cmp qword [r0], 0
+    je .wm_click_next
+    cmp qword [r0 + 40], WIN_HIDDEN
+    je .wm_click_next
+    
+    ; Check if click is within window bounds
+    ; ... simplified
+    
+.wm_click_next:
+    add r0, 96
+    dec rG
+    jnz .wm_click_scan
+    
+    pop r0
+    pop rG
+    ret
+
+; ============================================================================
+; strcpy_kernel (local copy)
+; ============================================================================
+strcpy_kernel:
+    push rA
+    push rP
+    push rS
+.wm_strcpy_loop:
+    mov rA.b, [rS]
+    mov [rP], rA.b
+    test rA, rA
+    jz .wm_strcpy_done
+    inc rP
+    inc rS
+    jmp .wm_strcpy_loop
+.wm_strcpy_done:
+    pop rS
+    pop rP
+    pop rA
+    ret

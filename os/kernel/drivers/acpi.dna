@@ -1,0 +1,260 @@
+; ============================================================================
+; DNAOS - ACPI Power Management Driver (DNAsm)
+; ============================================================================
+; Finds RSDP → RSDT/XSDT → ACPI tables
+; Supports: shutdown, reboot, power off
+; ============================================================================
+
+.code
+.global acpi_init
+.global acpi_shutdown
+.global acpi_reboot
+
+; ============================================================================
+; acpi_init - Find ACPI tables
+; ============================================================================
+acpi_init:
+    push rA
+    push rC
+    push rG
+    push rP
+    push rS
+    
+    ; Search for RSDP in first 1KB of EBDA
+    ; EBDA address is at 0x40E
+    mov rP, 0x40E
+    mov rA.w, [rP]
+    shl rA, 4              ; EBDA segment << 4
+    mov rP, rA
+    mov rC, 1024 / 16      ; Search 1KB in 16-byte steps
+    
+.acpi_ebda_scan:
+    call acpi_check_rsdp
+    test rA, rA
+    jnz .acpi_rsdp_found
+    
+    add rP, 16
+    dec rC
+    jnz .acpi_ebda_scan
+    
+    ; Not in EBDA, search BIOS ROM area (0xE0000 - 0xFFFFF)
+    mov rP, 0xE0000
+    mov rC, (0xFFFFF - 0xE0000) / 16
+    
+.acpi_rom_scan:
+    call acpi_check_rsdp
+    test rA, rA
+    jnz .acpi_rsdp_found
+    
+    add rP, 16
+    dec rC
+    jnz .acpi_rom_scan
+    
+    ; No ACPI found
+    mov qword [rel acpi_rsdp_addr], 0
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+.acpi_rsdp_found:
+    mov [rel acpi_rsdp_addr], rP
+    
+    ; Parse RSDP to find RSDT
+    ; RSDP + 16 = RSDT address (32-bit)
+    mov rA, [rP + 16]
+    mov [rel acpi_rsdt_addr], rA
+    
+    pop rS
+    pop rP
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; acpi_check_rsdp - Check if rP points to RSDP
+; Returns: rA = 1 if found, 0 if not
+; ============================================================================
+acpi_check_rsdp:
+    push rC
+    push rG
+    
+    ; Check signature "RSD PTR "
+    lea rG, [rel rsdp_sig]
+    mov rC, 8
+.acpi_sig_cmp:
+    mov rA.b, [rP]
+    cmp rA.b, [rG]
+    jne .acpi_not_rsdp
+    inc rP
+    inc rG
+    dec rC
+    jnz .acpi_sig_cmp
+    
+    ; Verify checksum
+    sub rP, 8              ; Reset to start
+    xor rA, rA
+    mov rC, 20             ; RSDP v1 is 20 bytes
+.acpi_checksum:
+    add rA, [rP]
+    inc rP
+    dec rC
+    jnz .acpi_checksum
+    
+    ; Checksum should be 0
+    and rA, 0xFF
+    jnz .acpi_not_rsdp
+    
+    mov rA, 1
+    pop rG
+    pop rC
+    ret
+
+.acpi_not_rsdp:
+    xor rA, rA
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; acpi_find_table - Find ACPI table by signature
+; rP = 4-char signature → rA = table address (0 if not found)
+; ============================================================================
+acpi_find_table:
+    push rC
+    push rG
+    push rS
+    
+    ; Get RSDT
+    mov rG, [rel acpi_rsdt_addr]
+    test rG, rG
+    jz .acpi_table_not_found
+    
+    ; RSDT header: signature(4) + length(4) + ... + entries start at offset 36
+    ; Number of entries = (length - 36) / 4
+    mov rC, [rG + 4]       ; Length
+    sub rC, 36
+    shr rC, 2              ; / 4 = number of entries
+    
+    add rG, 36             ; Start of entry array
+    
+.acpi_table_scan:
+    test rC, rC
+    jz .acpi_table_not_found
+    
+    ; Get table address from entry
+    mov rS, [rG]
+    
+    ; Check signature
+    mov rA, [rS]
+    mov rA, [rP]
+    cmp rA, [rS]
+    je .acpi_table_found
+    
+    add rG, 4
+    dec rC
+    jmp .acpi_table_scan
+
+.acpi_table_found:
+    mov rA, rS
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+.acpi_table_not_found:
+    xor rA, rA
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; acpi_shutdown - Power off the machine via ACPI
+; ============================================================================
+acpi_shutdown:
+    ; Find FACP (Fixed ACPI Description Table)
+    lea rP, [rel facp_sig]
+    call acpi_find_table
+    test rA, rA
+    jz .acpi_shutdown_fail
+    
+    ; FACP + 0x40 = PM1a_CNT_BLK
+    ; FACP + 0x42 = PM1b_CNT_BLK
+    ; FACP + 0x58 = SLP_TYPa
+    ; FACP + 0x5A = SLP_TYPb
+    
+    mov rG, rA
+    
+    ; Read PM1a_CNT port
+    mov rP, [rG + 0x40]    ; PM1a_CNT_BLK
+    
+    ; Write SLP_TYP | SLP_EN
+    ; SLP_TYP for S5 (shutdown) is usually 0x1C00
+    mov rA, 0x1C00 | 0x2000  ; SLP_TYPa | SLP_EN
+    out rP, rA.w
+    
+    ; Also write to PM1b if it exists
+    mov rP, [rG + 0x42]
+    test rP, rP
+    jz .acpi_shutdown_done
+    out rP, rA.w
+
+.acpi_shutdown_done:
+    hlt                     ; Should not reach here
+    ret
+
+.acpi_shutdown_fail:
+    ; No ACPI - try keyboard controller shutdown
+    mov rA, 0xFE
+    out 0x64, rA.b
+    hlt
+    ret
+
+; ============================================================================
+; acpi_reboot - Reboot the machine
+; ============================================================================
+acpi_reboot:
+    ; Method 1: Keyboard controller reset
+    cli
+    
+    ; Pulse reset line
+    mov rA, 0xFE
+    out 0x64, rA.b
+    
+    ; Method 2: Triple fault (fallback)
+    ; Load null IDT and trigger interrupt
+    lidt [rel null_idt]
+    int 0x03               ; Triple fault → reset
+    
+    ; Should not reach here
+    hlt
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+rsdp_sig:
+    db "RSD PTR "
+facp_sig:
+    db "FACP"
+
+align 8
+null_idt:
+    dw 0                   ; Limit = 0
+    dq 0                   ; Base = 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+acpi_rsdp_addr:
+    resq 1
+acpi_rsdt_addr:
+    resq 1

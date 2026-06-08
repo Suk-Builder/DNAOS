@@ -1,0 +1,157 @@
+; ============================================================================
+; DNAOS - PIT Timer Driver (DNAsm)
+; ============================================================================
+; Intel 8254 PIT @ 1.193182 MHz
+; Channel 0 → IRQ0 (system timer @ 100Hz)
+; Channel 2 → PC speaker
+; ============================================================================
+
+PIT_CH0_DATA    equ 0x40
+PIT_CH1_DATA    equ 0x41
+PIT_CH2_DATA    equ 0x42
+PIT_CMD         equ 0x43
+PIT_FREQ        equ 1193182
+PIT_HZ          equ 100         ; 100Hz = 10ms tick
+
+.code
+.global pit_init
+.global pit_irq_handler
+.global pit_get_ticks
+.global pit_get_uptime_ms
+.global pit_sleep_ms
+.global pit_beep
+
+; ============================================================================
+; pit_init - Initialize PIT to 100Hz
+; ============================================================================
+pit_init:
+    push rA
+    
+    ; Calculate divisor
+    mov rA, PIT_FREQ
+    mov rC, PIT_HZ
+    div rC                  ; rA = 11931 (approximately)
+    
+    ; Program channel 0: mode 3 (square wave), lo/hi byte
+    ; Command: 0x36 = 00 11 011 0
+    ;   00  = channel 0
+    ;   11  = lo/hi byte access
+    ;   011 = mode 3 (square wave)
+    ;   0   = binary mode
+    out PIT_CMD, 0x36
+    
+    ; Send divisor
+    out PIT_CH0_DATA, rA.b  ; Low byte
+    shr rA, 8
+    out PIT_CH0_DATA, rA.b  ; High byte
+    
+    ; Reset counters
+    mov qword [rel pit_ticks], 0
+    mov qword [rel pit_uptime_ms], 0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; pit_irq_handler - Called from IRQ0 in boot.S
+; ============================================================================
+pit_irq_handler:
+    push rA
+    
+    ; Increment tick counter
+    inc qword [rel pit_ticks]
+    
+    ; Update uptime (10ms per tick at 100Hz)
+    add qword [rel pit_uptime_ms], 10
+    
+    ; Call scheduler tick
+    call scheduler_tick
+    
+    pop rA
+    ret
+
+; ============================================================================
+; pit_get_ticks - Get tick count
+; Returns: rA = ticks
+; ============================================================================
+pit_get_ticks:
+    mov rA, [rel pit_ticks]
+    ret
+
+; ============================================================================
+; pit_get_uptime_ms - Get uptime in milliseconds
+; Returns: rA = ms
+; ============================================================================
+pit_get_uptime_ms:
+    mov rA, [rel pit_uptime_ms]
+    ret
+
+; ============================================================================
+; pit_sleep_ms - Sleep for specified milliseconds (busy wait)
+; rA = ms
+; ============================================================================
+pit_sleep_ms:
+    push rC
+    add rA, [rel pit_uptime_ms]
+    mov rC, rA
+.pit_sleep_loop:
+    mov rA, [rel pit_uptime_ms]
+    cmp rA, rC
+    jl .pit_sleep_loop
+    hlt                     ; Wait for next interrupt
+    mov rA, [rel pit_uptime_ms]
+    cmp rA, rC
+    jl .pit_sleep_loop
+    pop rC
+    ret
+
+; ============================================================================
+; pit_beep - Beep the PC speaker
+; rA = frequency, rC = duration_ms
+; ============================================================================
+pit_beep:
+    push rA
+    push rC
+    push rG
+    
+    test rA, rA
+    jz .beep_done
+    
+    ; Calculate divisor
+    mov rG, PIT_FREQ
+    div rG, rA
+    
+    ; Program channel 2: mode 3 (square wave)
+    out PIT_CMD, 0xB6
+    out PIT_CH2_DATA, rA.b
+    shr rA, 8
+    out PIT_CH2_DATA, rA.b
+    
+    ; Enable speaker (set bits 0,1 of port 0x61)
+    in rA.b, 0x61
+    or rA, 3
+    out 0x61, rA.b
+    
+    ; Wait
+    call pit_sleep_ms
+    
+    ; Disable speaker
+    in rA.b, 0x61
+    and rA, 0xFC
+    out 0x61, rA.b
+
+.beep_done:
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+pit_ticks:
+    resq 1
+pit_uptime_ms:
+    resq 1

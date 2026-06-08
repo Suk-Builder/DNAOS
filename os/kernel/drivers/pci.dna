@@ -1,0 +1,197 @@
+; ============================================================================
+; DNAOS - PCI Bus Driver (DNAsm)
+; ============================================================================
+; Scans PCI bus to find devices (network cards, GPUs, etc.)
+; Config space access via ports 0xCF8/0xCFC.
+; ============================================================================
+
+PCI_CONFIG_ADDR equ 0xCF8
+PCI_CONFIG_DATA equ 0xCFC
+MAX_PCI_DEVICES equ 32
+
+; Known vendor IDs
+PCI_VEND_INTEL  equ 0x8086
+PCI_VEND_REALTEK equ 0x10EC
+PCI_VEND_NVIDIA equ 0x10DE
+PCI_VEND_AMD    equ 0x1022
+PCI_VEND_VIRTIO equ 0x1AF4
+
+; Known device IDs
+PCI_DEV_E1000   equ 0x100E
+PCI_DEV_E1000_82545EM equ 0x100F
+PCI_DEV_RTL8139 equ 0x8139
+
+.code
+.global pci_init
+.global pci_scan
+.global pci_find_e1000
+.global pci_read_config
+
+; ============================================================================
+; pci_init - Scan PCI bus
+; ============================================================================
+pci_init:
+    push rA
+    push rC
+    push rG
+    
+    mov qword [rel pci_device_count], 0
+    
+    ; Scan all buses (simplified: only bus 0)
+    xor rG, rG             ; bus = 0
+    
+.pci_bus_loop:
+    xor rC, rC             ; slot = 0
+    
+.pci_slot_loop:
+    ; Check function 0
+    mov rA, rG             ; bus
+    shl rA, 5              ; bus << 5
+    or rA, rC              ; | slot
+    shl rA, 3              ; << 3
+    ; Function = 0, offset = 0 (vendor ID)
+    
+    ; Read vendor ID
+    mov rP, rA
+    xor rS, rS             ; offset = 0
+    call pci_read_config
+    
+    ; Check if device exists (vendor != 0xFFFF)
+    cmp rA.w, 0xFFFF
+    je .pci_next_slot
+    
+    ; Device found! Store it
+    push rG
+    push rC
+    
+    mov rG, [rel pci_device_count]
+    cmp rG, MAX_PCI_DEVICES
+    jge .pci_table_full
+    
+    ; Store device info
+    lea rG, [rel pci_devices]
+    ; Each entry: bus(1) + slot(1) + func(1) + pad(1) + vendor(2) + device(2) + class(1) + subclass(1) + prog(1) + irq(1) + bar0(8) = 20 bytes
+    ; Simplified: just store bus, slot, vendor, device
+    
+    ; Read device ID
+    mov rP, [rel pci_device_count]
+    ; ... simplified
+    
+    inc qword [rel pci_device_count]
+    
+.pci_table_full:
+    pop rC
+    pop rG
+    
+.pci_next_slot:
+    inc rC
+    cmp rC, 32
+    jl .pci_slot_loop
+    
+    inc rG
+    cmp rG, 256
+    jl .pci_bus_loop
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; pci_read_config - Read 32-bit value from PCI config space
+; rP = bus|slot|func (already shifted), rS = offset → rA = value
+; ============================================================================
+pci_read_config:
+    push rC
+    
+    ; Build config address
+    ; 31: enable bit
+    ; 24-30: reserved
+    ; 16-23: bus number
+    ; 11-15: device number
+    ; 8-10: function number
+    ; 2-7: register number
+    ; 0-1: always 00
+    
+    mov rC, 0x80000000     ; Enable bit
+    or rC, rP              ; Bus|slot|func
+    or rC, rS              ; Offset
+    
+    ; Write address
+    mov rA, PCI_CONFIG_ADDR
+    out rA, rC.d
+    
+    ; Read data
+    in rA.d, PCI_CONFIG_DATA
+    
+    pop rC
+    ret
+
+; ============================================================================
+; pci_write_config - Write 32-bit value to PCI config space
+; rP = bus|slot|func, rS = offset, rA = value
+; ============================================================================
+pci_write_config:
+    push rC
+    
+    mov rC, 0x80000000
+    or rC, rP
+    or rC, rS
+    
+    out PCI_CONFIG_ADDR, rC.d
+    out PCI_CONFIG_DATA, rA.d
+    
+    pop rC
+    ret
+
+; ============================================================================
+; pci_find_e1000 - Find E1000 NIC
+; Returns: rA = pointer to device entry (0 if not found)
+; ============================================================================
+pci_find_e1000:
+    push rC
+    push rG
+    
+    lea rG, [rel pci_devices]
+    mov rC, [rel pci_device_count]
+    
+.pci_find_loop:
+    test rC, rC
+    jz .pci_not_found
+    
+    ; Check vendor
+    cmp word [rG + 4], PCI_VEND_INTEL
+    jne .pci_find_next
+    
+    ; Check device
+    cmp word [rG + 6], PCI_DEV_E1000
+    je .pci_found
+    cmp word [rG + 6], PCI_DEV_E1000_82545EM
+    je .pci_found
+
+.pci_find_next:
+    add rG, 20
+    dec rC
+    jmp .pci_find_loop
+
+.pci_not_found:
+    xor rA, rA
+    pop rG
+    pop rC
+    ret
+
+.pci_found:
+    mov rA, rG
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+pci_devices:
+    resb MAX_PCI_DEVICES * 20
+pci_device_count:
+    resq 1

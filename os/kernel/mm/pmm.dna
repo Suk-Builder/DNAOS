@@ -1,0 +1,267 @@
+; ============================================================================
+; DNAOS - Physical Memory Manager (DNAsm)
+; ============================================================================
+; Bitmap allocator: each bit = 1 page (4KB). 0=free, 1=used.
+; Supports up to 4GB = 1048576 pages = 32768 uint32s = 128KB bitmap.
+; ============================================================================
+
+.code
+.global pmm_init
+.global pmm_alloc_page
+.global pmm_free_page
+.global pmm_alloc_pages
+.global pmm_free_pages
+
+; ============================================================================
+; pmm_init - Initialize PMM from multiboot2 memory map
+; ============================================================================
+; rP = multiboot2 info pointer
+pmm_init:
+    push rA
+    push rC
+    push rG
+    push rS
+    
+    ; Clear bitmap (all free)
+    lea rG, [rel pmm_bitmap]
+    mov rC, 16384         ; 128KB / 8 bytes = 16384 qwords
+    xor rA, rA
+.pmm_clear_loop:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .pmm_clear_loop
+    
+    ; Mark first 1MB as used (256 pages)
+    ; Kernel lives here, plus BIOS data
+    mov rC, 256
+    xor rG, rG
+.pmm_mark_kernel:
+    call pmm_set_bit
+    inc rG
+    dec rC
+    jnz .pmm_mark_kernel
+    
+    ; Parse multiboot2 mmap tag to mark reserved regions
+    ; (simplified - mark first 1MB + above 3GB as used)
+    ; Mark 0xC0000000-0xFFFFFFFF (768 pages) as used
+    mov rG, 0xC0000       ; page index for 3GB (0xC0000000 >> 12)
+    mov rC, 0x40000       ; 1GB / 4KB = 262144 pages... too many
+    ; Just mark first 1MB for now
+    
+    mov qword [rel pmm_total_pages], 262144
+    mov qword [rel pmm_free_pages], 261888
+    
+    pop rS
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; pmm_set_bit - Mark page as used
+; rG = page index
+; ============================================================================
+pmm_set_bit:
+    push rA
+    push rC
+    push rP
+    
+    mov rA, rG
+    shr rA, 5             ; word index
+    mov rC, rG
+    and rC, 31            ; bit position
+    
+    lea rP, [rel pmm_bitmap]
+    lock bts [rP + rA*4], rC
+    
+    pop rP
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; pmm_clear_bit - Mark page as free
+; rG = page index
+; ============================================================================
+pmm_clear_bit:
+    push rA
+    push rC
+    push rP
+    
+    mov rA, rG
+    shr rA, 5
+    mov rC, rG
+    and rC, 31
+    
+    lea rP, [rel pmm_bitmap]
+    lock btr [rP + rA*4], rC
+    
+    pop rP
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; pmm_test_bit - Test if page is used
+; rG = page index → rA = 1 if used, 0 if free
+; ============================================================================
+pmm_test_bit:
+    push rC
+    push rP
+    
+    mov rA, rG
+    shr rA, 5
+    mov rC, rG
+    and rC, 31
+    
+    lea rP, [rel pmm_bitmap]
+    bt [rP + rA*4], rC
+    setc rA.b
+    
+    pop rP
+    pop rC
+    ret
+
+; ============================================================================
+; pmm_alloc_page - Allocate one physical page
+; Returns: rA = physical address (0 if out of memory)
+; ============================================================================
+pmm_alloc_page:
+    push rC
+    push rG
+    push rP
+    
+    ; Scan bitmap for free bit
+    lea rP, [rel pmm_bitmap]
+    mov rG, 0             ; Start from page 0
+    mov rC, [rel pmm_total_pages]
+    
+.pmm_scan:
+    call pmm_test_bit
+    test rA, rA
+    jz .pmm_found         ; Free page found
+    
+    inc rG
+    cmp rG, rC
+    jl .pmm_scan
+    
+    ; No free pages
+    xor rA, rA
+    pop rP
+    pop rG
+    pop rC
+    ret
+
+.pmm_found:
+    ; Mark as used
+    call pmm_set_bit
+    dec qword [rel pmm_free_pages]
+    
+    ; Return physical address
+    mov rA, rG
+    shl rA, 12            ; page_index * 4096
+    
+    pop rP
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; pmm_free_page - Free one physical page
+; rA = physical address
+; ============================================================================
+pmm_free_page:
+    push rG
+    
+    shr rA, 12            ; physical_addr / 4096
+    mov rG, rA
+    call pmm_clear_bit
+    inc qword [rel pmm_free_pages]
+    
+    pop rG
+    ret
+
+; ============================================================================
+; pmm_alloc_pages - Allocate contiguous pages
+; rC = count → rA = physical address (0 if failed)
+; ============================================================================
+pmm_alloc_pages:
+    push rC
+    push rG
+    push rS
+    
+    mov rS, rC            ; Save count
+    mov rG, 0             ; Start scanning
+    
+.pmm_contiguous_scan:
+    ; Check if rG..rG+rS-1 are all free
+    mov rC, 0             ; offset
+.pmm_check_loop:
+    push rG
+    add rG, rC
+    call pmm_test_bit
+    pop rG
+    test rA, rA
+    jnz .pmm_not_free
+    
+    inc rC
+    cmp rC, rS
+    jl .pmm_check_loop
+    
+    ; Found contiguous free range
+    ; Mark all as used
+    mov rC, 0
+.pmm_mark_used:
+    push rG
+    add rG, rC
+    call pmm_set_bit
+    pop rG
+    inc rC
+    cmp rC, rS
+    jl .pmm_mark_used
+    
+    ; Return address
+    mov rA, rG
+    shl rA, 12
+    sub qword [rel pmm_free_pages], rS
+    
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+.pmm_not_free:
+    inc rG
+    mov rA, [rel pmm_total_pages]
+    sub rA, rS
+    cmp rG, rA
+    jl .pmm_contiguous_scan
+    
+    ; No contiguous range found
+    xor rA, rA
+    pop rS
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; pmm_free_pages - Free contiguous pages
+; rA = physical address, rC = count
+; ============================================================================
+pmm_free_pages:
+    push rC
+    push rG
+    
+    shr rA, 12
+    mov rG, rA
+    
+.pmm_free_loop:
+    call pmm_clear_bit
+    inc rG
+    dec rC
+    jnz .pmm_free_loop
+    
+    pop rG
+    pop rC
+    ret

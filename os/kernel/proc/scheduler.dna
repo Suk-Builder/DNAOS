@@ -1,0 +1,252 @@
+; ============================================================================
+; DNAOS - Process Manager & Scheduler (DNAsm)
+; ============================================================================
+; Round-robin preemptive scheduler. PIT @ 100Hz triggers context switch.
+; Each process: own kernel stack, page tables, register state, ATP budget.
+; ============================================================================
+
+MAX_PROCESSES    equ 64
+PROC_NAME_LEN   equ 32
+KSTACK_SIZE     equ 8192
+
+; Process states
+PROC_UNUSED     equ 0
+PROC_READY      equ 1
+PROC_RUNNING    equ 2
+PROC_BLOCKED    equ 3
+PROC_ZOMBIE     equ 4
+
+; ============================================================================
+; Process structure (in BSS)
+; ============================================================================
+.bss
+
+align 8
+proc_table:
+    ; 64 processes, each:
+    ;   state:       qword (8 bytes)
+    ;   pid:         qword
+    ;   ppid:        qword
+    ;   kstack:      qword (kernel stack pointer)
+    ;   kstack_top:  qword
+    ;   cr3:         qword (page table root)
+    ;   rip:         qword (saved instruction pointer)
+    ;   rsp_save:    qword (saved stack pointer)
+    ;   rflags:      qword
+    ;   regs:        16 qwords (rax...r15)
+    ;   atp_budget:  qword
+    ;   atp_used:    qword
+    ;   name:        32 bytes
+    ; Total per process: 8*10 + 8*16 + 8*2 + 32 = 80 + 128 + 16 + 32 = 256 bytes
+    resb 64 * 256
+
+current_pid:
+    resq 1
+proc_count_active:
+    resq 1
+scheduler_enabled:
+    resq 1
+next_pid:
+    resq 1
+
+.code
+
+; ============================================================================
+; proc_init - Initialize process manager
+; ============================================================================
+proc_init:
+    push rA
+    push rC
+    push rG
+    
+    ; Clear process table
+    lea rG, [rel proc_table]
+    mov rC, 64 * 256 / 8
+    xor rA, rA
+.proc_clear:
+    mov [rG], rA
+    add rG, 8
+    dec rC
+    jnz .proc_clear
+    
+    ; Set up kernel process (PID 0)
+    lea rG, [rel proc_table]
+    mov qword [rG + 0], PROC_RUNNING     ; state
+    mov qword [rG + 8], 0                ; pid
+    mov qword [rG + 16], 0               ; ppid
+    mov qword [rG + 24], 0               ; kstack (set later)
+    mov qword [rG + 32], 0               ; kstack_top
+    mov qword [rG + 40], 0               ; cr3 (set later)
+    mov qword [rG + 48], 0               ; rip
+    mov qword [rG + 56], 0               ; rsp_save
+    mov qword [rG + 64], 0x202           ; rflags (IF set)
+    mov qword [rG + 72], 10000000000     ; atp_budget (10 billion)
+    mov qword [rG + 80], 0               ; atp_used
+    ; name = "kernel"
+    lea rP, [rel proc_name_kernel]
+    lea rS, [rG + 88]
+    call strcpy
+    
+    mov qword [rel current_pid], 0
+    mov qword [rel proc_count_active], 1
+    mov qword [rel scheduler_enabled], 0
+    mov qword [rel next_pid], 1
+    
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+.data
+proc_name_kernel:
+    db "kernel", 0
+
+.code
+
+; ============================================================================
+; proc_create - Create a new process
+; rP = entry point, rS = name string → rA = PID (-1 on error)
+; ============================================================================
+proc_create:
+    push rC
+    push rG
+    
+    ; Find free slot
+    lea rG, [rel proc_table]
+    mov rC, 64
+.proc_find:
+    cmp qword [rG], PROC_UNUSED
+    je .proc_found_slot
+    add rG, 256
+    dec rC
+    jnz .proc_find
+    
+    ; No free slots
+    mov rA, -1
+    pop rG
+    pop rC
+    ret
+
+.proc_found_slot:
+    ; Allocate PID
+    mov rA, [rel next_pid]
+    inc qword [rel next_pid]
+    
+    ; Fill in process info
+    mov qword [rG + 0], PROC_READY       ; state
+    mov [rG + 8], rA                     ; pid
+    mov rC, [rel current_pid]
+    mov [rG + 16], rC                    ; ppid
+    
+    ; Allocate kernel stack (simplified - use static allocation)
+    ; In a real OS, we'd call pmm_alloc_page
+    ; For now, just set up a placeholder
+    mov qword [rG + 24], 0               ; kstack
+    mov qword [rG + 32], 0               ; kstack_top
+    
+    ; Set entry point
+    mov [rG + 48], rP                    ; rip = entry point
+    
+    ; ATP budget
+    mov qword [rG + 72], 1000000000      ; 1 billion ATP
+    mov qword [rG + 80], 0               ; atp_used = 0
+    
+    ; Copy name
+    lea rP, [rG + 88]
+    call strcpy
+    
+    inc qword [rel proc_count_active]
+    
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; scheduler_tick - Called by PIT IRQ0 handler
+; ============================================================================
+scheduler_tick:
+    push rA
+    
+    ; Check if scheduler is enabled
+    mov rA, [rel scheduler_enabled]
+    test rA, rA
+    jz .sched_done
+    
+    ; Simple round-robin: find next READY process
+    ; (simplified - just increment current_pid)
+    mov rA, [rel current_pid]
+    inc rA
+    cmp rA, 64
+    jl .sched_check
+    xor rA, rA
+
+.sched_check:
+    ; Check if process at slot rA is READY
+    ; (simplified)
+    mov [rel current_pid], rA
+
+.sched_done:
+    pop rA
+    ret
+
+; ============================================================================
+; Context Switch (called from IRQ0 handler)
+; ============================================================================
+context_switch:
+    ; Save current process state
+    ; Restore next process state
+    ; This is called from assembly in boot.S with all registers saved
+    ; rP points to saved register state on stack
+    
+    push rA
+    push rG
+    
+    ; Get current process slot
+    mov rA, [rel current_pid]
+    lea rG, [rel proc_table]
+    shl rA, 8             ; * 256
+    add rG, rA
+    
+    ; Save RSP
+    mov [rG + 56], rK     ; Save stack pointer
+    
+    ; Find next process (round-robin)
+    call scheduler_tick
+    
+    ; Load new process slot
+    mov rA, [rel current_pid]
+    lea rG, [rel proc_table]
+    shl rA, 8
+    add rG, rA
+    
+    ; Restore RSP
+    mov rK, [rG + 56]
+    
+    ; Mark as running
+    mov qword [rG], PROC_RUNNING
+    
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; strcpy - Copy string
+; rS = source, rP = dest
+; ============================================================================
+strcpy:
+    push rA
+    push rP
+    push rS
+.strcpy_loop:
+    mov rA.b, [rS]
+    mov [rP], rA.b
+    test rA, rA
+    jz .strcpy_done
+    inc rP
+    inc rS
+    jmp .strcpy_loop
+.strcpy_done:
+    pop rS
+    pop rP
+    pop rA
+    ret

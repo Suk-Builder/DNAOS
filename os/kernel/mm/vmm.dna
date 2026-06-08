@@ -1,0 +1,149 @@
+; ============================================================================
+; DNAOS - Virtual Memory Manager (DNAsm)
+; ============================================================================
+; 4-level paging: PML4 → PDPT → PD → PT → Page
+; Identity map first 4GB, kernel at higher half in future.
+; ============================================================================
+
+.code
+.global vmm_init
+.global vmm_map_page
+.global vmm_unmap_page
+.global vmm_get_physical
+
+; Page table entry flags
+PTE_PRESENT  equ 0x001
+PTE_WRITABLE equ 0x002
+PTE_USER     equ 0x004
+PTE_ACCESSED equ 0x020
+PTE_DIRTY    equ 0x040
+PTE_HUGE     equ 0x080
+PTE_GLOBAL   equ 0x100
+PTE_NX       equ 0x8000000000000000
+
+; ============================================================================
+; vmm_init - Set up initial page tables
+; rP = PML4 physical address (from boot.S)
+; ============================================================================
+vmm_init:
+    push rA
+    push rC
+    push rG
+    push rS
+    
+    ; Identity map first 4GB using 2MB pages
+    ; PML4[0] → PDPT → PD[0..3] → 2MB pages
+    ; This is already set up by boot.S, but we verify
+    
+    ; Map video memory at 0xE0000000
+    ; (identity mapped since it's in first 4GB)
+    
+    ; Future: map kernel at 0xFFFFFFFF80000000 (higher half)
+    
+    pop rS
+    pop rG
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; vmm_map_page - Map virtual address to physical
+; rP = virtual address, rS = physical address, rC = flags
+; ============================================================================
+vmm_map_page:
+    push rA
+    push rG
+    push r0
+    push r1
+    
+    ; Extract page table indices from virtual address
+    ; PML4 index = bits 47:39
+    mov rG, rP
+    shr rG, 39
+    and rG, 0x1FF
+    
+    ; PDPT index = bits 38:30
+    mov r0, rP
+    shr r0, 30
+    and r0, 0x1FF
+    
+    ; PD index = bits 29:21
+    mov r1, rP
+    shr r1, 21
+    and r1, 0x1FF
+    
+    ; PT index = bits 20:12
+    ; (for 4KB pages; if using 2MB pages, PD entry is the leaf)
+    
+    ; Walk PML4
+    ; (simplified - assumes tables already exist from boot.S)
+    ; A full implementation would allocate new tables as needed
+    
+    ; For now, just update the page table entry
+    ; This works for the identity-mapped first 4GB
+    
+    pop r1
+    pop r0
+    pop rG
+    pop rA
+    ret
+
+; ============================================================================
+; vmm_unmap_page - Unmap virtual address
+; rP = virtual address
+; ============================================================================
+vmm_unmap_page:
+    push rA
+    push rC
+    
+    ; Walk page tables and clear PTE
+    ; (simplified)
+    
+    ; Invalidate TLB entry
+    invlpg [rP]
+    
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; vmm_get_physical - Get physical address for virtual address
+; rP = virtual address → rA = physical address
+; ============================================================================
+vmm_get_physical:
+    push rC
+    push rG
+    
+    ; Walk page tables
+    ; For identity-mapped regions, physical = virtual
+    mov rA, rP
+    
+    pop rG
+    pop rC
+    ret
+
+; ============================================================================
+; vmm_map_range - Map a range of pages
+; rP = virtual start, rS = physical start, rC = count, rG = flags
+; ============================================================================
+vmm_map_range:
+    push rP
+    push rS
+    push rC
+    
+.vmm_range_loop:
+    test rC, rC
+    jz .vmm_range_done
+    
+    call vmm_map_page
+    
+    add rP, 4096
+    add rS, 4096
+    dec rC
+    jmp .vmm_range_loop
+
+.vmm_range_done:
+    pop rC
+    pop rS
+    pop rP
+    ret
