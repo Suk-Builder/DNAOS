@@ -1,0 +1,5 @@
+SDL2-*/
+*.o
+*.exe
+pong_test
+pong_gen_debug*.c

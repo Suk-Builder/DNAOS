@@ -1,0 +1,174 @@
+================================================================================
+DNAPong — Pong game in DNAsm
+================================================================================
+Compile: python3 dasm_c.py pong.dna -o pong_gen.c
+Build:   gcc -o pong pong_gen.c -lSDL2 -lm
+================================================================================
+
+const W = 800
+const H = 600
+const PAD_W = 15
+const PAD_H = 90
+const BALL_SZ = 12
+const BALL_SPD = 5
+const PAD_SPD = 6
+const WIN_SCORE = 5
+
+var pad1_y = 255
+var pad2_y = 255
+var ball_x = 394
+var ball_y = 294
+var ball_vx = 5
+var ball_vy = 3
+var score1 = 0
+var score2 = 0
+var state = 0
+var scored_timer = 0
+var winner = 0
+
+func main() {
+    call dna_rt_init("DNAPong - DNAOS", 800, 600)
+    call dna_rt_srand(dna_rt_ticks())
+
+label title_loop
+    if dna_rt_poll() goto end
+    call draw_title()
+    call dna_rt_present()
+    if !dna_rt_key(DNA_KEY_SPACE) goto title_loop
+
+    set state = 1
+    call reset_ball()
+
+label game_loop
+    if dna_rt_poll() goto end
+    if !dna_rt_running() goto end
+
+    if state == 1 call update_play()
+    if state == 2 call update_scored()
+    if state == 3 call update_gameover()
+
+    call draw_game()
+    call dna_rt_present()
+    goto game_loop
+
+label end
+    call dna_rt_quit()
+    return 0
+}
+
+func update_play() {
+    if dna_rt_key(DNA_KEY_W) set pad1_y = pad1_y - 6
+    if dna_rt_key(DNA_KEY_S) set pad1_y = pad1_y + 6
+    if dna_rt_key(DNA_KEY_UP) set pad2_y = pad2_y - 6
+    if dna_rt_key(DNA_KEY_DOWN) set pad2_y = pad2_y + 6
+
+    if pad1_y < 0 set pad1_y = 0
+    if pad1_y > 510 set pad1_y = 510
+    if pad2_y < 0 set pad2_y = 0
+    if pad2_y > 510 set pad2_y = 510
+
+    set ball_x = ball_x + ball_vx
+    set ball_y = ball_y + ball_vy
+
+    if ball_y <= 0 set ball_vy = 0 - ball_vy
+    if ball_y >= 588 set ball_vy = 0 - ball_vy
+
+    if ball_x <= 20 {
+        if ball_y >= pad1_y {
+            if ball_y <= pad1_y + 90 {
+                set ball_vx = 0 - ball_vx
+                set ball_x = 20
+            }
+        }
+    }
+
+    if ball_x >= 773 {
+        if ball_y >= pad2_y {
+            if ball_y <= pad2_y + 90 {
+                set ball_vx = 0 - ball_vx
+                set ball_x = 773
+            }
+        }
+    }
+
+    if ball_x < 0 {
+        set score2 = score2 + 1
+        set state = 2
+        set scored_timer = 60
+        set winner = 2
+        call reset_ball()
+    }
+
+    if ball_x > 800 {
+        set score1 = score1 + 1
+        set state = 2
+        set scored_timer = 60
+        set winner = 1
+        call reset_ball()
+    }
+}
+
+func update_scored() {
+    set scored_timer = scored_timer - 1
+    if scored_timer <= 0 {
+        if score1 >= 5 set state = 3
+        if score2 >= 5 set state = 3
+        if score1 < 5 {
+            if score2 < 5 set state = 1
+        }
+    }
+}
+
+func update_gameover() {
+    if dna_rt_key(DNA_KEY_SPACE) {
+        set score1 = 0
+        set score2 = 0
+        set state = 1
+        call reset_ball()
+    }
+}
+
+func reset_ball() {
+    set ball_x = 394
+    set ball_y = 294
+    set ball_vx = 5
+    set ball_vy = 3
+    set pad1_y = 255
+    set pad2_y = 255
+}
+
+func draw_title() {
+    call dna_rt_clear(10, 10, 30)
+    call dna_rt_text(280, 200, "DNAPONG", 0, 255, 128)
+    call dna_rt_text(220, 300, "PRESS SPACE TO START", 200, 200, 200)
+    call dna_rt_text(200, 400, "W/S: P1   UP/DOWN: P2", 150, 150, 150)
+}
+
+func draw_game() {
+    call dna_rt_clear(10, 10, 30)
+    call dna_rt_rect(395, 0, 2, 600, 50, 50, 50)
+    call dna_rt_rect(20, pad1_y, 15, 90, 0, 255, 128)
+    call dna_rt_rect(765, pad2_y, 15, 90, 255, 0, 200)
+    call dna_rt_rect(ball_x, ball_y, 12, 12, 255, 255, 255)
+
+    if score1 == 0 call dna_rt_text(300, 30, "0", 255, 255, 255)
+    if score1 == 1 call dna_rt_text(300, 30, "1", 255, 255, 255)
+    if score1 == 2 call dna_rt_text(300, 30, "2", 255, 255, 255)
+    if score1 == 3 call dna_rt_text(300, 30, "3", 255, 255, 255)
+    if score1 == 4 call dna_rt_text(300, 30, "4", 255, 255, 255)
+    if score1 == 5 call dna_rt_text(300, 30, "5", 255, 255, 255)
+
+    if score2 == 0 call dna_rt_text(480, 30, "0", 255, 255, 255)
+    if score2 == 1 call dna_rt_text(480, 30, "1", 255, 255, 255)
+    if score2 == 2 call dna_rt_text(480, 30, "2", 255, 255, 255)
+    if score2 == 3 call dna_rt_text(480, 30, "3", 255, 255, 255)
+    if score2 == 4 call dna_rt_text(480, 30, "4", 255, 255, 255)
+    if score2 == 5 call dna_rt_text(480, 30, "5", 255, 255, 255)
+
+    if state == 2 call dna_rt_text(340, 280, "SCORE!", 255, 255, 0)
+    if state == 3 {
+        if winner == 1 call dna_rt_text(240, 260, "PLAYER 1 WINS!", 0, 255, 128)
+        if winner == 2 call dna_rt_text(240, 260, "PLAYER 2 WINS!", 255, 0, 200)
+        call dna_rt_text(230, 320, "PRESS SPACE TO RESTART", 200, 200, 200)
+    }
+}

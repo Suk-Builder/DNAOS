@@ -142,6 +142,7 @@ void irq_handler_c(struct int_frame *frame) {
             serial_print_dec(timer_ticks / 100);
             serial_print("s] ");
         }
+        /* Don't call proc_schedule from IRQ — cooperative scheduling only */
     } else if (irq == 1) {
         uint8_t scancode = inb(0x60);
         serial_print("[KEY 0x");
