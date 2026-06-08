@@ -74,7 +74,8 @@ DNA_SRCS = kernel/kernel.dna \
            kernel/engine/iroha.dna \
            kernel/engine/kaguya.dna \
            kernel/engine/opening.dna \
-           kernel/engine/ar_live.dna
+           kernel/engine/ar_live.dna \
+           kernel/engine/launch.dna
 
 # Assembly source files (hardware-required, not DNAsm)
 ASM_SRCS = kernel/boot.S \

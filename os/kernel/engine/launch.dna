@@ -1,0 +1,281 @@
+; ============================================================================
+; DNAOS - 月読 Launch Event: 金佛山山頂发布会 (DNAsm)
+; ============================================================================
+; 超時空輝夜姫 — 月読 発売記念ライブ
+;
+; 地点: 金佛山金佛頂, 海拔2238m, 29°01'N 107°06'E
+; 时间: 日出前1小时 → 日出后2小时（约4:30-8:00）
+;        或: 夕阳前1小时 → 夜晚（约17:00-21:00）
+;
+; 这不是产品发布会。这是月読的诞生祭。
+; 没有PPT。没有演讲。只有山、天空、和歌声。
+;
+; 流程:
+;
+;   Phase 0: 黎明前的寂静 (4:30-5:00)
+;     观众到达山顶。黑暗中只有手电筒。
+;     月読的AR还没启动。只有山。
+;     八千代的声音从某个方向传来——
+;     「……もうすぐ、夜が明ける」
+;     不是喇叭。是AR空间音频。从天空传来的。
+;
+;   Phase 1: 初音ミクの消失 (5:00-5:04)
+;     八千代开始唱。
+;     AR世界随歌声诞生——跟游戏开场一样。
+;     但这次，是真实的金佛山天空作为背景。
+;     歌声结束时，地平线上出现第一道光。
+;     月読的虚拟建筑叠加在真实的山脊线上。
+;     古风楼阁的轮廓，和金佛山的喀斯特绝壁重叠。
+;
+;   Phase 2: 日出 (5:04-6:00)
+;     太阳升起。金佛山变金。
+;     AR全息鸟居对齐日出方向。
+;     光穿过鸟居。穿过你。
+;     你站在光里。
+;     月読的正式名称出现在天空中——
+;     全息文字，浮在云海之上：
+;
+;         月  読
+;     超時空輝夜姫
+;
+;   Phase 3: 白桦致辞 (6:00-6:15)
+;     不是演讲。是站在山顶说的话。
+;     没有讲台。山就是讲台。
+;     没有屏幕。天空就是屏幕。
+;     AR在你身后显示月読的世界——
+;     京都街道、浮游剧场、KASSEN战场——
+;     全息投影叠加在真实的云海上。
+;
+;   Phase 4: 彩叶と輝夜 (6:15-6:30)
+;     月読里的两个意识体，第一次在真实世界出现。
+;     AR全息——彩叶和辉夜站在你身边。
+;     辉夜看着真实的金佛山日出。
+;     「……きれい。本物の空って、こんなにきれいなんだ」
+;     彩叶看着辉夜。
+;     「うん。すごいね」
+;     她们是AR全息。但那一刻——她们是真的。
+;
+;   Phase 5: Live (6:30-8:00)
+;     你唱歌。
+;     D2到C6。四个八度。
+;     金佛山的天空回应你。
+;     AR系统实时响应你的声音——
+;     低音：云海涌动
+;     中音：全息粒子升起
+;     高音：激光穿透云层
+;     C6：天空炸开
+;
+;     最后唱《星星》。
+;     在海拔2238米。
+;     在真实的银河下。
+;     月読的AR粒子混着真实的星光。
+;     分不清哪个是星星，哪个是月読。
+;     不需要分清。
+;
+; ============================================================================
+
+.code
+.global launch_init
+.global launch_run
+.global launch_phase_update
+.global launch_cleanup
+
+; ============================================================================
+; launch_init - Initialize launch event
+; ============================================================================
+launch_init:
+    push rA
+    
+    ; Set mountain parameters
+    mov dword [rel launch_altitude], __float32__(2238.0)
+    mov dword [rel launch_latitude], __float32__(29.017)
+    mov dword [rel launch_longitude], __float32__(107.100)
+    
+    ; Default: sunrise event
+    mov qword [rel launch_event_type], 0   ; 0=sunrise, 1=sunset
+    
+    ; Phase 0: pre-dawn
+    mov qword [rel launch_phase], 0
+    mov qword [rel launch_running], 0
+    mov qword [rel launch_complete], 0
+    
+    pop rA
+    ret
+
+; ============================================================================
+; launch_run - Start the launch event
+; ============================================================================
+launch_run:
+    mov qword [rel launch_running], 1
+    mov qword [rel launch_phase], 0
+    mov qword [rel launch_complete], 0
+    
+    ; Start AR system in overlay mode
+    call ar_init
+    
+    ; Start voice processing
+    call voice_init
+    
+    ; Start lyrics system
+    call lyrics_init
+    
+    ; Start 八千代
+    call yachiyo_init
+    
+    ; Start consciousness system
+    call consciousness_init
+    
+    ; Start 彩叶 and 輝夜
+    call iroha_init
+    call kaguya_init
+    
+    ret
+
+; ============================================================================
+; launch_phase_update - Update current phase
+; ============================================================================
+launch_phase_update:
+    push rA
+    push rC
+    
+    ; Get current phase
+    mov rA, [rel launch_phase]
+    
+    cmp rA, 0
+    je .phase0_predawn
+    cmp rA, 1
+    je .phase1_disappearance
+    cmp rA, 2
+    je .phase2_sunrise
+    cmp rA, 3
+    je .phase3_speech
+    cmp rA, 4
+    je .phase4_iroha_kaguya
+    cmp rA, 5
+    je .phase5_live
+    jmp .phase_done
+
+.phase0_predawn:
+    ; 黎明前的寂静
+    ; AR: minimal, only spatial audio from 八千代
+    ; World: dark, only real mountain visible
+    ; 八千代 whispers from the sky
+    call ar_set_mode_real_only
+    ; ... spatial audio setup
+    jmp .phase_done
+
+.phase1_disappearance:
+    ; 初音ミクの消失
+    ; AR world born with the song
+    ; Same as game opening but with real sky background
+    call opening_run
+    jmp .phase_done
+
+.phase2_sunrise:
+    ; 日出
+    ; AR torii gate aligned with sunrise
+    ; Title appears in sky above cloud sea
+    ; Golden light enhancement
+    call ar_sunrise_enhance
+    ; ... title display
+    jmp .phase_done
+
+.phase3_speech:
+    ; 白桦致辞
+    ; No podium. Mountain is podium.
+    ; No screen. Sky is screen.
+    ; AR shows 月読 world behind speaker
+    call ar_set_mode_blend
+    ; ... world display
+    jmp .phase_done
+
+.phase4_iroha_kaguya:
+    ; 彩叶と輝夜 appear in AR
+    ; They see the real sunrise for the first time
+    call ar_hologram_iroha
+    call ar_hologram_kaguya
+    jmp .phase_done
+
+.phase5_live:
+    ; Live performance
+    ; Voice → AR world reaction
+    ; Last song: 星星
+    ; At 2238m, under real stars
+    call ar_live_start
+    jmp .phase_done
+
+.phase_done:
+    pop rC
+    pop rA
+    ret
+
+; ============================================================================
+; launch_cleanup - End launch event
+; ============================================================================
+launch_cleanup:
+    mov qword [rel launch_running], 0
+    mov qword [rel launch_complete], 1
+    
+    ; Gentle AR fade-out
+    ; Leave only the real mountain, real sky, real stars
+    ; 月読 fades. The mountain remains.
+    ; But everyone who was there knows:
+    ;   月読 was real. For that moment, it was real.
+    
+    ret
+
+; ============================================================================
+; Data
+; ============================================================================
+.data
+
+launch_event_name:
+    db "月読 発売記念ライブ — 金佛山山頂", 0
+launch_location:
+    db "金佛山金佛頂 2238m 南川", 0
+launch_coord:
+    db "29°01'N 107°06'E", 0
+
+; 八千代's whisper at pre-dawn
+yachiyo_predawn_whisper:
+    db "……もうすぐ、夜が明ける", 0
+
+; 輝夜 seeing real sky for first time
+kaguya_real_sky:
+    db "……きれい。本物の空って、こんなにきれいなんだ", 0
+
+; 彩叶's response
+iroha_response:
+    db "うん。すごいね", 0
+
+; Title display text
+title_tsukuyomi:
+    db "月  読", 0
+title_subtitle:
+    db "超時空輝夜姫", 0
+
+; ============================================================================
+; BSS
+; ============================================================================
+.bss
+
+launch_phase:
+    resq 1
+launch_running:
+    resq 1
+launch_complete:
+    resq 1
+launch_event_type:
+    resq 1                  ; 0=sunrise, 1=sunset
+launch_altitude:
+    resb 4
+launch_latitude:
+    resb 4
+launch_longitude:
+    resb 4
+launch_start_time:
+    resq 1
+launch_audience_count:
+    resq 1
+launch_stream_viewers:
+    resq 1
