@@ -66,6 +66,9 @@ DNAOS/
 │   ├── dnaos_gpu_direct.asm   # BIOS 模式 GPU 访问
 │   ├── dnaos_gpu_uefi.asm     # UEFI 模式 GPU 访问
 │   ├── gpu_scanner.asm        # PCIe 扫描器
+│   ├── gpu_kernels.dna        # GPU 内核程序
+│   ├── gpu_advanced.dna       # 高级 GPU 操作
+│   ├── gpu_parallel.dna       # GPU 并行计算
 │   ├── README_GPU.md
 │   └── sim/                   # GA106 模拟器
 │       ├── ga106_sim.asm
@@ -139,12 +142,6 @@ DNAOS/
 ├── gw_skymap_fetch/       # 引力波天空图获取
 │   ├── fetch_skymaps.py
 │   └── README.txt
-│
-├── gpu_kernels.dna        # GPU 内核程序
-├── gpu_advanced.dna       # 高级 GPU 操作
-├── gpu_parallel.dna       # GPU 并行计算
-├── gw_bsem_gamma.dna      # 引力波 BSEM
-├── libbsem_math.dna       # BSEM 数学库
 ├── dna_hal.c / dna_hal.h  # 硬件抽象层
 ├── nsm_backend.c/h        # NSM 数学后端
 ├── dnasm_v32.c            # DNAsm v32 编译器

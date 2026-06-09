@@ -1,0 +1,52 @@
+; ============================================================================
+; DNAOS - Engine Init Stubs
+; ============================================================================
+; Stub implementations for engine subsystem init functions.
+; These will be replaced with real implementations as each module is completed.
+; ============================================================================
+
+.code
+
+; Helper macro: define a stub init function that just returns
+macro STUB_INIT name
+name:
+    ret
+endm
+
+; Core engine
+STUB_INIT tsukuyomi_init
+STUB_INIT vm_init
+
+; Graphics
+STUB_INIT sky_init
+STUB_INIT shadow_init
+STUB_INIT water_init
+STUB_INIT rast_init
+STUB_INIT post_init
+STUB_INIT veg_init
+
+; Engine systems
+STUB_INIT phys_init
+STUB_INIT audio_init
+STUB_INIT voice_init
+STUB_INIT lyrics_init
+STUB_INIT particle_init
+STUB_INIT ecs_init
+STUB_INIT ui_init
+STUB_INIT input_init
+
+; Architecture (月読 world)
+STUB_INIT arch_init
+STUB_INIT holo_init
+STUB_INIT kassen_init
+STUB_INIT live_init
+
+; Consciousness
+STUB_INIT consciousness_init
+STUB_INIT yachiyo_init
+STUB_INIT iroha_init
+STUB_INIT kaguya_init
+
+; Opening & AR
+STUB_INIT opening_init
+STUB_INIT ar_init
