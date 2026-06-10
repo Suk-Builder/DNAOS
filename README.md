@@ -20,147 +20,114 @@ DNAOS 是一个以 **四进制（ATCG 碱基编码）** 为核心的存算一体
 
 ```
 DNAOS/
-├── README.md              # 本文件
-├── Makefile               # 构建系统
-├── install.sh             # 安装脚本
+├── README.md                  # 本文件
+├── install.sh                 # 安装脚本
 │
-├── asm/                   # DNAsm 核心汇编器（NASM）
-│   └── dnasm_core.asm
-│
-├── bench/                 # 基准测试程序（.dna 格式）
-│   ├── cosmic_os.dna
-│   ├── game_of_life.dna
-│   ├── linear_algebra.dna
-│   ├── math_engine.dna
-│   ├── tensor_nn.dna
-│   └── ...
-│
-├── boot/                  # 引导扇区（MBR）
-│   ├── dnaos_boot.asm     # NASM 源码
-│   ├── dnaos_boot.bin     # 编译产物
-│   └── README_BOOT.md
-│
-├── docs/                  # 设计文档
-│   ├── SPEC.md            # DNAsm 语言规范
-│   ├── ISA_REFERENCE.md   # 指令集参考
-│   ├── TUTORIAL.md        # 使用教程
-│   ├── BUG_REPORT.md      # 已知问题
-│   ├── dnasm_v33_audit.md # v33 审计报告
-│   ├── crack_genesis_theorem.md     # 创世定理
-│   ├── crack_everywhere.md          # 万物 crack
-│   ├── crack_geometry_position.md   # 几何 crack
-│   ├── crack_sky_position_final.md  # 天文 crack
-│   ├── unified_physics_model.md     # 统一物理模型
-│   └── gamma_016_discovery.md       # Gamma 0.16 发现
-│
-├── genome/                # AI 基因组系统
-│   ├── charter.c          # 基因章程解析器
-│   ├── d1d4.c             # D1D4 调度器
-│   └── capabilities/      # 能力基因片段
-│       ├── audio.gene
-│       ├── mersenne.gene
-│       ├── reason.gene
-│       └── vision.gene
-│
-├── gpu/                   # GPU 直接访问与模拟
-│   ├── dnaos_gpu_direct.asm   # BIOS 模式 GPU 访问
-│   ├── dnaos_gpu_uefi.asm     # UEFI 模式 GPU 访问
-│   ├── gpu_scanner.asm        # PCIe 扫描器
-│   ├── gpu_kernels.dna        # GPU 内核程序
-│   ├── gpu_advanced.dna       # 高级 GPU 操作
-│   ├── gpu_parallel.dna       # GPU 并行计算
-│   ├── README_GPU.md
-│   └── sim/                   # GA106 模拟器
-│       ├── ga106_sim.asm
-│       ├── ga106_sim.py
-│       ├── gpu_simulator.asm
-│       ├── Makefile
-│       └── README_SIM.md
-│
-├── include/               # 头文件
-│   └── dnaos.h
-│
-├── kernel/                # 内核源码
-│   └── kernel.c
-│
-├── mc/                    # 机器码生成器
-│   ├── dna_encoder.asm
-│   ├── dna_encoder.bin
-│   ├── dna_encoder.hex
-│   └── README_MC.md
-│
-├── os/                    # 裸机 OS 开发（本次会话核心）
+├── os/                        # 裸机 OS（核心）
 │   ├── DESIGN_v34_quaternary.md   # v3.4 架构设计文档
 │   ├── gen_disk_v4.py             # 主磁盘镜像生成器
 │   ├── debug_32bit.py             # 32位调试版本
 │   ├── debug_32bit_v2.py          # 32位最小化调试
-│   ├── boot.asm                   # 引导代码
-│   ├── kernel.asm                 # 内核汇编
-│   ├── test_farjmp.asm            # 远跳转测试
-│   ├── test_fixed.asm             # 修复测试（成功输出"12"）
-│   ├── test_32com1.asm            # COM1 串口测试
-│   ├── test_vga.asm               # VGA 显示测试
-│   ├── working_small.asm          # 最小工作示例
-│   ├── working_longmode.asm       # 长模式切换参考
-│   ├── minimal_test.py            # 最小化测试
-│   └── build.sh                   # 构建脚本
+│   ├── build.sh                   # 构建脚本
+│   ├── kernel/                    # 内核源码
+│   │   ├── kernel.c               # 主内核（12个子系统集成）
+│   │   ├── boot.S                 # GRUB Multiboot2 入口
+│   │   ├── font.S                 # 字体数据
+│   │   ├── linker.ld              # 链接脚本
+│   │   ├── minimal/               # 最小化内核（调试用）
+│   │   ├── drivers/               # 驱动头文件（e1000/pci/pit/mouse）
+│   │   ├── mm/                    # 内存管理（pmm.h/vmm.h）
+│   │   ├── fs/                    # 文件系统（vfs.h）
+│   │   ├── gui/                   # 窗口管理（wm.h）
+│   │   ├── proc/                  # 进程管理（proc.h）
+│   │   └── sys/                   # 系统调用（syscall.h）
+│   └── *.asm                      # 引导/测试汇编
 │
-├── protein/               # 蛋白质计算层
-│   ├── mersenne_ll.c      # Lucas-Lehmer 素数测试
-│   ├── protein.c          # 蛋白质引擎
-│   └── sieve.c            # 素数筛
+├── simulator/                 # 用户态模拟器（Linux上运行）
+│   ├── boot.c                  # 模拟器主入口
+│   ├── dnasm_v33.c             # DNAsm v33 编译器（56条操作码）
+│   ├── dnasm_v32.c             # DNAsm v32 编译器
+│   ├── dnasm_nsm.c             # DNAsm NSM 后端
+│   ├── gpu_emulator.c          # CPU模拟GPU并行（pthread+AVX2）
+│   ├── dna_hal.c/h             # DNA硬件抽象层（试管模拟）
+│   ├── nsm_backend.c/h         # NSM数学后端（忆阻器交叉阵列）
+│   ├── genome/                  # AI基因组系统
+│   ├── transcript/              # 转录层（ATP/ESV）
+│   ├── protein/                 # 蛋白质计算层
+│   └── kernel_legacy/           # 旧版内核（归档）
 │
-├── tests/                 # 测试套件
-│   ├── test_hal.dna
-│   ├── test_nsm.dna
-│   ├── test_nsm_full.dna
-│   ├── test_loop.dna
-│   ├── test_chem.dna
-│   ├── stress_test.dna
-│   ├── torture_r1.dna ~ torture_r7.dna
-│   ├── brutal_test.dna
-│   ├── deep_test.dna
-│   └── edge_test.dna
+├── programs/                  # DNAsm 程序（.dna 格式）
+│   ├── kernel.dna               # 内核DNAsm程序
+│   ├── stdlib.dna               # 标准库
+│   ├── engine/                  # 引擎（物理/粒子/动画/意识）
+│   ├── drivers/                 # 驱动程序
+│   ├── gfx/                     # 图形渲染
+│   ├── gui/                     # 界面
+│   ├── mm/                      # 内存管理
+│   ├── net/                     # 网络
+│   ├── fs/                      # 文件系统
+│   ├── proc/                    # 进程
+│   ├── sys/                     # 系统调用
+│   ├── shell/                   # DNAsm Shell
+│   └── boot/                    # 引导程序
 │
-├── transcript/            # 转录层（ATP/ESV）
-│   ├── atp.c
-│   ├── esv.c
-│   └── transcript.c
+├── boot/                      # MBR引导扇区
+│   ├── dnaos_boot.asm
+│   ├── dnaos_boot.bin
+│   └── README_BOOT.md
 │
-├── website/               # 项目网站
-│   ├── index.html
-│   ├── live_demo.html
-│   ├── lang.css / lang.js
-│   ├── bsem/
-│   ├── gpu/
-│   ├── math/
-│   └── zfc/
+├── asm/                       # DNAsm核心汇编器（NASM）
+│   └── dnasm_core.asm
 │
-├── game/                  # TubeBattle 游戏
-│   └── tube_battle.c
+├── bench/                     # 基准测试
+│   ├── cosmic_os.dna
+│   ├── game_of_life.dna
+│   └── ...
 │
-├── gw_skymap_fetch/       # 引力波天空图获取
-│   ├── fetch_skymaps.py
-│   └── README.txt
-├── dna_hal.c / dna_hal.h  # 硬件抽象层
-├── nsm_backend.c/h        # NSM 数学后端
-├── dnasm_v32.c            # DNAsm v32 编译器
-├── dnasm_v33.c            # DNAsm v33 编译器
-├── dnasm_nsm.c            # DNAsm NSM 后端
-└── gpu_emulator.c         # GPU 模拟器
+├── chip/                      # Tiny Tapeout芯片设计
+│   ├── dnaos_quat.v            # 四进制ALU Verilog
+│   ├── dnaos_quat_tb.v         # 测试台
+│   └── Makefile
+│
+├── gpu/                       # GPU直接访问与模拟
+│   ├── dnaos_gpu_direct.asm
+│   ├── dnaos_gpu_uefi.asm
+│   ├── gpu_scanner.asm
+│   ├── gpu_kernels.dna
+│   └── sim/                    # GA106模拟器
+│
+├── include/                   # 头文件
+│   └── dnaos.h
+│
+├── mc/                        # 机器码生成器
+│   ├── dna_encoder.asm
+│   └── README_MC.md
+│
+├── docs/                      # 设计文档
+│   ├── SPEC.md
+│   ├── ISA_REFERENCE.md
+│   ├── TUTORIAL.md
+│   └── ...
+│
+├── tests/                     # 测试套件
+├── game/                      # TubeBattle游戏
+├── desktop/                   # 桌面环境
+├── arm64/                     # ARM64移植
+├── website/                   # 项目网站
+└── gw_skymap_fetch/           # 引力波天空图
 ```
 
 ---
 
 ## 核心组件
 
-### 1. 四进制引擎 (`gen_disk_v4.py`)
+### 1. 四进制引擎 (`os/gen_disk_v4.py`)
 
 - **编码**：字节 → 4 碱基（2bit/碱基）
 - **逻辑门**：链置换实现的 AND/OR/NOT/ADD
 - **内存模型**：四进制原生寻址
 
-### 2. DNAsm 编译器 (`dnasm_v33.c`)
+### 2. DNAsm 编译器 (`simulator/dnasm_v33.c`)
 
 | 版本 | 状态 | 说明 |
 |------|------|------|
@@ -169,7 +136,7 @@ DNAOS/
 
 指令类别：DAT/IMM/REG/STR/MEM/JMP/MTH/SYS/LOG/VEC/CRK
 
-### 3. GPU 模拟器 (`gpu_emulator.c`, `ga106_sim.py`)
+### 3. GPU 模拟器 (`simulator/gpu_emulator.c`, `gpu/sim/ga106_sim.py`)
 
 - **目标硬件**：NVIDIA GA106 (RTX 3060)，28 SM × 128 CUDA = 3584 核心
 - **模拟方式**：Ryzen 5500 AVX2 256bit SIMD
