@@ -13,6 +13,9 @@ section .text align=1
 ; 16-bit Entry @ 0x0000 (物理 0x10000)
 ; ═══════════════════════════════════════════════════════════════════════════
 entry_16:
+    ; 页表基址定义
+    ptb EQU 0x11000
+
     ; COM1输出 '1\r\n' (确认16位代码运行)
     mov al, '1'
     call serial_send
@@ -103,8 +106,8 @@ entry_32:
 
     ; 设置页表 (identity map 0-4MB, 2MB大页)
     ; PML4 @ ptb, PDPT @ ptb+0x1000, PD @ ptb+0x2000
-    mov dword [ptb],       (ptb + 0x1000) | 0x03
-    mov dword [ptb+0x1000], (ptb + 0x2000) | 0x03
+    mov dword [ptb],       (ptb + 0x1003)
+    mov dword [ptb+0x1000], ptb + 0x2003
     mov dword [ptb+0x2000], 0x00000083     ; 0-2MB, PS=1, P=1, R/W=1
     mov dword [ptb+0x2008], 0x00200083     ; 2-4MB
 
@@ -132,6 +135,15 @@ entry_32:
     push dword 0x08         ; CS selector
     push dword entry_64     ; EIP
     retf
+
+; ═══════════════════════════════════════════════════════════════════════════
+; 64-bit Entry @ entry_64
+; ═══════════════════════════════════════════════════════════════════════════
+BITS 64
+entry_64:
+    ; TODO: 64位模式初始化
+    hlt
+    jmp entry_64
 
 ; ── 32位辅助函数 ──
 serial_send_32:             ; al = 字符

@@ -93,7 +93,10 @@ def decode_number(s):
         return ord(s[1])
     # Hex
     if s.startswith('0x') or s.startswith('0X') or s.startswith('$'):
-        return int(s.lstrip('$'), 16)
+        try:
+            return int(s.lstrip('$'), 16)
+        except ValueError:
+            return None
     # Binary
     if s.startswith('0b') or s.startswith('0B'):
         return int(s, 2)
@@ -168,12 +171,16 @@ def translate_operand(op):
     if op in REG_MAP:
         return REG_MAP[op]
 
+    # Far jump: segment:label (e.g. 0x08:entry_32)
+    if re.match(r'^0x[0-9a-fA-F]+:[a-zA-Z_][a-zA-Z0-9_]*$', op):
+        return op
+
     # Number
     num = decode_number(op)
     if num is not None:
         if num < 0:
             return str(num)
-        return f'0x{num:x}' if num > 9 else str(num)
+        return f'{num}' if num <= 9 else f'0x{num:x}'
 
     # Label or symbol - pass through
     return op
@@ -244,7 +251,21 @@ class DNAsmCompiler:
 
     def compile_line(self, line, lineno=0):
         """Compile one line of DNAsm"""
-        # Strip comments (; to end of line, but not inside strings)
+        # Strip comments
+        stripped = line.strip()
+        if not stripped:
+            return
+
+        # Handle BITS directive specially (16/32/64, not hex)
+        if stripped.startswith('BITS '):
+            bits_val = stripped.split(None, 1)[1]
+            # Convert decimal to number, output as decimal string
+            try:
+                bits_num = int(bits_val)
+                self.output.append(f'BITS {bits_num}')
+            except ValueError:
+                self.output.append(f'BITS {bits_val}')
+            return
         in_quote = False
         comment_pos = -1
         for i, c in enumerate(line):
