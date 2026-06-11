@@ -17,16 +17,14 @@ void prime_count(AVal*r, int n) {
 }
 
 void fibonacci(AVal*r, int n) {
-    av_to_gmp(r);
+    av_init(r);
     mpz_t a, b, t; mpz_init_set_si(a, 0); mpz_init_set_si(b, 1); mpz_init(t);
     for(int i = 0; i < n; i++) { mpz_set(t, b); mpz_add(b, b, a); mpz_set(a, t); }
-    mpz_set(r->gmp, a); r->has_gmp = 1;
-    if(mpz_fits_slong_p(a)) r->i64 = mpz_get_si(a);
-    mpz_clear(a); mpz_clear(b); mpz_clear(t);
+    mpz_set(r->gmp, a); mpz_clear(a); mpz_clear(b); mpz_clear(t);
 }
 
 void factorial(AVal*r, int n) {
-    av_to_gmp(r); mpz_set_si(r->gmp, 1);
+    av_init(r);
+    mpz_set_si(r->gmp, 1);
     for(int i = 2; i <= n; i++) mpz_mul_si(r->gmp, r->gmp, i);
-    if(mpz_fits_slong_p(r->gmp)) r->i64 = mpz_get_si(r->gmp);
 }
