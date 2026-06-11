@@ -61,26 +61,26 @@ serial_send:                ; al = 字符
 ; ── GDT ──
 gdtr:
     dw gdt_end - gdt - 1    ; limit
-    dd gdt                  ; base (线性地址 = 0x10000 + gdt偏移)
+    dd gdt                  ; base (physical = 0x10000 + gdt_offset)
 
 ALIGN 8
 gdt:
     ; Null descriptor
     dq 0
-.gdt_code:                  ; 0x08 — 32/64位代码段
+.gdt_code:                  ; 0x08 — code segment @ physical 0x10000
     dw 0xFFFF               ; limit 15:0
-    dw 0x0000               ; base 15:0
-    db 0x00                 ; base 23:16
-    db 0x9A                 ; P=1, DPL=0, S=1, Type=Execute/Read
-    db 0xCF                 ; G=1, DB=1, L=0, limit 19:16=0xF
-    db 0x00                 ; base 31:24
-.gdt_data:                  ; 0x10 — 数据段
+    dw 0x0000               ; base 15:0 = 0x0000
+    db 0x00                 ; base 23:16 = 0x00
+    db 0x9A                 ; P=1, DPL=0, Type=Execute/Read
+    db 0xCF                 ; G=1, DB=1, limit 19:16=0xF
+    db 0x01                 ; base 31:24 = 0x01 → base=0x010000
+.gdt_data:                  ; 0x10 — data segment @ physical 0x10000
     dw 0xFFFF
     dw 0x0000
     db 0x00
-    db 0x92                 ; P=1, DPL=0, S=1, Type=Read/Write
+    db 0x92                 ; P=1, DPL=0, Type=Read/Write
     db 0xCF
-    db 0x00
+    db 0x01                 ; base 31:24 = 0x01 → base=0x010000
 gdt_end:
 
 ; ═══════════════════════════════════════════════════════════════════════════
