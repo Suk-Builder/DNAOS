@@ -17,7 +17,7 @@
 
 #define MAX_PROG     512
 #define MAX_LABELS   128
-#define REG_COUNT     16
+#define REG_COUNT     128
 #define MAX_CALL_STACK 32
 
 enum {
@@ -75,9 +75,9 @@ static int parse_line(const char *line, Inst *out) {
     } else if (op == OP_JMP || op == OP_JZ || op == OP_JNZ || op == OP_JE ||
                op == OP_JNE || op == OP_JLT || op == OP_JGE ||
                op == OP_JGT || op == OP_JLE || op == OP_CALL) {
-        if (nt > 1) strncpy(out->label, tok[1], 31);
+        if (nt > 1) { char *lbl = tok[1]; if (lbl[0]=='@') lbl++; strncpy(out->label, lbl, 31); }
     } else if (op == OP_LABEL) {
-        if (nt > 1) strncpy(out->label, tok[1], 31);
+        if (nt > 1) { char *lbl = tok[1]; if (lbl[0]=='@') lbl++; strncpy(out->label, lbl, 31); }
     } else if (op == OP_INC) {
         if (nt > 1) out->ra = (tok[1][0]=='r'||tok[1][0]=='R') ? atoi(tok[1]+1) : -1;
     }
