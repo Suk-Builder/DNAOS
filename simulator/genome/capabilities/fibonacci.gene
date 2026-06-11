@@ -1,0 +1,26 @@
+GENE_ID: 0x464942
+DESC: Fibonacci sequence protein — computes Fib(N) via DNAsm VM
+TYPE: algorithmic
+ALGORITHM: dnasm_fibonacci_v8
+INPUT: N (non-negative integer)
+OUTPUT: Fib(N)
+ATP_COST: 50
+REFERENCE: simulator/dnasm_exec.c
+PROGRAM:
+LOAD r0
+NUM 0
+STORE r3 r1
+NUM 1
+STORE r3 r2
+NUM 1
+STORE r3 r4
+LABEL loop
+CMP r4 r0
+JGT end
+FIB r1 r2
+STORE r2 r1
+INC r4
+JMP loop
+LABEL end
+PRINT r1
+HALT

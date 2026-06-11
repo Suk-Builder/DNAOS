@@ -26,4 +26,8 @@ void av_to_gmp(const AVal *a, mpz_t rop);
 void kernel_init(void);
 void kernel_shutdown(void);
 
+/* ── DNAsm gene executor (transcript → protein chain) ── */
+extern int dnasm_exec(const char *source, long long input, long long atp_budget, AVal *result);
+extern int transcribe_and_exec(const char *capability, long long input, AVal *result);
+
 #endif /* AV_MATH_H */

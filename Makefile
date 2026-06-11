@@ -3,9 +3,9 @@ CFLAGS = -O3 -Wall -I.
 LDFLAGS = -lgmp -lm
 
 SRCS = boot.c genome/charter.c genome/d1d4.c \
-       kernel/kernel.c \
        transcript/transcript.c transcript/esv.c transcript/atp.c \
-       protein/protein.c protein/mersenne_ll.c protein/sieve.c
+       protein/protein.c protein/mersenne_ll.c protein/sieve.c \
+       nsm_backend.c dnasm_v33.c dna_hal.c
 OBJS = $(SRCS:.c=.o)
 TARGET = dnaos2
 

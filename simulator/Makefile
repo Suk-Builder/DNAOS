@@ -1,12 +1,9 @@
 # Makefile — DNAOS v2.0 Genesis Simulator
-# Compile all genome/transcript/protein/NSM source into dnaos2 binary
-
 CC      = gcc
 CFLAGS  = -O3 -Wall -g -I..
 LDFLAGS = -lgmp -lm
 TARGET  = dnaos2
 
-# All .c files (boot last — defines main())
 SRCS = \
 	genome/charter.c \
 	genome/d1d4.c \
@@ -19,6 +16,7 @@ SRCS = \
 	nsm_backend.c \
 	av_math.c \
 	dna_hal.c \
+	dnasm_exec.c \
 	boot.c
 
 OBJS = $(SRCS:.c=.o)
@@ -35,7 +33,7 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f genome/*.o transcript/*.o protein/*.o *.o $(TARGET)
 
 run: $(TARGET)
 	./$(TARGET)
