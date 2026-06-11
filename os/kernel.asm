@@ -62,7 +62,7 @@ serial_send:                ; al = 字符
 ; ── GDT ──
 gdtr:
     dw gdt_end - gdt - 1    ; limit (16-bit)
-    dd gdt + LOAD_BASE       ; base physical address = 0x00010048
+    db 0x48, 0x00, 0x01, 0x00  ; base = 0x00010048 (physical addr of GDT)
 
 ALIGN 8
 gdt:
