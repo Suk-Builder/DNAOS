@@ -1,26 +1,23 @@
-CC = gcc
-CFLAGS = -O3 -Wall -I.
-LDFLAGS = -lgmp -lm
+# DNAOS v3.5 Root Makefile
+# Delegate to submodule Makefiles
 
-SRCS = boot.c genome/charter.c genome/d1d4.c \
-       transcript/transcript.c transcript/esv.c transcript/atp.c \
-       protein/protein.c protein/mersenne_ll.c protein/sieve.c \
-       nsm_backend.c dnasm_v33.c dna_hal.c
-OBJS = $(SRCS:.c=.o)
-TARGET = dnaos2
+.PHONY: all simulator clean help
 
-.PHONY: all clean test
+all: simulator
 
-all: $(TARGET)
-
-$(TARGET): $(OBJS)
-	$(CC) $(OBJS) -o $@ $(LDFLAGS)
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+simulator:
+	@echo "Building DNAOS simulator..."
+	$(MAKE) -C simulator
 
 clean:
-	rm -f $(OBJS) $(TARGET)
+	@echo "Cleaning..."
+	$(MAKE) -C simulator clean
 
-test: $(TARGET)
-	./$(TARGET)
+help:
+	@echo "DNAOS v3.5 — available targets:"
+	@echo "  make           — build simulator"
+	@echo "  make clean     — remove build artifacts"
+	@echo "  make simulator — same as make"
+	@echo ""
+	@echo "Quick start:"
+	@echo "  cd simulator && make && ./dnaos2"
