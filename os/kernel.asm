@@ -74,14 +74,14 @@ gdt:
     db 0x00                 ; base 23:16 = 0x00
     db 0x9A                 ; P=1, DPL=0, Type=Execute/Read
     db 0x00C0                ; G=1, DB=1, L=0, limit 19:16=0xF → limit=0x7FF*4K=8MB
-    db LOAD_BASE >> 16       ; base 31:24 = 0x01 → base=0x00010000
+    db 0x00                 ; base 31:24 = 0x00 → base=0x00000000
 .gdt_data:                  ; 0x10 — data segment @ physical 0x10000
     dw 0x07FF               ; limit 15:0 = 2047
     dw 0x0000               ; base 15:0 = 0x0000
     db 0x00                 ; base 23:16 = 0x00
     db 0x92                 ; P=1, DPL=0, Type=Read/Write
     db 0x00C0                ; G=1, DB=1, L=0, limit 19:16=0xF
-    db LOAD_BASE >> 16       ; base 31:24 = 0x01 → base=0x00010000
+    db 0x00                 ; base 31:24 = 0x00 → base=0x00000000
 gdt_end:
 
 ; ═══════════════════════════════════════════════════════════════════════════
