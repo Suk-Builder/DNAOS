@@ -18,11 +18,12 @@ entry_16:
 
     ; COM1输出 '1\r\n' (确认16位代码运行)
     mov al, '1'
-    call serial_send
+    ; far call to serial_send (16-bit, via selector 0x08)
+    db 0x9A, 0x7E, 0x00, 0x08, 0x00  ; call 0x08:0x007E (serial_send @ 0x7E)
     mov al, '\r'
-    call serial_send
+    db 0x9A, 0x7E, 0x00, 0x08, 0x00
     mov al, '\n'
-    call serial_send
+    db 0x9A, 0x7E, 0x00, 0x08, 0x00
 
     ; Enable A20 (fast gate method)
     in al, 0x92
@@ -61,7 +62,7 @@ serial_send:                ; al = 字符
 ; ── GDT ──
 gdtr:
     dw gdt_end - gdt - 1    ; limit
-    dd gdt                  ; base (physical = 0x10000 + gdt_offset)
+    dw gdt                  ; base offset (16-bit, relative to kernel load)
 
 ALIGN 8
 gdt:
@@ -73,7 +74,7 @@ gdt:
     db 0x00                 ; base 23:16 = 0x00
     db 0x9A                 ; P=1, DPL=0, Type=Execute/Read
     db 0xCF                 ; G=1, DB=1, limit 19:16=0xF
-    db 0x01                 ; base 31:24 = 0x01 → base=0x010000
+    db 0x00                 ; base 31:24 = 0x00 → base=0x00010000
 .gdt_data:                  ; 0x10 — data segment @ physical 0x10000
     dw 0xFFFF
     dw 0x0000
