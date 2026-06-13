@@ -24,7 +24,7 @@ H K G T D P X 3 !
 
 32-bit 段跑通 + 分页开 = **M11 v2 大部分跑通**!
 
-## 🛑 撞穿 3 次 (学到的)
+## 🛑 撞穿 4 次 (学到的)
 
 1. **第一次**: `jmp 0x08:0x0001034B` 16-bit 段下默认 16-bit far jmp → NASM 截到 0x34B 物理
    - **修**: `jmp dword 0x08:0x0001034B` 强制 32-bit 偏移
@@ -32,8 +32,11 @@ H K G T D P X 3 !
    - **bug**: PTE 装错 (32-bit = high 16 + low 16, 我用 0x1203 + 0x0000 = frame 0x1, 不是 0x12)
    - **修**: PTE 装 0x2003 (low) + 0x0001 (high) = 0x00012003 = frame 0x12 = 物理 0x12000
 3. **第三次**: 0xB8000 仍 page fault (CR2=0xC8200, 不是 0xB8000)
-   - **未解**: PGT[0xB80] = 0x000B8003 frame 0xB8 物理 0xB8000 ✓, 但 32-bit 段写 0xB8000 时 EIP=0x10373 时 page fault at 0xC8200
-   - **可能**: 也许 CR2 0xC8200 是 double fault 后的 EIP, 不是 mov [edi] 0xB8000 的访存
+   - **bug**: 32-bit 段 ds 还 = 0x1020 (k11 段), [ds:edi] = 0x1020*16+0xB8000 = 0xC8200
+   - **修**: 32-bit 段加 `mov ax, 0x10; mov ds, ax; mov es, ax; mov fs, ax; mov gs, ax; mov ss, ax` 设 GDT[2]
+4. **第四次**: ds 设 0x10 后, VGA 写 0xB8000 还 page fault
+   - **未解**: GDT[2] 装对 (base 0, type 0x93) ✓, 但 CR2=0xC8200 仍
+   - **可能**: GDT[2] type 0x93 ≠ 0x92 (差 bit 0) — 也许 expand-down 段有 bug, 也许 IDT 错位, 也许 sse/ss 没设对
 
 ## 📊 SHA256
 
