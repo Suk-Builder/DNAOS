@@ -1,1 +1,1 @@
-/workspace/dnaos_check/include/dnaos.h
+../../include/dnaos.h

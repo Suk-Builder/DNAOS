@@ -113,6 +113,18 @@ int main(int argc, char**argv) {
         return 0;
     }
 
+    /* Check for world mode (MiniCraft cube world) */
+    if (argc > 1 && strcmp(argv[1], "world") == 0) {
+        extern int world_main(void);
+        charter_init();
+        transcript_init();
+        esv_init();
+        atp_init(10000000000LL);
+        protein_init();
+        world_main();
+        return 0;
+    }
+
     printf("========================================================================\n");
     printf("   DNAOS v%s -- %s\n", DNAOS_VERSION, DNAOS_CODENAME);
     printf("   Charter Operating System + AI Metabolism\n");

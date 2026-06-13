@@ -17,6 +17,7 @@ SRCS = \
 	av_math.c \
 	dna_hal.c \
 	dnasm_exec.c \
+	world/cube_world.c \
 	boot.c
 
 OBJS = $(SRCS:.c=.o)
